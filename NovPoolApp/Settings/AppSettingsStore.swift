@@ -69,6 +69,9 @@ final class AppSettingsStore {
     /// 本机 llama.cpp 服务。
     let localLLM = LocalLLMServerManager()
     var prefersLocalLLM: Bool
+    /// 由 AppEnvironment 注入：批量重新总结尚无摘要的条目。
+    var resummarizeMissingHandler: (@MainActor () async -> String)?
+    private(set) var isResummarizing = false
 
     init(
         defaults: UserDefaults = .standard,
@@ -384,7 +387,38 @@ final class AppSettingsStore {
         showStatus("已删除连接器：\(connectorID)")
     }
 
-    // MARK: - 维护
+    // MARK: - 重新总结
+
+    /// 对尚无 AI 摘要、但已有正文/OCR 的条目重新跑总结；失败原因写进状态栏。
+    func resummarizeMissingSummaries() async {
+        guard !isResummarizing else { return }
+        isResummarizing = true
+        defer { isResummarizing = false }
+        showStatus("正在重新总结…")
+        let message = await resummarizeMissingHandler?() ?? "重新总结未接线"
+        let isError = message.contains("失败") || message.contains("未接线")
+        showStatus(message, isError: isError && !message.contains("成功"))
+    }
+
+    /// 用本机常见路径填充空的 llama-server / 模型字段。
+    func fillDetectedLocalLLMPaths() {
+        var filled: [String] = []
+        if localLLM.configuration.binaryPath.trimmingCharacters(in: .whitespaces).isEmpty,
+           let binary = LocalLLMConfiguration.firstExistingBinaryPath() {
+            localLLM.configuration.binaryPath = binary
+            filled.append("二进制")
+        }
+        if localLLM.configuration.modelPath.trimmingCharacters(in: .whitespaces).isEmpty,
+           let model = LocalLLMConfiguration.firstExistingModelPath() {
+            localLLM.configuration.modelPath = model
+            filled.append("模型")
+        }
+        if filled.isEmpty {
+            showStatus("未探测到 \(LocalLLMConfiguration.setupHint)", isError: true)
+        } else {
+            showStatus("已填充：\(filled.joined(separator: "、"))")
+        }
+    }
 
     // MARK: - 本机 llama.cpp
 

@@ -61,4 +61,10 @@ struct LocalLLMConfigurationTests {
         #expect(LocalLLMConfiguration(binaryPath: "/bin/x").validationMessage?.contains("gguf") == true)
         #expect(LocalLLMConfiguration(binaryPath: "/bin/x", modelPath: "/m.gguf").isValid)
     }
+
+    @Test("默认安装提示与常见二进制候选路径")
+    func setupHints() {
+        #expect(LocalLLMConfiguration.setupHint.contains("brew install"))
+        #expect(LocalLLMConfiguration.commonBinaryCandidates.contains("/opt/homebrew/bin/llama-server"))
+    }
 }

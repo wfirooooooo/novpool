@@ -244,6 +244,24 @@ public struct KnowledgeRepository: Sendable {
         return try rows.map(Self.decode)
     }
 
+    /// 尚无 AI 摘要的条目（有正文或 OCR 可总结），供设置里「重新总结」批量处理。
+    public func recordsNeedingAISummary(limit: Int = 40) async throws -> [KnowledgeItemRecord] {
+        let rows = try await database.query(
+            """
+            SELECT \(Self.columns) FROM knowledge_items
+            WHERE (aiSummary IS NULL OR TRIM(aiSummary) = '')
+              AND (
+                (markdownBody IS NOT NULL AND TRIM(markdownBody) != '')
+                OR (ocrText IS NOT NULL AND TRIM(ocrText) != '')
+              )
+            ORDER BY isPinned DESC, createdAt DESC
+            LIMIT ?
+            """,
+            [.integer(Int64(limit))]
+        )
+        return try rows.map(Self.decode)
+    }
+
     /// 早期版本只暂存了本机文件，没有提取正文。启动时用这批记录做一次补齐。
     public func recordsNeedingLocalFileContent(limit: Int = 100) async throws -> [KnowledgeItemRecord] {
         let rows = try await database.query(

@@ -25,9 +25,15 @@ public protocol ArticleFetching: Sendable {
 
 extension WebContentFetcher: ArticleFetching {}
 
-/// 结构化增强抽象。
+/// 结构化增强抽象（返回显式成功/失败，便于设置里展示原因）。
 public protocol AIEnriching: Sendable {
-    func enrich(_ request: AIEnrichmentRequest) async -> AIEnrichment?
+    func enrichDetailed(_ request: AIEnrichmentRequest) async -> AIEnrichmentOutcome
+}
+
+extension AIEnriching {
+    public func enrich(_ request: AIEnrichmentRequest) async -> AIEnrichment? {
+        await enrichDetailed(request).enrichment
+    }
 }
 
 extension AIEnhancementService: AIEnriching {}
@@ -132,24 +138,31 @@ public actor EnrichmentPipeline: ContentEnriching {
                 .joined(separator: "\n\n")
         }
 
-        if configuration.runAI, !analysisText.isEmpty {
-            let request = AIEnrichmentRequest(
-                title: result.title ?? record.title,
-                text: analysisText,
-                contentType: record.contentType,
-                sourceURL: record.sourceURL.flatMap(URL.init(string:)),
-                sourceTitle: record.sourceTitle,
-                categories: configuration.categories
-            )
-            if let enrichment = await ai.enrich(request) {
-                result.aiSummary = enrichment.summary
-                result.aiCategory = enrichment.category
-                result.aiTags = enrichment.tags.isEmpty ? nil : enrichment.tags
-                result.embedding = enrichment.embedding
-                if result.title == nil,
-                   let extracted = enrichment.title,
-                   TitleAdoption.shouldAdopt(current: record.title) {
-                    result.title = extracted
+        if configuration.runAI {
+            if analysisText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                result.aiFailureReason = "没有可用于总结的正文"
+            } else {
+                let request = AIEnrichmentRequest(
+                    title: result.title ?? record.title,
+                    text: analysisText,
+                    contentType: record.contentType,
+                    sourceURL: record.sourceURL.flatMap(URL.init(string:)),
+                    sourceTitle: record.sourceTitle,
+                    categories: configuration.categories
+                )
+                switch await ai.enrichDetailed(request) {
+                case .success(let enrichment):
+                    result.aiSummary = enrichment.summary
+                    result.aiCategory = enrichment.category
+                    result.aiTags = enrichment.tags.isEmpty ? nil : enrichment.tags
+                    result.embedding = enrichment.embedding
+                    if result.title == nil,
+                       let extracted = enrichment.title,
+                       TitleAdoption.shouldAdopt(current: record.title) {
+                        result.title = extracted
+                    }
+                case .failure(let reason):
+                    result.aiFailureReason = reason
                 }
             }
         }

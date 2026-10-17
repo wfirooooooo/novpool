@@ -340,6 +340,11 @@ public struct SearchPanelView: View {
                         Task { @MainActor in viewModel.copySelection() }
                     }
 
+                    Button("重新总结") { [viewModel] in
+                        Task { @MainActor in viewModel.resummarizeSelection() }
+                    }
+                    .disabled(snapshot.isBusy)
+
                     if result.hasLocalFile {
                         Button("预览") { [viewModel] in
                             Task { @MainActor in viewModel.quickLookSelection() }

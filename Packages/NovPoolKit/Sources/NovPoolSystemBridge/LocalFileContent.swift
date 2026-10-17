@@ -23,6 +23,9 @@ enum LocalFileContent {
 
     static func extract(from url: URL) -> ExtractedText? {
         let ext = url.pathExtension.lowercased()
+        if ext == "docx", let text = DOCXTextExtractor.extract(from: url) {
+            return ExtractedText(markdown: text, title: nil)
+        }
         guard htmlExtensions.contains(ext) || textExtensions.contains(ext) else { return nil }
 
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0

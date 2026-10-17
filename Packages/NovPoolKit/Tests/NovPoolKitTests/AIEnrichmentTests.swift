@@ -133,13 +133,23 @@ struct AIEnrichmentTests {
         let service = AIEnhancementService(completer: nil, embedder: FakeEmbedder(vector: [1]))
         #expect(await service.isEnabled == false)
         #expect(await service.enrich(Self.request(categories: [])) == nil)
+        if case .failure(let reason) = await service.enrichDetailed(Self.request(categories: [])) {
+            #expect(reason.contains("未配置"))
+        } else {
+            Issue.record("应返回未配置模型的失败原因")
+        }
     }
 
-    @Test("模型报错时返回 nil，不抛出")
+    @Test("模型报错时返回 nil，并给出可读失败原因")
     func serviceSurvivesFailure() async {
         let completer = FakeCompleter(output: "", shouldFail: true)
         let service = AIEnhancementService(completer: completer, embedder: FakeEmbedder(vector: [1]))
         #expect(await service.enrich(Self.request(categories: categories)) == nil)
+        if case .failure(let reason) = await service.enrichDetailed(Self.request(categories: categories)) {
+            #expect(reason.contains("模型请求失败"))
+        } else {
+            Issue.record("应返回模型请求失败原因")
+        }
     }
 
     @Test("向量化失败不影响摘要与标签")

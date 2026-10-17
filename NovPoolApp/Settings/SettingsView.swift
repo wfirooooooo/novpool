@@ -359,6 +359,15 @@ struct SettingsView: View {
             TextField("对话模型", text: $store.chatModel)
             TextField("向量模型", text: $store.embeddingModel)
             TextField("Ollama 地址", text: $store.ollamaBaseURL)
+            HStack(spacing: 8) {
+                Button(store.isResummarizing ? "正在总结…" : "重新总结缺失摘要") {
+                    Task { await store.resummarizeMissingSummaries() }
+                }
+                .disabled(store.isResummarizing || !store.isAIEnabled)
+                Text("对尚无摘要、但已有正文的条目再跑一轮 AI；失败原因见下方状态。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
         }
 
         Section("OpenAI 兼容接口（留空则用本地 Ollama）") {
@@ -421,10 +430,14 @@ struct SettingsView: View {
                     }
                 }
                 Button("测试连接") { Task { await store.testLocalLLM() } }
+                Button("填充已探测路径") { store.fillDetectedLocalLLMPaths() }
                 Text(store.localLLM.isRunning ? "运行中 · \(store.localLLM.configuration.baseURL.absoluteString)" : "未运行")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
+            Text(LocalLLMConfiguration.setupHint)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
             if let problem = store.localLLM.configuration.validationMessage {
                 Text(problem)
                     .font(.system(size: 10))

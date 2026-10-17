@@ -52,8 +52,13 @@ public actor AIEnhancementService {
         self.configuration = configuration
     }
 
-    public func enrich(_ request: AIEnrichmentRequest) async -> AIEnrichment? {
-        guard configuration.isEnabled, let completer else { return nil }
+    public func enrichDetailed(_ request: AIEnrichmentRequest) async -> AIEnrichmentOutcome {
+        guard configuration.isEnabled else {
+            return .failure("AI 增强已关闭（设置 → 检索与 AI）")
+        }
+        guard let completer else {
+            return .failure("未配置可用的对话模型（Ollama / OpenAI 兼容 / 本机 llama-server）")
+        }
 
         let systemPrompt = AIEnrichmentPrompt.systemPrompt(
             categories: configuration.categories,
@@ -65,7 +70,7 @@ public actor AIEnhancementService {
             maxInputCharacters: configuration.maxInputCharacters
         )
 
-        var enrichment: AIEnrichment?
+        let enrichment: AIEnrichment?
         do {
             let raw = try await completer.completeJSON(systemPrompt: systemPrompt, userPrompt: userPrompt)
             enrichment = AIEnrichmentParser.parse(
@@ -74,13 +79,23 @@ public actor AIEnhancementService {
                 maxTags: configuration.maxTags,
                 maxSummaryCharacters: configuration.maxSummaryCharacters
             )
+            if enrichment == nil {
+                return .failure("模型返回无法解析为摘要 JSON")
+            }
         } catch {
-            enrichment = nil
+            return .failure("模型请求失败：\(error.localizedDescription)")
         }
 
-        guard var result = enrichment else { return nil }
+        guard var result = enrichment else {
+            return .failure("模型返回无法解析为摘要 JSON")
+        }
         result.embedding = await embedding(for: request, enrichment: result)
-        return result
+        return .success(result)
+    }
+
+    /// best-effort：失败时返回 `nil`（入库主路径不阻塞）。
+    public func enrich(_ request: AIEnrichmentRequest) async -> AIEnrichment? {
+        await enrichDetailed(request).enrichment
     }
 
     private func embedding(for request: AIEnrichmentRequest, enrichment: AIEnrichment) async -> [Float]? {

@@ -34,7 +34,8 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
             copyText: base.copyText,
             deleteItem: base.deleteItem,
             quickLookFile: { url in quickLook.present(url: url) },
-            updateOrganization: base.updateOrganization
+            updateOrganization: base.updateOrganization,
+            resummarizeItem: base.resummarizeItem
         )
         self.viewModel = SearchViewModel(
             search: search,
@@ -97,7 +98,8 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
 
     public static func liveActions(
         deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool,
-        updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in }
+        updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in },
+        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> String = { _ in "未接线" }
     ) -> SearchActions {
         SearchActions(
             openURL: { url in NSWorkspace.shared.open(url) },
@@ -108,7 +110,8 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
                 pasteboard.setString(text, forType: .string)
             },
             deleteItem: deleteItem,
-            updateOrganization: updateOrganization
+            updateOrganization: updateOrganization,
+            resummarizeItem: resummarizeItem
         )
     }
 }

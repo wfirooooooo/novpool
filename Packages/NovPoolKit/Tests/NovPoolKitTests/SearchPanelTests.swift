@@ -15,6 +15,8 @@ final class SpyActions {
     private(set) var deletedIDs: [UUID] = []
     private(set) var quickLookedFiles: [URL] = []
     private(set) var organizations: [(UUID, KnowledgeOrganization)] = []
+    private(set) var resummarizedIDs: [UUID] = []
+    var resummarizeMessage = "已重新总结（AI 标签）"
     private(set) var dismissCount = 0
 
     func make() -> SearchActions {
@@ -29,6 +31,10 @@ final class SpyActions {
             quickLookFile: { [self] in quickLookedFiles.append($0) },
             updateOrganization: { [self] id, organization in
                 organizations.append((id, organization))
+            },
+            resummarizeItem: { [self] id in
+                resummarizedIDs.append(id)
+                return resummarizeMessage
             }
         )
     }
@@ -317,6 +323,24 @@ struct SearchPanelTests {
 
         viewModel.quickLookSelection()
         #expect(actions.quickLookedFiles == [file])
+    }
+
+    @Test("重新总结调用注入动作并展示状态")
+    func resummarizeSelection() async {
+        let search = SpySearch()
+        let item = sample(title: "待总结")
+        search.results = [item]
+        let actions = SpyActions()
+        let (viewModel, _, _) = makeViewModel(search: search, actions: actions)
+        viewModel.activate()
+        await settle()
+
+        viewModel.resummarizeSelection()
+        await settle()
+        await settle()
+
+        #expect(actions.resummarizedIDs == [item.id])
+        #expect(viewModel.statusMessage?.contains("重新总结") == true)
     }
 
     @Test("保存整理后更新结果并支持收藏筛选")

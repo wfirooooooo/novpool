@@ -150,9 +150,12 @@ struct FakeFetcher: ArticleFetching {
 struct FakeAI: AIEnriching {
     var enrichment: AIEnrichment?
     var shouldFail = false
+    var failureReason = "替身故意失败"
 
-    func enrich(_ request: AIEnrichmentRequest) async -> AIEnrichment? {
-        shouldFail ? nil : enrichment
+    func enrichDetailed(_ request: AIEnrichmentRequest) async -> AIEnrichmentOutcome {
+        if shouldFail { return .failure(failureReason) }
+        if let enrichment { return .success(enrichment) }
+        return .failure("替身未配置增强结果")
     }
 }
 

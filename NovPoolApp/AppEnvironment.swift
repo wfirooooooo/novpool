@@ -165,6 +165,9 @@ final class AppEnvironment {
                 },
                 updateOrganization: { id, organization in
                     try await searchService.updateOrganization(id: id, organization: organization)
+                },
+                resummarizeItem: { id in
+                    await orchestrator.resummarize(itemID: id).statusMessage
                 }
             )
         )
@@ -176,6 +179,9 @@ final class AppEnvironment {
             connectorRepository: connectorRepository,
             database: database
         )
+        settingsStore.resummarizeMissingHandler = {
+            await orchestrator.resummarizeMissingSummaries(limit: 20).statusMessage
+        }
         let environment = AppEnvironment(
             database: database,
             staging: staging,

@@ -10,6 +10,8 @@ public struct SearchActions: Sendable {
     public var deleteItem: @MainActor @Sendable (UUID) async throws -> Bool
     public var quickLookFile: @MainActor @Sendable (URL) -> Void
     public var updateOrganization: @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void
+    /// 返回面向用户的状态文案（成功或失败原因）。
+    public var resummarizeItem: @MainActor @Sendable (UUID) async -> String
 
     public init(
         openURL: @escaping @MainActor @Sendable (URL) -> Void,
@@ -17,7 +19,8 @@ public struct SearchActions: Sendable {
         copyText: @escaping @MainActor @Sendable (String) -> Void,
         deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool = { _ in false },
         quickLookFile: @escaping @MainActor @Sendable (URL) -> Void = { _ in },
-        updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in }
+        updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in },
+        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> String = { _ in "未接线" }
     ) {
         self.openURL = openURL
         self.revealFile = revealFile
@@ -25,6 +28,7 @@ public struct SearchActions: Sendable {
         self.deleteItem = deleteItem
         self.quickLookFile = quickLookFile
         self.updateOrganization = updateOrganization
+        self.resummarizeItem = resummarizeItem
     }
 }
 
@@ -212,6 +216,24 @@ public final class SearchViewModel {
                 statusMessage = "保存失败：\(error.localizedDescription)"
                 clearStatusLater()
             }
+        }
+    }
+
+    public func resummarizeSelection() {
+        guard let result = selectedResult else { return }
+        let id = result.id
+        isBusy = true
+        statusMessage = "正在重新总结…"
+        Task { [weak self] in
+            guard let self else { return }
+            let message = await actions.resummarizeItem(id)
+            isBusy = false
+            statusMessage = message
+            // 成功时刷新当前查询，带上新摘要。
+            if message.hasPrefix("已") {
+                await runSearch(for: query)
+            }
+            clearStatusLater()
         }
     }
 

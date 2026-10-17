@@ -10,6 +10,8 @@ public struct ContentEnrichment: Sendable, Equatable {
     public var aiCategory: String?
     public var aiTags: [String]?
     public var embedding: [Float]?
+    /// AI 未产出时的可读原因（不影响 OCR/正文落库）。
+    public var aiFailureReason: String?
 
     public init(
         title: String? = nil,
@@ -18,7 +20,8 @@ public struct ContentEnrichment: Sendable, Equatable {
         aiSummary: String? = nil,
         aiCategory: String? = nil,
         aiTags: [String]? = nil,
-        embedding: [Float]? = nil
+        embedding: [Float]? = nil,
+        aiFailureReason: String? = nil
     ) {
         self.title = title
         self.markdownBody = markdownBody
@@ -27,11 +30,16 @@ public struct ContentEnrichment: Sendable, Equatable {
         self.aiCategory = aiCategory
         self.aiTags = aiTags
         self.embedding = embedding
+        self.aiFailureReason = aiFailureReason
     }
 
     public var isEmpty: Bool {
         title == nil && markdownBody == nil && ocrText == nil
             && aiSummary == nil && aiCategory == nil && aiTags == nil && embedding == nil
+    }
+
+    public var hasAIFields: Bool {
+        aiSummary != nil || aiCategory != nil || aiTags != nil || embedding != nil
     }
 
     /// 供悬浮窗展示的一句话描述。

@@ -15,6 +15,38 @@ public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
 
     public static let defaultPort = 8080
 
+    /// 设置面板提示：默认本机路径约定。
+    public static let setupHint =
+        "常见安装：brew install llama.cpp 后二进制多在 /opt/homebrew/bin/llama-server；.gguf 模型可放在 ~/Models/"
+
+    /// 常见 llama-server 路径（按优先级）。
+    public static let commonBinaryCandidates: [String] = [
+        "/opt/homebrew/bin/llama-server",
+        "/usr/local/bin/llama-server",
+        "\(NSHomeDirectory())/.local/bin/llama-server",
+    ]
+
+    /// 返回本机已存在的第一个可执行 llama-server 路径。
+    public static func firstExistingBinaryPath(fileManager: FileManager = .default) -> String? {
+        commonBinaryCandidates.first { fileManager.isExecutableFile(atPath: $0) }
+    }
+
+    /// 返回 ~/Models 下第一个 .gguf（若目录存在）。
+    public static func firstExistingModelPath(fileManager: FileManager = .default) -> String? {
+        let modelsDir = URL(filePath: NSHomeDirectory()).appending(path: "Models")
+        guard let files = try? fileManager.contentsOfDirectory(
+            at: modelsDir,
+            includingPropertiesForKeys: nil
+        ) else {
+            return nil
+        }
+        return files
+            .filter { $0.pathExtension.lowercased() == "gguf" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .first?
+            .path(percentEncoded: false)
+    }
+
     public init(
         binaryPath: String = "",
         modelPath: String = "",

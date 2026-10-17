@@ -27,6 +27,50 @@ public struct EnrichedIngest: Sendable {
     public let record: KnowledgeItemRecord
 }
 
+/// 单条重新总结结果。
+public enum ResummarizeItemResult: Sendable, Equatable {
+    case updated(ContentEnrichment)
+    case failed(id: UUID, title: String?, reason: String)
+    case notFound(UUID)
+
+    public var statusMessage: String {
+        switch self {
+        case .updated(let enrichment):
+            return "已重新总结（\(enrichment.summaryLine)）"
+        case .failed(_, let title, let reason):
+            if let title { return "总结失败「\(title)」：\(reason)" }
+            return "总结失败：\(reason)"
+        case .notFound:
+            return "总结失败：找不到条目"
+        }
+    }
+}
+
+/// 批量重新总结报告。
+public struct ResummarizeBatchReport: Sendable, Equatable {
+    public var attempted: Int
+    public var succeeded: Int
+    public var failures: [String]
+
+    public init(attempted: Int, succeeded: Int, failures: [String]) {
+        self.attempted = attempted
+        self.succeeded = succeeded
+        self.failures = failures
+    }
+
+    public var statusMessage: String {
+        if attempted == 0 {
+            return failures.first ?? "没有需要重新总结的条目"
+        }
+        var parts = ["已处理 \(attempted) 条，成功 \(succeeded) 条"]
+        if !failures.isEmpty {
+            let preview = failures.prefix(3).joined(separator: "；")
+            parts.append("失败 \(failures.count) 条：\(preview)")
+        }
+        return parts.joined(separator: "。")
+    }
+}
+
 /// 捕获 → 暂存 → 溯源 → 落库 的主流水线。
 ///
 /// `ingest` 只做毫秒级工作并立即返回，保证拖拽松手后主线程与用户感知都不被阻塞；
@@ -179,20 +223,87 @@ public actor IngestionOrchestrator {
         let enrichment = await enricher.enrich(record: record)
         guard !enrichment.isEmpty else { return nil }
         do {
-            try await repository.updateEnrichment(
-                id: itemID,
-                markdownBody: enrichment.markdownBody,
-                ocrText: enrichment.ocrText,
-                aiSummary: enrichment.aiSummary,
-                aiCategory: enrichment.aiCategory,
-                aiTags: enrichment.aiTags,
-                embedding: enrichment.embedding,
-                title: enrichment.title
-            )
+            try await persist(enrichment: enrichment, itemID: itemID)
         } catch {
             return nil
         }
         return enrichment
+    }
+
+    /// 对单条条目重新跑补齐（含 AI 总结），失败时带可读原因。
+    public func resummarize(itemID: UUID) async -> ResummarizeItemResult {
+        guard let enricher else {
+            return .failed(id: itemID, title: nil, reason: "补齐流水线未启用")
+        }
+        guard let record = try? await repository.fetch(id: itemID) else {
+            return .notFound(itemID)
+        }
+        let enrichment = await enricher.enrich(record: record)
+        if enrichment.isEmpty {
+            let reason = enrichment.aiFailureReason ?? "没有可写入的补齐结果"
+            return .failed(id: itemID, title: record.title, reason: reason)
+        }
+        do {
+            try await persist(enrichment: enrichment, itemID: itemID)
+        } catch {
+            return .failed(id: itemID, title: record.title, reason: "写入失败：\(error.localizedDescription)")
+        }
+        // 重新总结以 AI 字段为准；仅有 OCR/正文时也算部分成功，但仍提示 AI 原因。
+        if enrichment.hasAIFields {
+            return .updated(enrichment)
+        }
+        if let reason = enrichment.aiFailureReason {
+            return .failed(id: itemID, title: record.title, reason: reason)
+        }
+        return .updated(enrichment)
+    }
+
+    private func persist(enrichment: ContentEnrichment, itemID: UUID) async throws {
+        try await repository.updateEnrichment(
+            id: itemID,
+            markdownBody: enrichment.markdownBody,
+            ocrText: enrichment.ocrText,
+            aiSummary: enrichment.aiSummary,
+            aiCategory: enrichment.aiCategory,
+            aiTags: enrichment.aiTags,
+            embedding: enrichment.embedding,
+            title: enrichment.title
+        )
+    }
+
+    /// 批量重新总结：默认处理尚无 AI 摘要、但已有正文/OCR 的条目。
+    public func resummarizeMissingSummaries(limit: Int = 20) async -> ResummarizeBatchReport {
+        let records: [KnowledgeItemRecord]
+        do {
+            records = try await repository.recordsNeedingAISummary(limit: limit)
+        } catch {
+            return ResummarizeBatchReport(
+                attempted: 0,
+                succeeded: 0,
+                failures: ["读取待总结条目失败：\(error.localizedDescription)"]
+            )
+        }
+        guard !records.isEmpty else {
+            return ResummarizeBatchReport(attempted: 0, succeeded: 0, failures: ["没有需要重新总结的条目"])
+        }
+
+        var succeeded = 0
+        var failures: [String] = []
+        for record in records {
+            switch await resummarize(itemID: record.id) {
+            case .updated:
+                succeeded += 1
+            case .failed(_, let title, let reason):
+                failures.append("「\(title ?? record.title)」：\(reason)")
+            case .notFound:
+                failures.append("「\(record.title)」：条目已不存在")
+            }
+        }
+        return ResummarizeBatchReport(
+            attempted: records.count,
+            succeeded: succeeded,
+            failures: failures
+        )
     }
 
     /// 同步等待补齐完成（单元测试与无界面自检使用；App 走 `enrichAfterIngest`）。
