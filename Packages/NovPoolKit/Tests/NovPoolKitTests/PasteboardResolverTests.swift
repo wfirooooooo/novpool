@@ -28,6 +28,9 @@ struct PasteboardResolverTests {
         let content = try #require(resolver.resolve(from: pasteboard))
         #expect(content.contentType == .image)
         #expect(content.fileURLs.map(\.lastPathComponent) == ["a.png", "b.txt"])
+        let expanded = content.expandedForIngest()
+        #expect(expanded.map(\.contentType) == [.image, .genericFile])
+        #expect(expanded.map { $0.fileURLs.map(\.lastPathComponent) } == [["a.png"], ["b.txt"]])
     }
 
     @Test("P1：网页图片走内存字节流，不依赖图片 URL 二次下载")

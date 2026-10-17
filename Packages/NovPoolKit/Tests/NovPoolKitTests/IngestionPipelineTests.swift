@@ -27,6 +27,29 @@ struct IngestionPipelineTests {
         return Harness(database: database, repository: repository, staging: staging, orchestrator: orchestrator)
     }
 
+    @Test("多文件拖拽：每条路径各自入库")
+    func ingestMultipleFilesSeparately() async throws {
+        let harness = try await makeHarness(context: SourceContext(appBundleID: "com.apple.finder"))
+        let directory = try TestSupport.makeTemporaryDirectory("multifile")
+        let first = directory.appending(path: "one.txt")
+        let second = directory.appending(path: "two.md")
+        try "alpha".write(to: first, atomically: true, encoding: .utf8)
+        try "beta".write(to: second, atomically: true, encoding: .utf8)
+
+        let content = ResolvedDragContent(
+            contentType: .genericFile,
+            fileURLs: [first, second]
+        )
+        var records: [KnowledgeItemRecord] = []
+        for item in content.expandedForIngest() {
+            let result = try await harness.orchestrator.ingest(item)
+            records.append(result.record)
+        }
+        #expect(records.count == 2)
+        #expect(Set(records.map(\.title)) == Set(["one", "two"]))
+        #expect(try await harness.repository.count() == 2)
+    }
+
     @Test("拖拽选中文字：写入标题、正文与浏览器溯源")
     func ingestPlainText() async throws {
         let context = SourceContext(

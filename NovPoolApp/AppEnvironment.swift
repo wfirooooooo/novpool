@@ -221,9 +221,13 @@ final class AppEnvironment {
 
     // MARK: - 全局拖拽兜底
 
-    /// 松手落在悬浮图标上时，绕开拖拽事件直接抓取内容：
-    /// 1) 辅助功能读取选中文字；2) 浏览器活跃标签（URL + 标题）；3) 通用粘贴板。
+    /// 松手落在悬浮图标上时的兜底通路。
+    /// 优先读拖拽粘贴板；原生 `NSDraggingDestination` 已处理时由协调器抑制，避免双触发。
     func wireGlobalDragCapture(viewModel: CaptureViewModel) {
+        let coordinator = panelController.dragCoordinator
+        globalDragMonitor.shouldAcceptDrop = {
+            !coordinator.shouldSuppressFallback
+        }
         globalDragMonitor.onDrop = { [weak viewModel] in
             Task { @MainActor in
                 guard let viewModel else { return }
@@ -233,56 +237,39 @@ final class AppEnvironment {
     }
 
     private func captureFromFallback(into viewModel: CaptureViewModel) async {
-        let selection = AXSelectionReader().selectedText()
-        if let selection, !selection.isEmpty {
-            NovPoolDiagnostics.log("全局兜底：抓到选中文字（\(selection.count) 字）")
-            viewModel.handleDrop(
-                ResolvedDragContent(contentType: .plainText, text: selection),
-                zoneIndex: nil
-            )
-            return
-        }
-
         // 兜底路径是用户手动触发，放宽溯源超时：首次调用会弹「自动化」授权框，
         // 150ms 根本来不及授权，所以这里给 2 秒。
         let extractor = BrowserContextExtractor()
         let context = await extractor.captureContext(now: Date(), timeout: .seconds(2))
-        if let url = context.pageURL {
-            // 标签指向本机文件（file://）：直接把文件本身归档，而不是只记一条链接。
-            if url.isFileURL, FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
-                NovPoolDiagnostics.log("全局兜底：抓取本地文件 \(url.lastPathComponent)")
-                viewModel.handleDrop(
-                    ResolvedDragContent(
-                        contentType: FileKind.of(url: url).contentType,
-                        fileURLs: [url],
-                        linkTitle: context.pageTitle
-                    ),
-                    zoneIndex: nil
-                )
-                return
-            }
-            NovPoolDiagnostics.log("全局兜底：抓到浏览器标签 \(url.absoluteString)")
-            viewModel.handleDrop(
-                ResolvedDragContent(
-                    contentType: .webLink,
-                    pageURL: url,
-                    linkTitle: context.pageTitle
-                ),
-                zoneIndex: nil
-            )
-            return
-        }
+        let pageURL = context.pageURL
+        let fileExists = pageURL.map {
+            $0.isFileURL && FileManager.default.fileExists(atPath: $0.path(percentEncoded: false))
+        } ?? false
 
-        if let content = PasteboardResolver().resolve(from: NSPasteboardReader()) {
-            NovPoolDiagnostics.log("全局兜底：使用通用粘贴板（\(content.contentType.rawValue)）")
-            viewModel.handleDrop(content, zoneIndex: nil)
-        } else {
+        let decision = FallbackCaptureResolver.resolve(
+            dragPasteboard: NSPasteboardReader(pasteboard: NSPasteboard(name: .drag)),
+            generalPasteboard: NSPasteboardReader(pasteboard: .general),
+            browser: .init(
+                pageURL: pageURL,
+                pageTitle: context.pageTitle,
+                fileExistsAtPageURL: fileExists
+            ),
+            selectedText: AXSelectionReader().selectedText()
+        )
+
+        guard let decision else {
             NovPoolDiagnostics.log(
                 "全局兜底：没有可抓取的内容（前台=\(context.appBundleID)；"
                     + "若这是浏览器，请在「系统设置 → 隐私与安全性 → 自动化」里允许 NovPool 控制它）"
             )
             viewModel.showTransientStatus("没有识别到可保存的内容", isError: true)
+            return
         }
+
+        NovPoolDiagnostics.log(
+            "全局兜底：来源=\(decision.source) type=\(decision.content.contentType.rawValue)"
+        )
+        viewModel.handleDrop(decision.content, zoneIndex: nil)
     }
 
     func showPanel() {

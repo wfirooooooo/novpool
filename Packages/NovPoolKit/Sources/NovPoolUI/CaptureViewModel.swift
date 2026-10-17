@@ -70,14 +70,19 @@ public final class CaptureViewModel {
 
     public func handleDrop(_ content: ResolvedDragContent, zoneIndex: Int?) {
         let zone = zoneIndex.flatMap { zones.indices.contains($0) ? zones[$0] : nil }
+        let items = content.expandedForIngest()
         dragSessionEnded()
         isBusy = true
 
         Task { [handler] in
             defer { isBusy = false }
             do {
-                let outcome = try await handler(content, zone)
-                showStatus(Self.describe(outcome), isError: false)
+                var outcomes: [CaptureOutcome] = []
+                outcomes.reserveCapacity(items.count)
+                for item in items {
+                    outcomes.append(try await handler(item, zone))
+                }
+                showStatus(Self.describe(outcomes), isError: false)
             } catch {
                 showStatus(Self.describe(error), isError: true)
             }
@@ -110,6 +115,22 @@ public final class CaptureViewModel {
             return "已收录：\(outcome.title)"
         }
         return "已收录 → \(outcome.routeTargets.joined(separator: "、"))：\(outcome.title)"
+    }
+
+    /// 多文件一次投递的汇总文案。
+    static func describe(_ outcomes: [CaptureOutcome]) -> String {
+        guard let first = outcomes.first else { return "已收录" }
+        guard outcomes.count > 1 else { return describe(first) }
+
+        let saved = outcomes.filter { !$0.isDuplicate }.count
+        let duplicates = outcomes.count - saved
+        if duplicates == 0 {
+            return "已收录 \(saved) 项"
+        }
+        if saved == 0 {
+            return "已存在 \(duplicates) 项"
+        }
+        return "已收录 \(saved) 项，跳过 \(duplicates) 个重复"
     }
 
     static func describe(_ error: any Error) -> String {

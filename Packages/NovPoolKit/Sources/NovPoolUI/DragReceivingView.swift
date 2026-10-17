@@ -19,6 +19,8 @@ public final class DragCaptureBridge {
     /// 参数为解析出的内容与命中的扇区索引（`nil` 表示仍在图标死区，走智能路由）。
     public var onDrop: (@MainActor (ResolvedDragContent, Int?) -> Void)?
     public var resolver = PasteboardResolver()
+    /// 与全局鼠标兜底共享，避免同一次松手双触发。
+    public var coordinator: DragCaptureCoordinator?
     /// 拖拽事件日志，便于排查「某个浏览器拖过来没反应」。
     public var logger: (@MainActor (String) -> Void)?
 
@@ -33,6 +35,8 @@ public final class DragReceivingView: NSView {
     private var hoverTask: Task<Void, Never>?
     private var hoverExpanded = false
     private var currentZone: Int?
+    /// 本轮 `performDragOperation` 是否已成功投递（避免 `draggingEnded` 误清抑制窗口）。
+    private var dropHandled = false
 
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -79,6 +83,8 @@ public final class DragReceivingView: NSView {
         let types = pasteboardTypes(sender)
         bridge?.logger?("拖拽进入：types=[\(types.joined(separator: ", "))]")
         guard !types.isEmpty else { return [] }
+        dropHandled = false
+        bridge?.coordinator?.markNativeDragEntered()
         scheduleHoverExpansion()
         return .copy
     }
@@ -94,10 +100,18 @@ public final class DragReceivingView: NSView {
     }
 
     public override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        if !dropHandled {
+            bridge?.coordinator?.markNativeDragCancelled()
+        }
         reset()
     }
 
     public override func draggingEnded(_ sender: any NSDraggingInfo) {
+        // perform 成功时已 markNativeDropHandled 并打开短时抑制；其余情况清掉会话。
+        if !dropHandled {
+            bridge?.coordinator?.markNativeDragCancelled()
+        }
+        dropHandled = false
         reset()
     }
 
@@ -111,9 +125,13 @@ public final class DragReceivingView: NSView {
         let reader = NSPasteboardReader(pasteboard: sender.draggingPasteboard)
         guard let content = bridge.resolver.resolve(from: reader) else {
             bridge.logger?("拖拽落库失败：无法解析，types=[\(pasteboardTypes(sender).joined(separator: ", "))]")
+            bridge.coordinator?.markNativeDragCancelled()
+            dropHandled = false
             return false
         }
         bridge.logger?("拖拽落库：type=\(content.contentType.rawValue) url=\(content.pageURL?.absoluteString ?? "无")")
+        dropHandled = true
+        bridge.coordinator?.markNativeDropHandled()
         bridge.onDrop?(content, currentZone)
         return true
     }

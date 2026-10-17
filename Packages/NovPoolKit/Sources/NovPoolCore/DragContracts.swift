@@ -75,4 +75,16 @@ public struct ResolvedDragContent: Sendable, Equatable {
         self.html = html
         self.matchedTypeIdentifiers = matchedTypeIdentifiers
     }
+
+    /// 多文件拖拽时拆成「一文件一条」；其它类型原样返回单元素数组。
+    public func expandedForIngest() -> [ResolvedDragContent] {
+        guard fileURLs.count > 1 else { return [self] }
+        return fileURLs.map { url in
+            ResolvedDragContent(
+                contentType: FileKind.of(url: url).contentType,
+                fileURLs: [url],
+                matchedTypeIdentifiers: matchedTypeIdentifiers
+            )
+        }
+    }
 }

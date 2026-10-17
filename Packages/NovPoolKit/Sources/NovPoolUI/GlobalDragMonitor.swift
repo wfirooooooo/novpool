@@ -13,6 +13,8 @@ public final class GlobalDragMonitor {
     public weak var target: (any DragTargetProviding)?
     /// 在图标上松手。
     public var onDrop: @MainActor () -> Void = {}
+    /// 返回 `false` 时跳过本次兜底（原生通路已处理或正在处理）。
+    public var shouldAcceptDrop: @MainActor () -> Bool = { true }
     public var logger: (@MainActor (String) -> Void)?
 
     private var globalMonitor: Any?
@@ -86,7 +88,11 @@ public final class GlobalDragMonitor {
             let inside = Self.isDrop(iconRect: iconRect, point: point, movedDistance: movedDistance)
             logger?("鼠标松开：inside=\(inside) 位移=\(Int(movedDistance))pt")
             if inside {
-                onDrop()
+                if shouldAcceptDrop() {
+                    onDrop()
+                } else {
+                    logger?("跳过全局兜底：原生拖拽通路已处理或进行中")
+                }
             }
             setHovering(false)
         default:

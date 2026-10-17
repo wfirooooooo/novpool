@@ -7,6 +7,8 @@ import NovPoolCore
 public final class PanelController: NSObject, NSWindowDelegate, DragTargetProviding {
     public let panel: NovPoolPanel
     public let viewModel: CaptureViewModel
+    /// 原生拖拽与全局兜底的共享协调器。
+    public let dragCoordinator: DragCaptureCoordinator
 
     private let hostView: PassthroughHostingView<PanelRootView>
     private let positionStore: PanelPositionStore
@@ -19,14 +21,17 @@ public final class PanelController: NSObject, NSWindowDelegate, DragTargetProvid
         // 回落到主显示器（screens[0] 即带菜单栏的那块）更可靠。
         screen: NSScreen? = NSScreen.screens.first ?? NSScreen.main,
         canvasSize: CGSize = NovPoolLayout.canvasSize,
-        positionStore: PanelPositionStore = PanelPositionStore()
+        positionStore: PanelPositionStore = PanelPositionStore(),
+        dragCoordinator: DragCaptureCoordinator = DragCaptureCoordinator()
     ) {
         self.viewModel = viewModel
         self.panel = NovPoolPanel(canvasSize: canvasSize)
         self.positionStore = positionStore
+        self.dragCoordinator = dragCoordinator
 
         let bridge = DragCaptureBridge()
         bridge.zoneCount = viewModel.zones.count
+        bridge.coordinator = dragCoordinator
         // 拖拽诊断接到启动日志：排查「某个浏览器拖过来没反应」时，
         // 日志会直接列出该次拖拽的粘贴板类型。
         bridge.logger = { NovPoolDiagnostics.log($0) }
