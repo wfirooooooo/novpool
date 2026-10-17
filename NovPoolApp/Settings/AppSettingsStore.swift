@@ -39,6 +39,9 @@ final class AppSettingsStore {
     private(set) var queueCounts: [String: Int] = [:]
     private(set) var statusMessage: String?
     private(set) var statusIsError = false
+    /// 云连接器授权健康（id → 状态）。
+    private(set) var authStatuses: [String: ConnectorAuthStatus] = [:]
+    private(set) var isProbingAuth = false
 
     // 云端连接器表单草稿
     var notionToken = ""
@@ -84,7 +87,7 @@ final class AppSettingsStore {
         self.database = database
         self.keychain = keychain
 
-        let settings = NovPoolSettings.load(defaults)
+        let settings = NovPoolSettings.load(defaults, keychain: keychain)
         searchHotKey = defaults.string(forKey: "novpool.hotkey") ?? "cmd+shift+space"
         isAIEnabled = settings.isAIEnabled
         categoriesText = settings.categories.joined(separator: "、")
@@ -98,6 +101,19 @@ final class AppSettingsStore {
         defaultConnectorIDsText = settings.defaultConnectorIDs.joined(separator: ",")
         zoneDrafts = DropZoneConfiguration.zones(from: defaults.string(forKey: DropZoneConfiguration.defaultsKey))
         prefersLocalLLM = defaults.bool(forKey: "novpool.llama.enabled")
+        driveClientID = defaults.string(forKey: "novpool.oauth.gdrive.clientID") ?? ""
+        driveFolderID = defaults.string(forKey: "novpool.oauth.gdrive.folderID") ?? ""
+        oneDriveClientID = defaults.string(forKey: "novpool.oauth.onedrive.clientID") ?? ""
+        oneDriveTenant = defaults.string(forKey: "novpool.oauth.onedrive.tenant") ?? "common"
+        oneDriveFolderPath = defaults.string(forKey: "novpool.oauth.onedrive.folderPath") ?? "NovPool"
+        notionClientID = defaults.string(forKey: "novpool.oauth.notion.clientID") ?? ""
+        notionClientSecret = (try? keychain.loadString(account: "notion.oauth.clientSecret")) ?? ""
+        notionDatabaseID = defaults.string(forKey: "novpool.notion.databaseID") ?? ""
+        notionTitleProperty = defaults.string(forKey: "novpool.notion.titleProperty") ?? "Name"
+        notionUrlProperty = defaults.string(forKey: "novpool.notion.urlProperty") ?? ""
+        notionTagsProperty = defaults.string(forKey: "novpool.notion.tagsProperty") ?? ""
+        notionCategoryProperty = defaults.string(forKey: "novpool.notion.categoryProperty") ?? ""
+        notionSummaryProperty = defaults.string(forKey: "novpool.notion.summaryProperty") ?? ""
         authorizer = ConnectorAuthorizationCoordinator(
             session: WebBrowserAuthorizationSession(logger: { NovPoolLog.write($0) }),
             credentials: keychain,
@@ -109,6 +125,23 @@ final class AppSettingsStore {
 
     func reloadConnectors() async {
         connectors = (try? await connectorRepository.list()) ?? []
+    }
+
+    /// 探测各云连接器钥匙串凭据是否仍可用。
+    func refreshAuthStatuses() async {
+        isProbingAuth = true
+        defer { isProbingAuth = false }
+        let hub = ConnectorHub(repository: connectorRepository, keychain: keychain)
+        var next: [String: ConnectorAuthStatus] = [:]
+        for connector in connectors {
+            switch connector.connectorType {
+            case "notion", "gdrive_api", "onedrive_api":
+                next[connector.id] = await hub.probeAuthentication(connectorID: connector.id)
+            default:
+                continue
+            }
+        }
+        authStatuses = next
     }
 
     func reloadQueue() async {
@@ -129,10 +162,11 @@ final class AppSettingsStore {
         } else {
             defaults.set(openAIBaseURL, forKey: "novpool.openai.baseURL")
         }
-        if openAIAPIKey.isEmpty {
-            defaults.removeObject(forKey: "novpool.openai.apiKey")
-        } else {
-            defaults.set(openAIAPIKey, forKey: "novpool.openai.apiKey")
+        do {
+            try NovPoolSettings.saveOpenAIAPIKey(openAIAPIKey, defaults: defaults, keychain: keychain)
+        } catch {
+            showStatus("API Key 写入钥匙串失败：\(error.localizedDescription)", isError: true)
+            return
         }
         defaults.set(isSyncEnabled, forKey: "novpool.sync.enabled")
         defaults.set(routeRulesJSON, forKey: "novpool.routes")
@@ -143,7 +177,30 @@ final class AppSettingsStore {
                 .filter { !$0.isEmpty },
             forKey: "novpool.connectors.default"
         )
+        persistOAuthDrafts()
         showStatus("已保存（快捷键、路由与连接器变更需要重启 NovPool 生效）")
+    }
+
+    /// 持久化 OAuth 应用配置（Client ID 等非令牌字段），重启后仍可点「重新授权」。
+    private func persistOAuthDrafts() {
+        defaults.set(driveClientID, forKey: "novpool.oauth.gdrive.clientID")
+        defaults.set(driveFolderID, forKey: "novpool.oauth.gdrive.folderID")
+        defaults.set(oneDriveClientID, forKey: "novpool.oauth.onedrive.clientID")
+        defaults.set(oneDriveTenant, forKey: "novpool.oauth.onedrive.tenant")
+        defaults.set(oneDriveFolderPath, forKey: "novpool.oauth.onedrive.folderPath")
+        defaults.set(notionClientID, forKey: "novpool.oauth.notion.clientID")
+        defaults.set(notionDatabaseID, forKey: "novpool.notion.databaseID")
+        defaults.set(notionTitleProperty, forKey: "novpool.notion.titleProperty")
+        defaults.set(notionUrlProperty, forKey: "novpool.notion.urlProperty")
+        defaults.set(notionTagsProperty, forKey: "novpool.notion.tagsProperty")
+        defaults.set(notionCategoryProperty, forKey: "novpool.notion.categoryProperty")
+        defaults.set(notionSummaryProperty, forKey: "novpool.notion.summaryProperty")
+        let secret = notionClientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        if secret.isEmpty {
+            try? keychain.delete(account: "notion.oauth.clientSecret")
+        } else {
+            try? keychain.store(secret, account: "notion.oauth.clientSecret")
+        }
     }
 
     func validateRouteRules() {
@@ -190,11 +247,16 @@ final class AppSettingsStore {
 
     // MARK: - 云端连接器
 
-    /// 用当前 Token 拉取 Notion 数据库列表，供下拉选择（需要联网与有效 Token）。
+    /// 用钥匙串里的 Notion Token 拉取数据库列表（优先 OAuth 结果，回退草稿 Token）。
     func fetchNotionDatabases() async {
         isFetchingNotionDatabases = true
         defer { isFetchingNotionDatabases = false }
-        let connector = NotionConnector(token: notionToken.isEmpty ? nil : notionToken)
+        let token = await resolvedNotionToken()
+        guard let token, !token.isEmpty else {
+            showStatus("请先完成 Notion 浏览器授权", isError: true)
+            return
+        }
+        let connector = NotionConnector(token: token)
         do {
             let config = NotionConnector.Config(databaseID: notionDatabaseID, titleProperty: notionTitleProperty)
             notionDatabases = try await connector.listDatabases(
@@ -206,8 +268,22 @@ final class AppSettingsStore {
                 showStatus("拉到 \(notionDatabases.count) 个数据库")
             }
         } catch {
-            showStatus("拉取数据库失败：\(error.localizedDescription)", isError: true)
+            let message = SecretRedactor.redact(
+                (error as? NovPoolError)?.errorDescription ?? error.localizedDescription
+            )
+            showStatus("拉取数据库失败：\(message)", isError: true)
         }
+    }
+
+    private func resolvedNotionToken() async -> String? {
+        if let record = try? await connectorRepository.fetch(id: "notion"),
+           let account = record.keychainAccountRef,
+           let token = try? keychain.loadString(account: account),
+           !token.isEmpty {
+            return token
+        }
+        let draft = notionToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        return draft.isEmpty ? nil : draft
     }
 
     func saveNotionConnector() async {
@@ -243,6 +319,7 @@ final class AppSettingsStore {
 
     /// 浏览器授权（Google Drive）：用户只点按钮 + 登录，令牌自动写入钥匙串。
     func authorizeGoogleDrive() async {
+        persistOAuthDrafts()
         await runAuthorization(label: "Google Drive") {
             try await self.authorizer.authorizeOAuthConnector(
                 connectorID: "gdrive",
@@ -259,6 +336,7 @@ final class AppSettingsStore {
     }
 
     func authorizeOneDrive() async {
+        persistOAuthDrafts()
         await runAuthorization(label: "OneDrive") {
             try await self.authorizer.authorizeOAuthConnector(
                 connectorID: "onedrive",
@@ -276,6 +354,7 @@ final class AppSettingsStore {
 
     /// 浏览器授权（Notion）：授权后 token 进钥匙串，随后再挑数据库与属性。
     func authorizeNotion() async {
+        persistOAuthDrafts()
         let config = notionConfig()
         await runAuthorization(label: "Notion") {
             try await self.authorizer.authorizeNotionConnector(
@@ -286,6 +365,17 @@ final class AppSettingsStore {
                 clientSecret: self.notionClientSecret,
                 config: config
             )
+        }
+    }
+
+    /// 按连接器类型触发重新授权（列表行「重新授权」按钮）。
+    func reauthorize(connectorID: String) async {
+        switch connectorID {
+        case "gdrive": await authorizeGoogleDrive()
+        case "onedrive": await authorizeOneDrive()
+        case "notion": await authorizeNotion()
+        default:
+            showStatus("未知连接器：\(connectorID)", isError: true)
         }
     }
 
@@ -333,10 +423,13 @@ final class AppSettingsStore {
         do {
             let outcome = try await work()
             await reloadConnectors()
+            await refreshAuthStatuses()
             showStatus(outcome.detail)
             NovPoolLog.write("授权：成功 - \(outcome.detail)")
         } catch {
-            let message = (error as? NovPoolError)?.errorDescription ?? error.localizedDescription
+            let message = SecretRedactor.redact(
+                (error as? NovPoolError)?.errorDescription ?? error.localizedDescription
+            )
             showStatus("授权失败：\(message)", isError: true)
             NovPoolLog.write("授权：失败 - \(message)")
         }
@@ -382,6 +475,10 @@ final class AppSettingsStore {
     }
 
     func delete(connectorID: String) async {
+        if let record = try? await connectorRepository.fetch(id: connectorID),
+           let account = record.keychainAccountRef {
+            try? keychain.delete(account: account)
+        }
         try? await connectorRepository.delete(id: connectorID)
         await reloadConnectors()
         showStatus("已删除连接器：\(connectorID)")

@@ -1,4 +1,5 @@
 import Foundation
+import NovPoolCore
 
 /// 极简启动日志：写入 `~/Library/Logs/NovPool.log`，同时镜像到 stderr。
 ///
@@ -40,10 +41,11 @@ enum NovPoolLog {
     }
 
     static func write(_ message: String) {
-        FileHandle.standardError.write(Data("NovPool: \(message)\n".utf8))
+        let safe = SecretRedactor.redact(message)
+        FileHandle.standardError.write(Data("NovPool: \(safe)\n".utf8))
         lock.lock()
         defer { lock.unlock() }
-        append(message, to: fileURL)
+        append(safe, to: fileURL)
     }
 
     private static func append(_ message: String, to url: URL) {

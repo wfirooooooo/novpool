@@ -1,13 +1,15 @@
 import Foundation
 import NovPoolCore
+import NovPoolStorage
 import NovPoolUI
 import NovPoolSystemBridge
 
 /// 运行期设置。
 ///
-/// Phase 2 先用 `UserDefaults`（可用 `defaults write com.novpool.app ...` 配置）；
-/// Phase 4 的设置面板会把这些键接到 UI 上。
+/// 多数项在 `UserDefaults`；OpenAI API Key 走钥匙串（D4）。
 struct NovPoolSettings: Sendable {
+    static let openAIAPIKeyAccount = "openai.apiKey"
+    static let openAIAPIKeyDefaultsKey = "novpool.openai.apiKey"
     var isAIEnabled: Bool
     var ollamaBaseURL: URL
     var chatModel: String
@@ -42,7 +44,10 @@ struct NovPoolSettings: Sendable {
         zones: DropZone.defaultZones
     )
 
-    static func load(_ defaults: UserDefaults = .standard) -> NovPoolSettings {
+    static func load(
+        _ defaults: UserDefaults = .standard,
+        keychain: KeychainStore = KeychainStore()
+    ) -> NovPoolSettings {
         let settings = NovPoolSettings.defaults
         return NovPoolSettings(
             isAIEnabled: defaults.object(forKey: "novpool.ai.enabled") as? Bool ?? settings.isAIEnabled,
@@ -52,7 +57,7 @@ struct NovPoolSettings: Sendable {
             embeddingModel: defaults.string(forKey: "novpool.ai.embeddingModel") ?? settings.embeddingModel,
             categories: defaults.stringArray(forKey: "novpool.ai.categories") ?? settings.categories,
             openAIBaseURL: defaults.string(forKey: "novpool.openai.baseURL").flatMap(URL.init(string:)),
-            openAIAPIKey: defaults.string(forKey: "novpool.openai.apiKey"),
+            openAIAPIKey: loadOpenAIAPIKey(defaults: defaults, keychain: keychain),
             searchHotKey: defaults.string(forKey: "novpool.hotkey")
                 .flatMap(HotKeySpec.init(named:)) ?? settings.searchHotKey,
             isSyncEnabled: defaults.object(forKey: "novpool.sync.enabled") as? Bool ?? settings.isSyncEnabled,
@@ -61,6 +66,37 @@ struct NovPoolSettings: Sendable {
                 ?? settings.defaultConnectorIDs,
             zones: DropZoneConfiguration.zones(from: defaults.string(forKey: DropZoneConfiguration.defaultsKey))
         )
+    }
+
+    /// 钥匙串优先；若仅有 UserDefaults 遗留值则迁移后删除偏好设置里的明文。
+    static func loadOpenAIAPIKey(
+        defaults: UserDefaults,
+        keychain: KeychainStore
+    ) -> String? {
+        if let fromKeychain = try? keychain.loadString(account: openAIAPIKeyAccount),
+           !fromKeychain.isEmpty {
+            return fromKeychain
+        }
+        guard let legacy = defaults.string(forKey: openAIAPIKeyDefaultsKey), !legacy.isEmpty else {
+            return nil
+        }
+        try? keychain.store(legacy, account: openAIAPIKeyAccount)
+        defaults.removeObject(forKey: openAIAPIKeyDefaultsKey)
+        return legacy
+    }
+
+    static func saveOpenAIAPIKey(
+        _ key: String?,
+        defaults: UserDefaults,
+        keychain: KeychainStore
+    ) throws {
+        defaults.removeObject(forKey: openAIAPIKeyDefaultsKey)
+        let trimmed = key?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            try keychain.delete(account: openAIAPIKeyAccount)
+        } else {
+            try keychain.store(trimmed, account: openAIAPIKeyAccount)
+        }
     }
 
     /// 解析路由规则：容错——JSON 写错时按「无规则」处理，不让整个 app 起不来。

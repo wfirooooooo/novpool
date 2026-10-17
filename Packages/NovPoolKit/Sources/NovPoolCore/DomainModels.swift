@@ -185,8 +185,9 @@ extension NovPoolError: LocalizedError {
             "数据库错误：\(detail)"
         case .connectorNotConfigured(let connectorID):
             "连接器未配置或已禁用：\(connectorID)"
-        case .authenticationRequired(let connectorID):
-            "连接器缺少有效凭据：\(connectorID)"
+        case .authenticationRequired(let detail):
+            // detail 可能是连接器 ID，也可能是刷新失败原因；统一引导用户去设置重授。
+            "授权失效：\(SecretRedactor.redact(detail))。请打开设置重新授权对应云服务。"
         case .notImplemented(let feature):
             "功能尚未实现：\(feature)"
         }

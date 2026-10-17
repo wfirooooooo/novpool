@@ -80,6 +80,16 @@ struct SettingsView: View {
                 Text("还没有目标端。至少添加一个本地归档目录就能开始同步。")
                     .foregroundStyle(.secondary)
             }
+            HStack {
+                Button(store.isProbingAuth ? "检查中…" : "检查授权状态") {
+                    Task { await store.refreshAuthStatuses() }
+                }
+                .disabled(store.isProbingAuth)
+                Text("云连接器失效时会提示「需重新授权」，发件箱遇到授权错误会直接停止重试。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+
             ForEach(store.connectors) { connector in
                 HStack(spacing: 10) {
                     Image(systemName: icon(for: connector.connectorType))
@@ -89,8 +99,20 @@ struct SettingsView: View {
                         Text("\(connector.connectorType) · \(connector.id)")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
+                        if let status = store.authStatuses[connector.id] {
+                            Text(status.detail.map { "\(status.title)：\($0)" } ?? status.title)
+                                .font(.system(size: 10))
+                                .foregroundStyle(status.needsAttention ? Color.orange : Color.secondary)
+                                .lineLimit(2)
+                        }
                     }
                     Spacer()
+                    if store.authStatuses[connector.id]?.needsAttention == true {
+                        Button("重新授权") {
+                            Task { await store.reauthorize(connectorID: connector.id) }
+                        }
+                        .disabled(store.isAuthorizing)
+                    }
                     Toggle("启用", isOn: Binding(
                         get: { connector.isEnabled },
                         set: { value in
@@ -106,7 +128,7 @@ struct SettingsView: View {
                         Image(systemName: "trash")
                     }
                     .buttonStyle(.borderless)
-                    .help("删除该连接器")
+                    .help("删除该连接器（同时清除钥匙串凭据）")
                 }
             }
         }
@@ -372,7 +394,7 @@ struct SettingsView: View {
 
         Section("OpenAI 兼容接口（留空则用本地 Ollama）") {
             TextField("Base URL", text: $store.openAIBaseURL)
-            SecureField("API Key（仅保存在本机偏好设置）", text: $store.openAIAPIKey)
+            SecureField("API Key（保存在本机钥匙串）", text: $store.openAIAPIKey)
         }
 
         localLLMSection

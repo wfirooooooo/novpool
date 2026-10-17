@@ -245,8 +245,18 @@ public actor OutboxSyncWorker {
                 message: nil
             ))
         } catch {
-            let retryCount = job.retryCount + 1
             let message = Self.describe(error)
+            // 授权失效重试无意义，直接放弃并提示去设置重新授权。
+            if Self.isAuthenticationFailure(error) {
+                await abandon(
+                    job: job,
+                    reason: "\(message)（请到设置重新授权）",
+                    now: now,
+                    result: &result
+                )
+                return
+            }
+            let retryCount = job.retryCount + 1
             if retryCount >= configuration.maxRetryCount {
                 await abandon(job: job, reason: "重试 \(retryCount) 次后放弃：\(message)", now: now, result: &result)
             } else {
@@ -308,8 +318,17 @@ public actor OutboxSyncWorker {
 
     private static func describe(_ error: any Error) -> String {
         if let novPoolError = error as? NovPoolError {
-            return novPoolError.errorDescription ?? "\(novPoolError)"
+            return SecretRedactor.redact(novPoolError.errorDescription ?? "\(novPoolError)")
         }
-        return error.localizedDescription
+        return SecretRedactor.redact(error.localizedDescription)
+    }
+
+    private static func isAuthenticationFailure(_ error: any Error) -> Bool {
+        if case .authenticationRequired = error as? NovPoolError { return true }
+        let text = describe(error).lowercased()
+        return text.contains("授权失效")
+            || text.contains("invalid_grant")
+            || text.contains("请重新授权")
+            || text.contains("缺少 refresh token")
     }
 }

@@ -276,7 +276,7 @@ public struct ConnectorAuthorizationCoordinator: Sendable {
         guard (200..<300).contains(response.statusCode),
               let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
               let token = object["access_token"] as? String, !token.isEmpty else {
-            let detail = String(decoding: response.body.prefix(200), as: UTF8.self)
+            let detail = SecretRedactor.redact(String(decoding: response.body.prefix(200), as: UTF8.self))
             throw NovPoolError.authenticationRequired("Notion 换取令牌失败（HTTP \(response.statusCode)）：\(detail)")
         }
 

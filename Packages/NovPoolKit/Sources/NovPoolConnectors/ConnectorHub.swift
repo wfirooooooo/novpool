@@ -58,6 +58,34 @@ public struct ConnectorHub: ConnectorProviding, @unchecked Sendable {
         )
     }
 
+    /// 探测云连接器授权是否仍可用（不要求启用状态，供设置面板展示）。
+    public func probeAuthentication(connectorID: String) async -> ConnectorAuthStatus {
+        guard let record = try? await repository.fetch(id: connectorID) else {
+            return .unchecked
+        }
+        switch record.connectorType {
+        case "notion", "gdrive_api", "onedrive_api":
+            break
+        default:
+            return .unchecked
+        }
+        guard let account = record.keychainAccountRef,
+              let secret = try? keychain.load(account: account),
+              !secret.isEmpty else {
+            return .missingCredentials
+        }
+        guard let connector = makeConnector(for: record) else {
+            return .missingCredentials
+        }
+        do {
+            let ok = try await connector.validateAuthentication(configJSON: record.configData)
+            return ok ? .ok : .needsReauth("校验未通过，请重新授权")
+        } catch {
+            let reason = (error as? NovPoolError)?.errorDescription ?? error.localizedDescription
+            return .needsReauth(SecretRedactor.redact(reason))
+        }
+    }
+
     /// 连接器实例装配。凭据来自 Keychain，绝不落库。
     func makeConnector(for record: ConnectorRecord) -> (any DestinationConnector)? {
         switch record.connectorType {

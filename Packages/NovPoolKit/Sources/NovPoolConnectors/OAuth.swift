@@ -113,7 +113,7 @@ public struct OAuthTokenService: Sendable {
         let payload = try await postForm(credentials.tokenEndpoint, body)
         guard let object = (try? JSONSerialization.jsonObject(with: payload.body)) as? [String: Any],
               let token = object["access_token"] as? String, !token.isEmpty else {
-            let detail = String(decoding: payload.body.prefix(200), as: UTF8.self)
+            let detail = SecretRedactor.redact(String(decoding: payload.body.prefix(200), as: UTF8.self))
             throw NovPoolError.authenticationRequired("刷新令牌失败（HTTP \(payload.statusCode)）：\(detail)")
         }
         return token
@@ -138,7 +138,7 @@ public struct OAuthTokenService: Sendable {
         let payload = try await postForm(credentials.tokenEndpoint, body)
         guard let object = (try? JSONSerialization.jsonObject(with: payload.body)) as? [String: Any],
               let refreshToken = object["refresh_token"] as? String else {
-            let detail = String(decoding: payload.body.prefix(200), as: UTF8.self)
+            let detail = SecretRedactor.redact(String(decoding: payload.body.prefix(200), as: UTF8.self))
             throw NovPoolError.authenticationRequired("换取令牌失败（HTTP \(payload.statusCode)）：\(detail)")
         }
         var updated = credentials
