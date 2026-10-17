@@ -88,11 +88,20 @@ public struct KnowledgeRepository: Sendable {
         return try rows.first.map(Self.decode)
     }
 
-    /// 按内容哈希去重（白皮书 §3.2 P0/P1 的 SHA256 去重要求）。
+    /// 按内容哈希去重（文件字节 / 链接 / 文本指纹均写入此列）。
     public func fetchByHash(_ sha256: String) async throws -> KnowledgeItemRecord? {
         let rows = try await database.query(
             "SELECT \(Self.columns) FROM knowledge_items WHERE fileHashSHA256 = ? ORDER BY createdAt DESC LIMIT 1",
             [.text(sha256)]
+        )
+        return try rows.first.map(Self.decode)
+    }
+
+    /// 按来源 URL 查找（兼容尚未写入内容指纹的历史网页链接条目）。
+    public func fetchBySourceURL(_ sourceURL: String) async throws -> KnowledgeItemRecord? {
+        let rows = try await database.query(
+            "SELECT \(Self.columns) FROM knowledge_items WHERE sourceURL = ? ORDER BY createdAt DESC LIMIT 1",
+            [.text(sourceURL)]
         )
         return try rows.first.map(Self.decode)
     }

@@ -103,6 +103,15 @@ final class AppEnvironment {
         // 槽位来自设置面板（最多四个），用户没配置过时用内置默认值。
         let viewModel = CaptureViewModel(zones: settings.zones) { content, zone in
             let result = try await orchestrator.ingest(content, forcedZone: zone)
+            let itemTitle = result.record.title
+            // 重复资源：不二次入队、不后台补齐，只提示「已存在」。
+            guard !result.isDuplicate else {
+                return CaptureOutcome(
+                    title: itemTitle,
+                    isDuplicate: true,
+                    routeTargets: result.routeDecision.connectorIDs
+                )
+            }
             // 按路由决策写入发件箱；真正的推送与跨云级联由工作器在后台完成。
             if !result.routeDecision.connectorIDs.isEmpty {
                 _ = try? await outboxWorker.enqueue(
@@ -113,7 +122,6 @@ final class AppEnvironment {
             // 补齐在后台跑：先让悬浮窗立刻给出「已收录」反馈，OCR / 正文 / AI 完成后
             // 再回写第二条状态提示，拖拽主流程全程不被阻塞。
             let itemID = result.record.id
-            let itemTitle = result.record.title
             Task { [orchestrator, feedback] in
                 guard let enrichment = await orchestrator.enrichAfterIngest(itemID: itemID) else { return }
                 await MainActor.run {
@@ -122,7 +130,7 @@ final class AppEnvironment {
             }
             return CaptureOutcome(
                 title: itemTitle,
-                isDuplicate: result.isDuplicate,
+                isDuplicate: false,
                 routeTargets: result.routeDecision.connectorIDs
             )
         }

@@ -67,31 +67,45 @@ public actor IngestionOrchestrator {
     ) async throws -> IngestedItem {
         let staged = try await stage(content)
 
-        if let hash = staged?.sha256,
-           let existing = try await repository.fetchByHash(hash) {
+        // 拖入的是「链接」本身时，若浏览器溯源没给出当前页面地址（例如从非浏览器应用
+        // 拖拽，或前台应用不可溯源），就用链接目标自身作为来源 URL，
+        // 否则后续正文抓取会因为 sourceURL 为空而无法进行。
+        // 拖拽浏览器标签时同理：标签自身的 URL 才是这条记录的来源主体，
+        // 溯源到的活跃标签页地址只表示「从哪拖来的」。
+        let resolvedPageURL: URL? = content.contentType == .webLink
+            ? (content.pageURL ?? sourceContext.pageURL)
+            : sourceContext.pageURL
+        let resolvedContext = SourceContext(
+            appBundleID: sourceContext.appBundleID,
+            pageURL: resolvedPageURL,
+            pageTitle: sourceContext.pageTitle,
+            capturedAt: sourceContext.capturedAt
+        )
+
+        let fingerprint = ContentFingerprint.digest(
+            for: content,
+            stagedHash: staged?.sha256,
+            resolvedPageURL: resolvedPageURL
+        )
+        if let existing = try await findDuplicate(
+            fingerprint: fingerprint,
+            contentType: content.contentType,
+            pageURL: resolvedPageURL
+        ) {
+            // 重复拖拽：丢掉本次多余的 Staging 副本，避免磁盘堆积。
+            if let staged, staged.relativePath != existing.localRelativePath {
+                try? await staging.remove(relativePath: staged.relativePath)
+            }
             return IngestedItem(
                 payload: existing.toPayload(),
                 record: existing,
-                stagedAsset: staged,
+                stagedAsset: nil,
                 routeDecision: routeEvaluator.evaluate(payload: existing.toPayload(), forcedZone: forcedZone),
                 isDuplicate: true
             )
         }
 
         let title = TitleBuilder.suggest(for: content, sourceContext: sourceContext)
-        // 拖入的是「链接」本身时，若浏览器溯源没给出当前页面地址（例如从非浏览器应用
-        // 拖拽，或前台应用不可溯源），就用链接目标自身作为来源 URL，
-        // 否则后续正文抓取会因为 sourceURL 为空而无法进行。
-        // 拖拽浏览器标签时同理：标签自身的 URL 才是这条记录的来源主体，
-        // 溯源到的活跃标签页地址只表示「从哪拖来的」。
-        let resolvedContext = SourceContext(
-            appBundleID: sourceContext.appBundleID,
-            pageURL: content.contentType == .webLink
-                ? (content.pageURL ?? sourceContext.pageURL)
-                : sourceContext.pageURL,
-            pageTitle: sourceContext.pageTitle,
-            capturedAt: sourceContext.capturedAt
-        )
         let payload = NormalizedPayload(
             contentType: content.contentType,
             title: title,
@@ -101,7 +115,7 @@ public actor IngestionOrchestrator {
             aiCategory: nil,
             aiTags: [],
             localStagedURL: staged?.absoluteURL,
-            fileHashSHA256: staged?.sha256,
+            fileHashSHA256: fingerprint,
             sourceContext: resolvedContext
         )
 
@@ -115,6 +129,29 @@ public actor IngestionOrchestrator {
             routeDecision: routeEvaluator.evaluate(payload: payload, forcedZone: forcedZone),
             isDuplicate: false
         )
+    }
+
+    /// 先按内容指纹，再对网页链接兼容按 sourceURL 查找历史条目。
+    private func findDuplicate(
+        fingerprint: String?,
+        contentType: ContentType,
+        pageURL: URL?
+    ) async throws -> KnowledgeItemRecord? {
+        if let fingerprint, let existing = try await repository.fetchByHash(fingerprint) {
+            return existing
+        }
+        guard contentType == .webLink, let pageURL else { return nil }
+        let candidates = [
+            pageURL.absoluteString,
+            ContentFingerprint.canonicalURLString(pageURL),
+        ]
+        var seen = Set<String>()
+        for candidate in candidates where seen.insert(candidate).inserted {
+            if let existing = try await repository.fetchBySourceURL(candidate) {
+                return existing
+            }
+        }
+        return nil
     }
 
     private func stage(_ content: ResolvedDragContent) async throws -> StagedAsset? {

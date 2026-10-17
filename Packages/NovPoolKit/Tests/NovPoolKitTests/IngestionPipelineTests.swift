@@ -134,6 +134,83 @@ struct IngestionPipelineTests {
         #expect(try await harness.repository.count() == 1)
     }
 
+    @Test("相同网页链接重复拖拽去重")
+    func dedupeWebLink() async throws {
+        let harness = try await makeHarness(context: SourceContext(appBundleID: "com.apple.Safari"))
+        let content = ResolvedDragContent(
+            contentType: .webLink,
+            pageURL: URL(string: "https://Example.com/path/#frag"),
+            linkTitle: "示例"
+        )
+        let first = try await harness.orchestrator.ingest(content)
+        let second = try await harness.orchestrator.ingest(
+            ResolvedDragContent(
+                contentType: .webLink,
+                pageURL: URL(string: "https://example.com/path"),
+                linkTitle: "示例又来了"
+            )
+        )
+        #expect(first.isDuplicate == false)
+        #expect(second.isDuplicate == true)
+        #expect(second.record.id == first.record.id)
+        #expect(try await harness.repository.count() == 1)
+        #expect(first.record.fileHashSHA256?.count == 64)
+    }
+
+    @Test("相同纯文本重复拖拽去重")
+    func dedupePlainText() async throws {
+        let harness = try await makeHarness(context: SourceContext(appBundleID: "com.google.Chrome"))
+        let content = ResolvedDragContent(contentType: .plainText, text: "  同一段选中文字  \n")
+        let first = try await harness.orchestrator.ingest(content)
+        let second = try await harness.orchestrator.ingest(
+            ResolvedDragContent(contentType: .plainText, text: "同一段选中文字")
+        )
+        #expect(first.isDuplicate == false)
+        #expect(second.isDuplicate == true)
+        #expect(try await harness.repository.count() == 1)
+    }
+
+    @Test("不同链接或不同正文不会被误判为重复")
+    func differentContentNotDeduped() async throws {
+        let harness = try await makeHarness(context: SourceContext(appBundleID: "com.apple.Safari"))
+        _ = try await harness.orchestrator.ingest(
+            ResolvedDragContent(contentType: .webLink, pageURL: URL(string: "https://example.com/a"))
+        )
+        _ = try await harness.orchestrator.ingest(
+            ResolvedDragContent(contentType: .webLink, pageURL: URL(string: "https://example.com/b"))
+        )
+        _ = try await harness.orchestrator.ingest(
+            ResolvedDragContent(contentType: .plainText, text: "正文甲")
+        )
+        _ = try await harness.orchestrator.ingest(
+            ResolvedDragContent(contentType: .plainText, text: "正文乙")
+        )
+        #expect(try await harness.repository.count() == 4)
+    }
+
+    @Test("无指纹的历史链接仍可按 sourceURL 去重")
+    func dedupeLegacyWebLinkBySourceURL() async throws {
+        let harness = try await makeHarness(context: SourceContext(appBundleID: "com.apple.Safari"))
+        let url = URL(string: "https://example.com/legacy")!
+        var legacy = KnowledgeItemRecord(
+            payload: NormalizedPayload(
+                contentType: .webLink,
+                title: "旧条目",
+                sourceContext: SourceContext(appBundleID: "com.apple.Safari", pageURL: url)
+            ),
+            localRelativePath: nil
+        )
+        legacy.fileHashSHA256 = nil
+        try await harness.repository.insert(legacy)
+
+        let second = try await harness.orchestrator.ingest(
+            ResolvedDragContent(contentType: .webLink, pageURL: url, linkTitle: "再拖一次")
+        )
+        #expect(second.isDuplicate == true)
+        #expect(second.record.id == legacy.id)
+        #expect(try await harness.repository.count() == 1)
+    }
+
     @Test("扇区指定目标时按强制路由返回连接器")
     func sectorRouting() async throws {
         let harness = try await makeHarness(context: SourceContext(appBundleID: "com.google.Chrome"))
