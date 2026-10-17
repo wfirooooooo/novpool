@@ -126,6 +126,7 @@ public actor KnowledgeSearchService {
         results.reserveCapacity(ids.count)
         for id in ids {
             guard let record = recordByID[id] else { continue }
+            let fileURL = await localFileURL(for: record)
             results.append(
                 KnowledgeSearchResult(
                     id: record.id,
@@ -138,14 +139,29 @@ public actor KnowledgeSearchService {
                     sourceTitle: record.sourceTitle,
                     createdAt: record.createdAt,
                     snippet: snippetByID[id] ?? nil,
-                    previewBody: record.markdownBody ?? record.ocrText,
+                    previewBody: previewBody(for: record, localFileURL: fileURL),
                     isFullTextMatch: textIDs.contains(id),
                     isSemanticMatch: vectorIDs.contains(id),
-                    localFileURL: await localFileURL(for: record)
+                    localFileURL: fileURL
                 )
             )
         }
         return results
+    }
+
+    /// 删除知识条目，并清理对应 Staging 目录（若有）。
+    @discardableResult
+    public func deleteItem(id: UUID) async throws -> Bool {
+        let record = try await repository.fetch(id: id)
+        let removed = try await repository.delete(id: id)
+        if removed, let staging, let relativePath = record?.localRelativePath {
+            try? await staging.remove(relativePath: relativePath)
+        }
+        return removed
+    }
+
+    public func distinctCategories(limit: Int = 40) async throws -> [String] {
+        try await repository.distinctCategories(limit: limit)
     }
 
     /// 解析并校验暂存文件；Staging 被清理过时返回 nil，避免 UI 给出死路径。
@@ -153,6 +169,38 @@ public actor KnowledgeSearchService {
         guard let staging, let relativePath = record.localRelativePath else { return nil }
         let url = await staging.absoluteURL(forRelativePath: relativePath)
         return fileManager.fileExists(atPath: url.path(percentEncoded: false)) ? url : nil
+    }
+
+    /// 正文优先；仍为空但有本地文件时给出文件信息，避免详情页空白。
+    private func previewBody(for record: KnowledgeItemRecord, localFileURL: URL?) -> String? {
+        if let body = record.markdownBody ?? record.ocrText,
+           !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return body
+        }
+        if let localFileURL {
+            return LocalFilePreview.summary(for: localFileURL, fileManager: fileManager)
+        }
+        return nil
+    }
+}
+
+/// 检索详情页的文件信息兜底（Storage 层自包含，不依赖 SystemBridge）。
+public enum LocalFilePreview {
+    public static func summary(for url: URL, fileManager: FileManager = .default) -> String {
+        let path = url.path(percentEncoded: false)
+        let size = (try? fileManager.attributesOfItem(atPath: path)[.size] as? NSNumber)?.int64Value ?? 0
+        let sizeText = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        let ext = url.pathExtension.uppercased()
+        let type = ext.isEmpty ? "文件" : "\(ext) 文件"
+        return """
+        ## 文件信息
+
+        - 文件名：\(url.lastPathComponent)
+        - 类型：\(type)
+        - 大小：\(sizeText)
+
+        原始文件已保存在 NovPool 暂存目录，可点击「打开」或「访达」查看。
+        """
     }
 }
 

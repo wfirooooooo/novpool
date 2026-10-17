@@ -12,13 +12,18 @@ final class SpyActions {
     private(set) var openedURLs: [URL] = []
     private(set) var revealedFiles: [URL] = []
     private(set) var copiedText: [String] = []
+    private(set) var deletedIDs: [UUID] = []
     private(set) var dismissCount = 0
 
     func make() -> SearchActions {
         SearchActions(
             openURL: { [self] in openedURLs.append($0) },
             revealFile: { [self] in revealedFiles.append($0) },
-            copyText: { [self] in copiedText.append($0) }
+            copyText: { [self] in copiedText.append($0) },
+            deleteItem: { [self] id in
+                deletedIDs.append(id)
+                return true
+            }
         )
     }
 }
@@ -229,6 +234,70 @@ struct SearchPanelTests {
         viewModel.copySelection()
         #expect(actions.copiedText.count == 1)
         #expect(actions.copiedText[0].contains("# 乙"))
+    }
+
+    @Test("删除选中条目后从结果列表移除")
+    func deleteSelectionRemovesResult() async {
+        let search = SpySearch()
+        let first = sample(title: "甲")
+        let second = sample(title: "乙")
+        search.results = [first, second]
+        let (viewModel, _, actions) = makeViewModel(search: search)
+        viewModel.activate()
+        await settle()
+
+        viewModel.deleteSelection()
+        await settle()
+
+        #expect(actions.deletedIDs == [first.id])
+        #expect(viewModel.results.map(\.title) == ["乙"])
+        #expect(viewModel.selectedResult?.title == "乙")
+    }
+
+    @Test("按类型与时间筛选收窄结果")
+    func filtersNarrowResults() async {
+        let search = SpySearch()
+        let web = KnowledgeSearchResult(
+            id: UUID(),
+            title: "网页",
+            contentType: .webLink,
+            sourceURL: URL(string: "https://example.com"),
+            createdAt: Date()
+        )
+        let oldFile = KnowledgeSearchResult(
+            id: UUID(),
+            title: "旧文件",
+            contentType: .genericFile,
+            createdAt: Date().addingTimeInterval(-40 * 24 * 3600)
+        )
+        search.results = [web, oldFile]
+        let (viewModel, _, _) = makeViewModel(search: search)
+        viewModel.activate()
+        await settle()
+        #expect(viewModel.results.count == 2)
+
+        viewModel.setContentKindFilter(.web)
+        #expect(viewModel.results.map(\.title) == ["网页"])
+
+        viewModel.setContentKindFilter(.file)
+        viewModel.setTimeFilter(.month)
+        #expect(viewModel.results.isEmpty)
+
+        viewModel.clearFilters()
+        #expect(viewModel.results.count == 2)
+    }
+
+    @Test("访达按钮揭示本地文件")
+    func revealInFinder() async {
+        let file = URL(filePath: "/tmp/novpool-local.txt")
+        let search = SpySearch()
+        search.results = [sample(title: "本地", fileURL: file)]
+        let (viewModel, _, actions) = makeViewModel(search: search)
+        viewModel.activate()
+        await settle()
+
+        viewModel.revealSelectionInFinder()
+        #expect(actions.revealedFiles == [file])
     }
 }
 

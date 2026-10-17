@@ -16,16 +16,19 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
 
     public init(
         search: @escaping @MainActor @Sendable (String) async throws -> [KnowledgeSearchResult],
+        loadCategories: @escaping @MainActor @Sendable () async -> [String] = { [] },
         hotKeySpec: HotKeySpec = .default,
         contentSize: CGSize = SearchPanel.defaultContentSize,
-        actions: SearchActions = SearchPanelController.liveActions
+        actions: SearchActions? = nil
     ) {
         self.panel = SearchPanel(contentSize: contentSize)
         super.init()
 
+        let resolvedActions = actions ?? SearchPanelController.liveActions { _ in false }
         self.viewModel = SearchViewModel(
             search: search,
-            actions: actions,
+            loadCategories: loadCategories,
+            actions: resolvedActions,
             onDismiss: { [weak self] in self?.hide() }
         )
 
@@ -81,7 +84,9 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
 
     // MARK: - 真实动作实现
 
-    public static var liveActions: SearchActions {
+    public static func liveActions(
+        deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool
+    ) -> SearchActions {
         SearchActions(
             openURL: { url in NSWorkspace.shared.open(url) },
             revealFile: { url in NSWorkspace.shared.activateFileViewerSelecting([url]) },
@@ -89,7 +94,8 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
                 pasteboard.setString(text, forType: .string)
-            }
+            },
+            deleteItem: deleteItem
         )
     }
 }

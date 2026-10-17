@@ -121,6 +121,22 @@ public struct KnowledgeRepository: Sendable {
         Int(try await database.scalarInt("SELECT COUNT(*) AS value FROM knowledge_items") ?? 0)
     }
 
+    /// 库中出现过的 AI 分类（去空、按出现次数降序），供检索面板筛选。
+    public func distinctCategories(limit: Int = 40) async throws -> [String] {
+        let rows = try await database.query(
+            """
+            SELECT aiCategory AS value, COUNT(*) AS c
+            FROM knowledge_items
+            WHERE aiCategory IS NOT NULL AND TRIM(aiCategory) != ''
+            GROUP BY aiCategory
+            ORDER BY c DESC, aiCategory ASC
+            LIMIT ?
+            """,
+            [.integer(Int64(limit))]
+        )
+        return rows.compactMap { $0.text("value") }
+    }
+
     /// 全文检索。
     ///
     /// 使用 FTS5 trigram 分词器；由于 trigram 索引的最小匹配单元是 3 个字符，

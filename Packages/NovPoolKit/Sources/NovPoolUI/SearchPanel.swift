@@ -3,7 +3,7 @@ import Foundation
 
 /// 检索面板布局常量（非隔离，供 UI 与测试共用）。
 public enum SearchPanelLayout {
-    public static let contentSize = CGSize(width: 760, height: 470)
+    public static let contentSize = CGSize(width: 780, height: 520)
 }
 
 /// 检索面板：无边框毛玻璃卡片，需要能接收键盘输入，因此 `canBecomeKey` 为 `true`。
@@ -51,10 +51,18 @@ public enum SearchPanelPlacement {
         contentSize: CGSize = SearchPanelLayout.contentSize,
         verticalRatio: CGFloat = 0.72
     ) -> NSPoint {
-        NSPoint(
-            x: visibleFrame.midX - contentSize.width / 2,
-            y: visibleFrame.minY + visibleFrame.height * verticalRatio - contentSize.height / 2
-        )
+        // 理想位置：水平居中、垂直略偏上；再夹到可见区域内，避免加大面板后顶出屏幕。
+        var x = visibleFrame.midX - contentSize.width / 2
+        var y = visibleFrame.minY + visibleFrame.height * verticalRatio - contentSize.height / 2
+        let maxX = visibleFrame.maxX - contentSize.width
+        let maxY = visibleFrame.maxY - contentSize.height
+        if maxX >= visibleFrame.minX {
+            x = min(max(x, visibleFrame.minX), maxX)
+        }
+        if maxY >= visibleFrame.minY {
+            y = min(max(y, visibleFrame.minY), maxY)
+        }
+        return NSPoint(x: x, y: y)
     }
 
     /// 鼠标所在屏幕的下标（多显示器场景下按鼠标位置弹出更符合直觉）；无命中则退回首个屏幕。

@@ -12,6 +12,9 @@ struct SearchSnapshot: Equatable {
     var phase: SearchViewModel.Phase
     var results: [KnowledgeSearchResult]
     var selectedIndex: Int
+    var filter: SearchFilterState
+    var availableCategories: [String]
+    var statusMessage: String?
 
     var selectedResult: KnowledgeSearchResult? {
         results.indices.contains(selectedIndex) ? results[selectedIndex] : nil
@@ -32,5 +35,8 @@ struct SearchSnapshot: Equatable {
         phase = viewModel.phase
         results = viewModel.results
         selectedIndex = viewModel.selectedIndex
+        filter = viewModel.filter
+        availableCategories = viewModel.availableCategories
+        statusMessage = viewModel.statusMessage
     }
 }

@@ -22,7 +22,7 @@ public struct SearchPanelView: View {
                 .frame(minWidth: 420)
             Divider()
             previewColumn(snapshot)
-                .frame(width: 300)
+                .frame(width: 320)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.ultraThinMaterial)
@@ -45,8 +45,6 @@ public struct SearchPanelView: View {
                     text: snapshot.query,
                     placeholder: "搜索本地知识库（标题、正文、OCR、标签、来源）",
                     focusToken: snapshot.focusToken,
-                    // 这些闭包在 @MainActor 上下文里创建、参数类型也是 @MainActor，
-                    // 因此体内访问视图模型不需要（也不会被插入）运行时隔离检查。
                     onTextChange: { [viewModel] text in viewModel.updateQuery(text) },
                     onMoveUp: { [viewModel] in viewModel.moveSelection(by: -1) },
                     onMoveDown: { [viewModel] in viewModel.moveSelection(by: 1) },
@@ -60,7 +58,9 @@ public struct SearchPanelView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.vertical, 12)
+
+            filterBar(snapshot)
 
             Divider()
 
@@ -71,11 +71,100 @@ public struct SearchPanelView: View {
         }
     }
 
+    private func filterBar(_ snapshot: SearchSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(SearchContentKindFilter.allCases) { kind in
+                        filterChip(
+                            kind.title,
+                            selected: snapshot.filter.contentKind == kind
+                        ) { [viewModel] in
+                            viewModel.setContentKindFilter(kind)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+            }
+
+            HStack(spacing: 8) {
+                Picker(
+                    "时间",
+                    selection: Binding(
+                        get: { snapshot.filter.time },
+                        set: { [viewModel] value in viewModel.setTimeFilter(value) }
+                    )
+                ) {
+                    ForEach(SearchTimeFilter.allCases) { time in
+                        Text(time.title).tag(time)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 110)
+
+                Picker(
+                    "分类",
+                    selection: Binding(
+                        get: { snapshot.filter.category ?? "" },
+                        set: { [viewModel] value in
+                            viewModel.setCategoryFilter(value.isEmpty ? nil : value)
+                        }
+                    )
+                ) {
+                    Text("全部分类").tag("")
+                    ForEach(snapshot.availableCategories, id: \.self) { category in
+                        Text(category).tag(category)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: 140)
+
+                if snapshot.filter.isActive {
+                    Button("清除筛选") { [viewModel] in
+                        viewModel.clearFilters()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .controlSize(.small)
+        }
+        .padding(.bottom, 8)
+    }
+
+    private func filterChip(
+        _ title: String,
+        selected: Bool,
+        action: @escaping @MainActor () -> Void
+    ) -> some View {
+        Button(action: { Task { @MainActor in action() } }) {
+            Text(title)
+                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(selected ? Color.accentColor.opacity(0.2) : Color.primary.opacity(0.06))
+                )
+                .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+        }
+        .buttonStyle(.plain)
+    }
+
     @ViewBuilder
     private func resultList(_ snapshot: SearchSnapshot) -> some View {
         switch snapshot.phase {
         case .empty:
-            placeholder(icon: "tray", text: "没有匹配的条目")
+            placeholder(
+                icon: "tray",
+                text: snapshot.filter.isActive ? "没有符合筛选条件的条目" : "没有匹配的条目"
+            )
         case .failed(let message):
             placeholder(icon: "exclamationmark.triangle", text: message)
         default:
@@ -131,7 +220,11 @@ public struct SearchPanelView: View {
             hint("↩", "打开")
             hint("esc", "关闭")
             Spacer()
-            if !snapshot.results.isEmpty {
+            if let status = snapshot.statusMessage {
+                Text(status)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            } else if !snapshot.results.isEmpty {
                 Text("\(snapshot.results.count) 条结果")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
@@ -169,11 +262,12 @@ public struct SearchPanelView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 6) {
-                    chip(result.matchLabel, tint: result.isSemanticMatch ? .purple : .accentColor)
+                    chip(result.matchLabel, tint: result.isSemanticMatch ? .indigo : .accentColor)
+                    chip(contentTypeLabel(result.contentType), tint: .secondary)
                     if let category = result.category {
                         chip(category, tint: .blue)
                     }
-                    ForEach(result.tags.prefix(4), id: \.self) { tag in
+                    ForEach(result.tags.prefix(3), id: \.self) { tag in
                         chip(tag, tint: .gray)
                     }
                 }
@@ -203,16 +297,22 @@ public struct SearchPanelView: View {
                     Button("打开") { [viewModel] in
                         Task { @MainActor in viewModel.confirmSelection() }
                     }
-                        .disabled(!result.defaultAction.isEnabled)
+                    .disabled(!result.defaultAction.isEnabled)
+
                     Button("复制") { [viewModel] in
                         Task { @MainActor in viewModel.copySelection() }
                     }
-                    Spacer()
+
                     if result.hasLocalFile {
-                        Image(systemName: "doc.on.doc.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                            .help("本地暂存文件已就位")
+                        Button("访达") { [viewModel] in
+                            Task { @MainActor in viewModel.revealSelectionInFinder() }
+                        }
+                    }
+
+                    Spacer()
+
+                    Button("删除", role: .destructive) { [viewModel] in
+                        Task { @MainActor in viewModel.deleteSelection() }
                     }
                 }
                 .controlSize(.small)
@@ -230,9 +330,24 @@ public struct SearchPanelView: View {
             return body
         }
         if let file = result.localFileURL {
-            return "文件已保存：\(file.lastPathComponent)\n\n暂时无法提取文本内容，可点击「打开」查看原始文件。"
+            return LocalFilePreview.summary(for: file)
+        }
+        if let sourceURL = result.sourceURL {
+            return "来源链接：\(sourceURL.absoluteString)\n\n该条目还没有可展示的正文，可点击「打开」访问来源。"
         }
         return "（该条目还没有正文内容）"
+    }
+
+    private func contentTypeLabel(_ type: ContentType) -> String {
+        switch type {
+        case .webLink: "网页"
+        case .image: "图片"
+        case .video: "视频"
+        case .documentPDF: "PDF"
+        case .plainText: "文本"
+        case .richHTML: "富文本"
+        case .genericFile: "文件"
+        }
     }
 
     private func chip(_ text: String, tint: Color) -> some View {
@@ -265,8 +380,6 @@ public struct SearchPanelView: View {
 struct SearchResultRow: View {
     let result: KnowledgeSearchResult
     let isSelected: Bool
-    /// 手势/点按闭包签名是非隔离的，因此这里不直接调用 `@MainActor` 回调，
-    /// 而是用 `Task` 跳回主 actor 调用（延迟一帧，用户无感知）。
     let onSelect: @MainActor () -> Void
     let onOpen: @MainActor () -> Void
 
@@ -288,11 +401,10 @@ struct SearchResultRow: View {
                         .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
                         .lineLimit(2)
                 }
-                // 先拼成一个字符串再交给 Text：混着条件分支的 Text 拼接会让类型检查爆炸。
                 Text(metaSummary)
-                .font(.system(size: 9.5))
-                .foregroundStyle(isSelected ? Color.white.opacity(0.7) : Color.secondary.opacity(0.75))
-                .lineLimit(1)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(isSelected ? Color.white.opacity(0.7) : Color.secondary.opacity(0.75))
+                    .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -323,7 +435,6 @@ struct SearchResultRow: View {
         }
     }
 
-    /// 行内元信息：命中方式 · 分类 · 标签 · 日期。
     private var metaSummary: String {
         var parts: [String] = [result.matchLabel]
         if let category = result.category { parts.append(category) }

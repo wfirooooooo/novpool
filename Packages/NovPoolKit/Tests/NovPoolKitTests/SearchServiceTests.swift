@@ -233,6 +233,38 @@ struct SearchServiceTests {
         #expect(afterCleanup.first?.localFileURL == nil)
     }
 
+    @Test("无正文但有本地文件时详情给出文件信息兜底")
+    func previewFallsBackToFileInfo() async throws {
+        let (harness, service) = try await makeHarness()
+        let asset = try await harness.staging.stage(data: Data(repeating: 0x01, count: 32), preferredExtension: "bin")
+        try await insert(
+            harness.repository,
+            title: "二进制附件",
+            body: nil,
+            relativePath: asset.relativePath
+        )
+        let results = try await service.recent(limit: 5)
+        let preview = try #require(results.first?.previewBody)
+        #expect(preview.contains("文件信息"))
+        #expect(preview.contains(asset.absoluteURL.lastPathComponent))
+    }
+
+    @Test("删除条目同时清理 Staging")
+    func deleteItemRemovesStaging() async throws {
+        let (harness, service) = try await makeHarness()
+        let asset = try await harness.staging.stage(data: Data("to-delete".utf8), preferredExtension: "txt")
+        let id = try await insert(
+            harness.repository,
+            title: "待删",
+            body: "to-delete-body-unique",
+            relativePath: asset.relativePath
+        )
+        #expect(FileManager.default.fileExists(atPath: asset.absoluteURL.path(percentEncoded: false)))
+        #expect(try await service.deleteItem(id: id) == true)
+        #expect(try await harness.repository.fetch(id: id) == nil)
+        #expect(!FileManager.default.fileExists(atPath: asset.absoluteURL.path(percentEncoded: false)))
+    }
+
     @Test("limit 生效，且结果数不超过命中数")
     func limitRespected() async throws {
         let (harness, service) = try await makeHarness()

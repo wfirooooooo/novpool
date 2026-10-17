@@ -7,15 +7,18 @@ public struct SearchActions: Sendable {
     public var openURL: @MainActor @Sendable (URL) -> Void
     public var revealFile: @MainActor @Sendable (URL) -> Void
     public var copyText: @MainActor @Sendable (String) -> Void
+    public var deleteItem: @MainActor @Sendable (UUID) async throws -> Bool
 
     public init(
         openURL: @escaping @MainActor @Sendable (URL) -> Void,
         revealFile: @escaping @MainActor @Sendable (URL) -> Void,
-        copyText: @escaping @MainActor @Sendable (String) -> Void
+        copyText: @escaping @MainActor @Sendable (String) -> Void,
+        deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool = { _ in false }
     ) {
         self.openURL = openURL
         self.revealFile = revealFile
         self.copyText = copyText
+        self.deleteItem = deleteItem
     }
 }
 
@@ -38,20 +41,27 @@ public final class SearchViewModel {
     /// 每次面板出现自增，输入框据此重新取得焦点。
     public private(set) var focusToken: Int = 0
     public private(set) var isBusy = false
+    public private(set) var filter = SearchFilterState()
+    public private(set) var availableCategories: [String] = []
+    public private(set) var statusMessage: String?
 
     private let search: @MainActor @Sendable (String) async throws -> [KnowledgeSearchResult]
+    private let loadCategories: @MainActor @Sendable () async -> [String]
     private let actions: SearchActions
     private let onDismiss: @MainActor () -> Void
     private let debounce: Duration
     private var searchTask: Task<Void, Never>?
+    private var unfilteredResults: [KnowledgeSearchResult] = []
 
     public init(
         search: @escaping @MainActor @Sendable (String) async throws -> [KnowledgeSearchResult],
+        loadCategories: @escaping @MainActor @Sendable () async -> [String] = { [] },
         actions: SearchActions,
         onDismiss: @escaping @MainActor () -> Void,
         debounce: Duration = .milliseconds(120)
     ) {
         self.search = search
+        self.loadCategories = loadCategories
         self.actions = actions
         self.onDismiss = onDismiss
         self.debounce = debounce
@@ -69,9 +79,11 @@ public final class SearchViewModel {
         query = ""
         selectedIndex = 0
         focusToken += 1
+        statusMessage = nil
         phase = .searching
         isBusy = true
         searchTask = Task { [weak self] in
+            await self?.refreshCategories()
             await self?.runSearch(for: "")
         }
     }
@@ -85,6 +97,32 @@ public final class SearchViewModel {
     public func dismiss() {
         searchTask?.cancel()
         onDismiss()
+    }
+
+    // MARK: - 过滤
+
+    public func setContentKindFilter(_ kind: SearchContentKindFilter) {
+        guard filter.contentKind != kind else { return }
+        filter.contentKind = kind
+        applyFilter()
+    }
+
+    public func setCategoryFilter(_ category: String?) {
+        guard filter.category != category else { return }
+        filter.category = category
+        applyFilter()
+    }
+
+    public func setTimeFilter(_ time: SearchTimeFilter) {
+        guard filter.time != time else { return }
+        filter.time = time
+        applyFilter()
+    }
+
+    public func clearFilters() {
+        guard filter.isActive else { return }
+        filter = SearchFilterState()
+        applyFilter()
     }
 
     // MARK: - 选择
@@ -121,6 +159,36 @@ public final class SearchViewModel {
     public func copySelection() {
         guard let result = selectedResult else { return }
         actions.copyText(result.clipboardText)
+        statusMessage = "已复制"
+        clearStatusLater()
+    }
+
+    public func revealSelectionInFinder() {
+        guard let url = selectedResult?.localFileURL else { return }
+        actions.revealFile(url)
+    }
+
+    public func deleteSelection() {
+        guard let result = selectedResult else { return }
+        let id = result.id
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let removed = try await actions.deleteItem(id)
+                guard removed else {
+                    statusMessage = "删除失败"
+                    clearStatusLater()
+                    return
+                }
+                unfilteredResults.removeAll { $0.id == id }
+                applyFilter()
+                statusMessage = "已删除「\(result.title)」"
+                clearStatusLater()
+            } catch {
+                statusMessage = "删除失败：\(error.localizedDescription)"
+                clearStatusLater()
+            }
+        }
     }
 
     // MARK: - 检索
@@ -141,14 +209,35 @@ public final class SearchViewModel {
         do {
             let hits = try await search(query)
             guard !Task.isCancelled else { return }
-            results = hits
+            unfilteredResults = hits
             selectedIndex = 0
-            phase = hits.isEmpty ? .empty : .results
+            applyFilter()
         } catch {
             guard !Task.isCancelled else { return }
+            unfilteredResults = []
             results = []
             selectedIndex = 0
             phase = .failed(error.localizedDescription)
+        }
+    }
+
+    private func applyFilter() {
+        let filtered = filter.applying(to: unfilteredResults)
+        results = filtered
+        if selectedIndex >= filtered.count {
+            selectedIndex = max(filtered.count - 1, 0)
+        }
+        phase = filtered.isEmpty ? .empty : .results
+    }
+
+    private func refreshCategories() async {
+        availableCategories = await loadCategories()
+    }
+
+    private func clearStatusLater() {
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            self?.statusMessage = nil
         }
     }
 }
