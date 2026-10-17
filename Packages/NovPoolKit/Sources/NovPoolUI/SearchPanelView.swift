@@ -285,11 +285,18 @@ public struct SearchPanelView: View {
                 Divider()
 
                 ScrollView {
-                    Text(SearchHighlight.attributed(previewText(result), query: snapshot.query))
-                        .font(.system(size: 11.5))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, 8)
+                    VStack(alignment: .leading, spacing: 10) {
+                        let previewKind = SearchPreviewKind.resolve(result)
+                        if previewKind.showsMediaPane, let fileURL = result.localFileURL {
+                            SearchRichPreview(kind: previewKind, fileURL: fileURL)
+                        }
+
+                        Text(SearchHighlight.attributed(previewText(result), query: snapshot.query))
+                            .font(.system(size: 11.5))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.bottom, 8)
+                    }
                 }
 
                 Divider()
@@ -305,6 +312,9 @@ public struct SearchPanelView: View {
                     }
 
                     if result.hasLocalFile {
+                        Button("预览") { [viewModel] in
+                            Task { @MainActor in viewModel.quickLookSelection() }
+                        }
                         Button("访达") { [viewModel] in
                             Task { @MainActor in viewModel.revealSelectionInFinder() }
                         }
@@ -387,11 +397,16 @@ struct SearchResultRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: iconName)
-                .font(.system(size: 13))
-                .foregroundStyle(isSelected ? Color.white : Color.secondary)
-                .frame(width: 18)
-                .padding(.top, 2)
+            let previewKind = SearchPreviewKind.resolve(result)
+            if previewKind.showsMediaPane, result.localFileURL != nil {
+                SearchResultThumbnail(kind: previewKind, fileURL: result.localFileURL)
+                    .frame(width: 36, height: 36)
+            } else {
+                Image(systemName: iconName)
+                    .font(.system(size: 13))
+                    .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                    .frame(width: 36, height: 36)
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(highlighted(result.title))

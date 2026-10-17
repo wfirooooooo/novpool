@@ -13,6 +13,7 @@ final class SpyActions {
     private(set) var revealedFiles: [URL] = []
     private(set) var copiedText: [String] = []
     private(set) var deletedIDs: [UUID] = []
+    private(set) var quickLookedFiles: [URL] = []
     private(set) var dismissCount = 0
 
     func make() -> SearchActions {
@@ -23,7 +24,8 @@ final class SpyActions {
             deleteItem: { [self] id in
                 deletedIDs.append(id)
                 return true
-            }
+            },
+            quickLookFile: { [self] in quickLookedFiles.append($0) }
         )
     }
 }
@@ -298,6 +300,19 @@ struct SearchPanelTests {
 
         viewModel.revealSelectionInFinder()
         #expect(actions.revealedFiles == [file])
+    }
+
+    @Test("预览按钮触发 Quick Look")
+    func quickLookSelection() async {
+        let file = URL(filePath: "/tmp/novpool-preview.png")
+        let search = SpySearch()
+        search.results = [sample(title: "图片", fileURL: file)]
+        let (viewModel, _, actions) = makeViewModel(search: search)
+        viewModel.activate()
+        await settle()
+
+        viewModel.quickLookSelection()
+        #expect(actions.quickLookedFiles == [file])
     }
 }
 

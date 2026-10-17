@@ -56,6 +56,13 @@ struct ViewRenderProbeTests {
                 previewBody: "正文",
                 isFullTextMatch: true
             ),
+            KnowledgeSearchResult(
+                id: UUID(),
+                title: "截图预览",
+                contentType: .image,
+                previewBody: "## 文件信息",
+                localFileURL: URL(filePath: "/tmp/novpool-probe.png")
+            ),
         ]
         let viewModel = SearchViewModel(
             search: search.make(),

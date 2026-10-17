@@ -2,23 +2,26 @@ import Foundation
 import NovPoolStorage
 import Observation
 
-/// 面板可以执行的动作，注入实现以便单元测试（真实实现走 `NSWorkspace` / `NSPasteboard`）。
+/// 面板可以执行的动作，注入实现以便单元测试（真实实现走 `NSWorkspace` / `NSPasteboard` / Quick Look）。
 public struct SearchActions: Sendable {
     public var openURL: @MainActor @Sendable (URL) -> Void
     public var revealFile: @MainActor @Sendable (URL) -> Void
     public var copyText: @MainActor @Sendable (String) -> Void
     public var deleteItem: @MainActor @Sendable (UUID) async throws -> Bool
+    public var quickLookFile: @MainActor @Sendable (URL) -> Void
 
     public init(
         openURL: @escaping @MainActor @Sendable (URL) -> Void,
         revealFile: @escaping @MainActor @Sendable (URL) -> Void,
         copyText: @escaping @MainActor @Sendable (String) -> Void,
-        deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool = { _ in false }
+        deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool = { _ in false },
+        quickLookFile: @escaping @MainActor @Sendable (URL) -> Void = { _ in }
     ) {
         self.openURL = openURL
         self.revealFile = revealFile
         self.copyText = copyText
         self.deleteItem = deleteItem
+        self.quickLookFile = quickLookFile
     }
 }
 
@@ -166,6 +169,11 @@ public final class SearchViewModel {
     public func revealSelectionInFinder() {
         guard let url = selectedResult?.localFileURL else { return }
         actions.revealFile(url)
+    }
+
+    public func quickLookSelection() {
+        guard let url = selectedResult?.localFileURL else { return }
+        actions.quickLookFile(url)
     }
 
     public func deleteSelection() {

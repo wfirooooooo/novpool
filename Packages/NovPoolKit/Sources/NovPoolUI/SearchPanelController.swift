@@ -13,6 +13,7 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
 
     private var hotKey: GlobalHotKey?
     private var previousApp: NSRunningApplication?
+    private let quickLookController = LocalFileQuickLookController()
 
     public init(
         search: @escaping @MainActor @Sendable (String) async throws -> [KnowledgeSearchResult],
@@ -24,7 +25,16 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
         self.panel = SearchPanel(contentSize: contentSize)
         super.init()
 
-        let resolvedActions = actions ?? SearchPanelController.liveActions { _ in false }
+        // 无论外部是否注入动作，Quick Look 都走本控制器持有的实例，避免单例并发告警。
+        let base = actions ?? SearchPanelController.liveActions { _ in false }
+        let quickLook = quickLookController
+        let resolvedActions = SearchActions(
+            openURL: base.openURL,
+            revealFile: base.revealFile,
+            copyText: base.copyText,
+            deleteItem: base.deleteItem,
+            quickLookFile: { url in quickLook.present(url: url) }
+        )
         self.viewModel = SearchViewModel(
             search: search,
             loadCategories: loadCategories,
