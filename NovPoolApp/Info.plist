@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh_CN</string>
+	<key>CFBundleExecutable</key>
+	<string>NovPool</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.novpool.app</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>NovPool</string>
+	<key>CFBundleDisplayName</key>
+	<string>NovPool</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<!-- Menu Bar + 悬浮窗常驻工具，不在 Dock 栏占位 -->
+	<key>LSUIElement</key>
+	<true/>
+	<!-- 需要 AppleEvents 读取浏览器活跃标签页的 URL 与标题，实现静默溯源 -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>NovPool 需要通过 AppleEvents 读取当前浏览器标签页的网址与标题，以便为拖入的内容记录来源。</string>
+	<!-- 非标准 Scriptable 浏览器（Firefox / Zen）降级读取地址栏 -->
+	<key>NSAccessibilityUsageDescription</key>
+	<string>NovPool 需要辅助功能权限，用于在不支持 AppleScript 的浏览器中读取地址栏，实现来源溯源。</string>
+	<!-- ASWebAuthenticationSession OAuth 回调（Phase 3 网盘连接器） -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.novpool.app.oauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>novpool</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSHumanReadableCopyright</key>
+	<string>NovPool</string>
+</dict>
+</plist>
