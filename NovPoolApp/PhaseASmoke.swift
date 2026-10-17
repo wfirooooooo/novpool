@@ -133,7 +133,11 @@ enum PhaseASmoke {
                 )
             )
             let after = try await itemCount()
-            check("A5 多文件拆条入库", ingested == 2 && after == before + 2, "写入 \(ingested)，库 \(before)→\(after)")
+            check(
+                "A5 多文件拆条入库",
+                ingested.saved == 2 && after == before + 2,
+                "新写入 \(ingested.saved)，库 \(before)→\(after)"
+            )
 
             let linkBefore = try await itemCount()
             let linkURL = URL(string: "https://example.com/phase-a-smoke-\(token)")!
@@ -145,7 +149,7 @@ enum PhaseASmoke {
                 )
             )
             let linkAfter = try await itemCount()
-            check("网页链接入库", links == 1 && linkAfter == linkBefore + 1)
+            check("网页链接入库", links.saved == 1 && linkAfter == linkBefore + 1)
 
             // FTS
             let hits = try await searchHits("phase-a-alpha-\(token)")
@@ -180,8 +184,8 @@ enum PhaseASmoke {
                 fileURLs: urls,
                 matchedTypeIdentifiers: [PasteboardTypeID.fileURL]
             )
-            let count = try await ingestResolved(content)
-            print("已入库 \(count) 项：\(urls.map(\.lastPathComponent).joined(separator: ", "))")
+            let summary = try await ingestResolved(content)
+            print(summary.message + "：" + urls.map(\.lastPathComponent).joined(separator: ", "))
             return 0
         } catch {
             print("入库失败：\(error.localizedDescription)")
@@ -196,10 +200,10 @@ enum PhaseASmoke {
             return 2
         }
         do {
-            let count = try await ingestResolved(
+            let summary = try await ingestResolved(
                 ResolvedDragContent(contentType: .webLink, pageURL: url, linkTitle: title)
             )
-            print("已入库 \(count) 项：\(title ?? url.absoluteString)")
+            print(summary.message + "：" + (title ?? url.absoluteString))
             return 0
         } catch {
             print("入库失败：\(error.localizedDescription)")
@@ -228,14 +232,25 @@ enum PhaseASmoke {
         return (orchestrator, KnowledgeRepository(database: database))
     }
 
-    private static func ingestResolved(_ content: ResolvedDragContent) async throws -> Int {
-        let (orchestrator, _) = try await makeOrchestrator()
-        var count = 0
-        for item in content.expandedForIngest() {
-            _ = try await orchestrator.ingest(item)
-            count += 1
+    private struct IngestSummary {
+        var saved: Int
+        var duplicates: Int
+        var message: String {
+            if duplicates == 0 { return "已入库 \(saved) 项" }
+            if saved == 0 { return "已存在 \(duplicates) 项" }
+            return "已入库 \(saved) 项，跳过 \(duplicates) 个重复"
         }
-        return count
+    }
+
+    private static func ingestResolved(_ content: ResolvedDragContent) async throws -> IngestSummary {
+        let (orchestrator, _) = try await makeOrchestrator()
+        var saved = 0
+        var duplicates = 0
+        for item in content.expandedForIngest() {
+            let result = try await orchestrator.ingest(item)
+            if result.isDuplicate { duplicates += 1 } else { saved += 1 }
+        }
+        return IngestSummary(saved: saved, duplicates: duplicates)
     }
 
     private static func itemCount() async throws -> Int {
