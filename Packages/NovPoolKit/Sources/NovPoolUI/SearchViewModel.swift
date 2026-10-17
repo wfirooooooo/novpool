@@ -9,19 +9,22 @@ public struct SearchActions: Sendable {
     public var copyText: @MainActor @Sendable (String) -> Void
     public var deleteItem: @MainActor @Sendable (UUID) async throws -> Bool
     public var quickLookFile: @MainActor @Sendable (URL) -> Void
+    public var updateOrganization: @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void
 
     public init(
         openURL: @escaping @MainActor @Sendable (URL) -> Void,
         revealFile: @escaping @MainActor @Sendable (URL) -> Void,
         copyText: @escaping @MainActor @Sendable (String) -> Void,
         deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool = { _ in false },
-        quickLookFile: @escaping @MainActor @Sendable (URL) -> Void = { _ in }
+        quickLookFile: @escaping @MainActor @Sendable (URL) -> Void = { _ in },
+        updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in }
     ) {
         self.openURL = openURL
         self.revealFile = revealFile
         self.copyText = copyText
         self.deleteItem = deleteItem
         self.quickLookFile = quickLookFile
+        self.updateOrganization = updateOrganization
     }
 }
 
@@ -122,6 +125,18 @@ public final class SearchViewModel {
         applyFilter()
     }
 
+    public func setFavoritesOnly(_ enabled: Bool) {
+        guard filter.favoritesOnly != enabled else { return }
+        filter.favoritesOnly = enabled
+        applyFilter()
+    }
+
+    public func setPinnedOnly(_ enabled: Bool) {
+        guard filter.pinnedOnly != enabled else { return }
+        filter.pinnedOnly = enabled
+        applyFilter()
+    }
+
     public func clearFilters() {
         guard filter.isActive else { return }
         filter = SearchFilterState()
@@ -174,6 +189,30 @@ public final class SearchViewModel {
     public func quickLookSelection() {
         guard let url = selectedResult?.localFileURL else { return }
         actions.quickLookFile(url)
+    }
+
+    public func saveOrganization(_ organization: KnowledgeOrganization) {
+        guard let result = selectedResult else { return }
+        let id = result.id
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await actions.updateOrganization(id, organization)
+                if let index = unfilteredResults.firstIndex(where: { $0.id == id }) {
+                    unfilteredResults[index].category = organization.category
+                    unfilteredResults[index].tags = organization.tags
+                    unfilteredResults[index].isPinned = organization.isPinned
+                    unfilteredResults[index].isFavorite = organization.isFavorite
+                }
+                applyFilter()
+                await refreshCategories()
+                statusMessage = "已保存整理"
+                clearStatusLater()
+            } catch {
+                statusMessage = "保存失败：\(error.localizedDescription)"
+                clearStatusLater()
+            }
+        }
     }
 
     public func deleteSelection() {

@@ -50,4 +50,24 @@ struct SearchFilterTests {
         #expect(filter.applying(to: items).count == 1)
         #expect(filter.applying(to: items).first?.category == "技术")
     }
+
+    @Test("收藏与置顶过滤")
+    func favoriteAndPinned() {
+        let starred = KnowledgeSearchResult(
+            id: UUID(),
+            title: "收藏",
+            contentType: .plainText,
+            isFavorite: true
+        )
+        let pinned = KnowledgeSearchResult(
+            id: UUID(),
+            title: "置顶",
+            contentType: .plainText,
+            isPinned: true
+        )
+        let plain = KnowledgeSearchResult(id: UUID(), title: "普通", contentType: .plainText)
+        let items = [starred, pinned, plain]
+        #expect(SearchFilterState(favoritesOnly: true).applying(to: items).map(\.title) == ["收藏"])
+        #expect(SearchFilterState(pinnedOnly: true).applying(to: items).map(\.title) == ["置顶"])
+    }
 }

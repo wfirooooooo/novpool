@@ -121,6 +121,20 @@ public struct SearchPanelView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: 140)
 
+                filterChip(
+                    "收藏",
+                    selected: snapshot.filter.favoritesOnly
+                ) { [viewModel] in
+                    viewModel.setFavoritesOnly(!snapshot.filter.favoritesOnly)
+                }
+
+                filterChip(
+                    "置顶",
+                    selected: snapshot.filter.pinnedOnly
+                ) { [viewModel] in
+                    viewModel.setPinnedOnly(!snapshot.filter.pinnedOnly)
+                }
+
                 if snapshot.filter.isActive {
                     Button("清除筛选") { [viewModel] in
                         viewModel.clearFilters()
@@ -263,6 +277,12 @@ public struct SearchPanelView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 6) {
+                    if result.isPinned {
+                        chip("置顶", tint: .orange)
+                    }
+                    if result.isFavorite {
+                        chip("收藏", tint: .pink)
+                    }
                     chip(result.matchLabel, tint: result.isSemanticMatch ? .indigo : .accentColor)
                     chip(contentTypeLabel(result.contentType), tint: .secondary)
                     if let category = result.category {
@@ -281,6 +301,15 @@ public struct SearchPanelView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                SearchOrganizationEditor(
+                    result: result,
+                    availableCategories: snapshot.availableCategories,
+                    onSave: { [viewModel] organization in
+                        viewModel.saveOrganization(organization)
+                    }
+                )
+                .id(result.id)
 
                 Divider()
 
@@ -454,6 +483,8 @@ struct SearchResultRow: View {
 
     private var metaSummary: String {
         var parts: [String] = [result.matchLabel]
+        if result.isPinned { parts.append("置顶") }
+        if result.isFavorite { parts.append("收藏") }
         if let category = result.category { parts.append(category) }
         if !result.tags.isEmpty {
             parts.append(result.tags.prefix(3).joined(separator: " "))

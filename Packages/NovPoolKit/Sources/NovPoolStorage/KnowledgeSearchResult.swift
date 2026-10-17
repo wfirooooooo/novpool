@@ -21,6 +21,8 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
     public var isSemanticMatch: Bool
     /// 本地暂存文件（已校验存在）。`nil` 表示该条目没有落盘文件或文件已被清理。
     public var localFileURL: URL?
+    public var isPinned: Bool
+    public var isFavorite: Bool
 
     public init(
         id: UUID,
@@ -36,7 +38,9 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
         previewBody: String? = nil,
         isFullTextMatch: Bool = false,
         isSemanticMatch: Bool = false,
-        localFileURL: URL? = nil
+        localFileURL: URL? = nil,
+        isPinned: Bool = false,
+        isFavorite: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -52,6 +56,17 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
         self.isFullTextMatch = isFullTextMatch
         self.isSemanticMatch = isSemanticMatch
         self.localFileURL = localFileURL
+        self.isPinned = isPinned
+        self.isFavorite = isFavorite
+    }
+
+    public var organization: KnowledgeOrganization {
+        KnowledgeOrganization(
+            category: category,
+            tags: tags,
+            isPinned: isPinned,
+            isFavorite: isFavorite
+        )
     }
 
     /// 命中方式的可读标注。

@@ -159,9 +159,14 @@ final class AppEnvironment {
                 (try? await searchService.distinctCategories()) ?? []
             },
             hotKeySpec: settings.searchHotKey,
-            actions: SearchPanelController.liveActions { id in
-                try await searchService.deleteItem(id: id)
-            }
+            actions: SearchPanelController.liveActions(
+                deleteItem: { id in
+                    try await searchService.deleteItem(id: id)
+                },
+                updateOrganization: { id, organization in
+                    try await searchService.updateOrganization(id: id, organization: organization)
+                }
+            )
         )
         NovPoolLog.write("检索面板构造完成（快捷键注册=\(searchPanelController.isHotKeyRegistered)）")
 

@@ -17,6 +17,10 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
     public var fileHashSHA256: String?
     public var localRelativePath: String?
     public var embedding: [Float]?
+    /// 人工置顶：最近列表与检索结果中优先展示。
+    public var isPinned: Bool
+    /// 人工收藏：可在检索面板按收藏筛选。
+    public var isFavorite: Bool
     public var createdAt: Date
     public var updatedAt: Date
 
@@ -35,6 +39,8 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
         fileHashSHA256: String? = nil,
         localRelativePath: String? = nil,
         embedding: [Float]? = nil,
+        isPinned: Bool = false,
+        isFavorite: Bool = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -52,6 +58,8 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
         self.fileHashSHA256 = fileHashSHA256
         self.localRelativePath = localRelativePath
         self.embedding = embedding
+        self.isPinned = isPinned
+        self.isFavorite = isFavorite
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

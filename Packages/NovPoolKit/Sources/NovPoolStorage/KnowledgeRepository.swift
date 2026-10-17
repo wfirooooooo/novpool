@@ -12,7 +12,7 @@ public struct KnowledgeRepository: Sendable {
     private static let columns = """
         id, contentType, title, markdownBody, ocrText, aiSummary, aiCategory, aiTagsJSON, \
         sourceApp, sourceURL, sourceTitle, fileHashSHA256, localRelativePath, embeddingBlob, \
-        createdAt, updatedAt
+        isPinned, isFavorite, createdAt, updatedAt
         """
 
     // MARK: - 写入
@@ -21,7 +21,7 @@ public struct KnowledgeRepository: Sendable {
         try await database.execute(
             """
             INSERT INTO knowledge_items (\(Self.columns))
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             Self.bindings(for: record)
         )
@@ -69,6 +69,31 @@ public struct KnowledgeRepository: Sendable {
         )
     }
 
+    /// 人工整理：分类 / 标签 / 置顶 / 收藏。分类传空会写成 SQL NULL。
+    public func updateOrganization(id: UUID, organization: KnowledgeOrganization) async throws {
+        let tagsJSON = (try? JSONEncoder().encode(organization.tags))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        try await database.execute(
+            """
+            UPDATE knowledge_items SET
+                aiCategory = ?,
+                aiTagsJSON = ?,
+                isPinned = ?,
+                isFavorite = ?,
+                updatedAt = ?
+            WHERE id = ?
+            """,
+            [
+                organization.category.map { SQLValue.text($0) } ?? .null,
+                .text(tagsJSON),
+                .integer(organization.isPinned ? 1 : 0),
+                .integer(organization.isFavorite ? 1 : 0),
+                .date(Date()),
+                .text(id.uuidString),
+            ]
+        )
+    }
+
     @discardableResult
     public func delete(id: UUID) async throws -> Bool {
         let changed = try await database.execute(
@@ -110,7 +135,9 @@ public struct KnowledgeRepository: Sendable {
         let rows = try await database.query(
             """
             SELECT id, title, aiSummary, aiCategory, aiTagsJSON, contentType, sourceURL, sourceTitle, createdAt
-            FROM knowledge_items ORDER BY createdAt DESC LIMIT ?
+            FROM knowledge_items
+            ORDER BY isPinned DESC, createdAt DESC
+            LIMIT ?
             """,
             [.integer(Int64(limit))]
         )
@@ -250,6 +277,8 @@ public struct KnowledgeRepository: Sendable {
             record.fileHashSHA256.map { SQLValue.text($0) } ?? .null,
             record.localRelativePath.map { SQLValue.text($0) } ?? .null,
             record.embedding.map { SQLValue.blob(VectorMath.encode($0)) } ?? .null,
+            .integer(record.isPinned ? 1 : 0),
+            .integer(record.isFavorite ? 1 : 0),
             .date(record.createdAt),
             .date(record.updatedAt),
         ]
@@ -282,6 +311,8 @@ public struct KnowledgeRepository: Sendable {
             fileHashSHA256: row.text("fileHashSHA256"),
             localRelativePath: row.text("localRelativePath"),
             embedding: row.blob("embeddingBlob").map(VectorMath.decode),
+            isPinned: (row.int("isPinned") ?? 0) != 0,
+            isFavorite: (row.int("isFavorite") ?? 0) != 0,
             createdAt: row.date("createdAt") ?? Date(),
             updatedAt: row.date("updatedAt") ?? Date()
         )

@@ -14,6 +14,7 @@ final class SpyActions {
     private(set) var copiedText: [String] = []
     private(set) var deletedIDs: [UUID] = []
     private(set) var quickLookedFiles: [URL] = []
+    private(set) var organizations: [(UUID, KnowledgeOrganization)] = []
     private(set) var dismissCount = 0
 
     func make() -> SearchActions {
@@ -25,7 +26,10 @@ final class SpyActions {
                 deletedIDs.append(id)
                 return true
             },
-            quickLookFile: { [self] in quickLookedFiles.append($0) }
+            quickLookFile: { [self] in quickLookedFiles.append($0) },
+            updateOrganization: { [self] id, organization in
+                organizations.append((id, organization))
+            }
         )
     }
 }
@@ -313,6 +317,47 @@ struct SearchPanelTests {
 
         viewModel.quickLookSelection()
         #expect(actions.quickLookedFiles == [file])
+    }
+
+    @Test("保存整理后更新结果并支持收藏筛选")
+    func saveOrganizationAndFavoriteFilter() async {
+        let search = SpySearch()
+        let item = KnowledgeSearchResult(
+            id: UUID(),
+            title: "待整理",
+            category: "旧",
+            tags: ["a"],
+            contentType: .plainText
+        )
+        search.results = [item]
+        let (viewModel, _, actions) = makeViewModel(search: search)
+        viewModel.activate()
+        await settle()
+
+        let organization = KnowledgeOrganization(
+            category: "技术",
+            tags: ["swift"],
+            isPinned: true,
+            isFavorite: true
+        )
+        viewModel.saveOrganization(organization)
+        await settle()
+
+        #expect(actions.organizations.count == 1)
+        #expect(actions.organizations[0].0 == item.id)
+        #expect(viewModel.selectedResult?.category == "技术")
+        #expect(viewModel.selectedResult?.tags == ["swift"])
+        #expect(viewModel.selectedResult?.isPinned == true)
+        #expect(viewModel.selectedResult?.isFavorite == true)
+
+        viewModel.setFavoritesOnly(true)
+        #expect(viewModel.results.count == 1)
+
+        viewModel.saveOrganization(
+            KnowledgeOrganization(category: "技术", tags: ["swift"], isPinned: true, isFavorite: false)
+        )
+        await settle()
+        #expect(viewModel.results.isEmpty)
     }
 }
 

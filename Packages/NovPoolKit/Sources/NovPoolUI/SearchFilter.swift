@@ -76,19 +76,27 @@ public struct SearchFilterState: Sendable, Equatable {
     public var contentKind: SearchContentKindFilter
     public var category: String?
     public var time: SearchTimeFilter
+    /// 只看收藏。
+    public var favoritesOnly: Bool
+    /// 只看置顶。
+    public var pinnedOnly: Bool
 
     public init(
         contentKind: SearchContentKindFilter = .all,
         category: String? = nil,
-        time: SearchTimeFilter = .all
+        time: SearchTimeFilter = .all,
+        favoritesOnly: Bool = false,
+        pinnedOnly: Bool = false
     ) {
         self.contentKind = contentKind
         self.category = category
         self.time = time
+        self.favoritesOnly = favoritesOnly
+        self.pinnedOnly = pinnedOnly
     }
 
     public var isActive: Bool {
-        contentKind != .all || category != nil || time != .all
+        contentKind != .all || category != nil || time != .all || favoritesOnly || pinnedOnly
     }
 
     public func matches(_ result: KnowledgeSearchResult, now: Date = Date()) -> Bool {
@@ -97,6 +105,8 @@ public struct SearchFilterState: Sendable, Equatable {
         if let category {
             guard result.category == category else { return false }
         }
+        if favoritesOnly, !result.isFavorite { return false }
+        if pinnedOnly, !result.isPinned { return false }
         return true
     }
 

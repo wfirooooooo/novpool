@@ -33,7 +33,8 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
             revealFile: base.revealFile,
             copyText: base.copyText,
             deleteItem: base.deleteItem,
-            quickLookFile: { url in quickLook.present(url: url) }
+            quickLookFile: { url in quickLook.present(url: url) },
+            updateOrganization: base.updateOrganization
         )
         self.viewModel = SearchViewModel(
             search: search,
@@ -95,7 +96,8 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
     // MARK: - 真实动作实现
 
     public static func liveActions(
-        deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool
+        deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool,
+        updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in }
     ) -> SearchActions {
         SearchActions(
             openURL: { url in NSWorkspace.shared.open(url) },
@@ -105,7 +107,8 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
                 pasteboard.clearContents()
                 pasteboard.setString(text, forType: .string)
             },
-            deleteItem: deleteItem
+            deleteItem: deleteItem,
+            updateOrganization: updateOrganization
         )
     }
 }

@@ -142,11 +142,18 @@ public actor KnowledgeSearchService {
                     previewBody: previewBody(for: record, localFileURL: fileURL),
                     isFullTextMatch: textIDs.contains(id),
                     isSemanticMatch: vectorIDs.contains(id),
-                    localFileURL: fileURL
+                    localFileURL: fileURL,
+                    isPinned: record.isPinned,
+                    isFavorite: record.isFavorite
                 )
             )
         }
         return results
+    }
+
+    /// 人工整理并回写分类 / 标签 / 置顶 / 收藏。
+    public func updateOrganization(id: UUID, organization: KnowledgeOrganization) async throws {
+        try await repository.updateOrganization(id: id, organization: organization)
     }
 
     /// 删除知识条目，并清理对应 Staging 目录（若有）。

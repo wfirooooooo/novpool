@@ -12,7 +12,7 @@ public enum SchemaMigration {
         }
     }
 
-    public static let all: [Migration] = [SchemaMigration.v1]
+    public static let all: [Migration] = [SchemaMigration.v1, SchemaMigration.v2]
 
     public static let v1 = Migration(
         name: "v1_initial_schema",
@@ -105,6 +105,17 @@ public enum SchemaMigration {
             )
             """,
             "CREATE INDEX idx_outbox_poll ON sync_outbox_jobs(status, nextRetryAt)",
+        ]
+    )
+
+    /// Phase C：人工整理 — 置顶与收藏。
+    public static let v2 = Migration(
+        name: "v2_organization_flags",
+        statements: [
+            "ALTER TABLE knowledge_items ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE knowledge_items ADD COLUMN isFavorite INTEGER NOT NULL DEFAULT 0",
+            "CREATE INDEX idx_knowledge_items_pinned ON knowledge_items(isPinned DESC, createdAt DESC)",
+            "CREATE INDEX idx_knowledge_items_favorite ON knowledge_items(isFavorite DESC, createdAt DESC)",
         ]
     )
 }
