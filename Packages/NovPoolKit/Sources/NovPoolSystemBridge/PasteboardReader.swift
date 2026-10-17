@@ -24,6 +24,20 @@ public final class NSPasteboardReader: PasteboardReading, @unchecked Sendable {
     public func string(forTypeIdentifier typeIdentifier: String) -> String? {
         pasteboard.string(forType: NSPasteboard.PasteboardType(typeIdentifier))
     }
+
+    public func allStrings(forTypeIdentifier typeIdentifier: String) -> [String] {
+        let type = NSPasteboard.PasteboardType(typeIdentifier)
+        if let items = pasteboard.pasteboardItems, items.count > 1 {
+            let values = items.compactMap { $0.string(forType: type) }
+            if !values.isEmpty { return values }
+        }
+        if let raw = pasteboard.string(forType: type) {
+            return raw
+                .split(separator: "\n", omittingEmptySubsequences: true)
+                .map(String.init)
+        }
+        return []
+    }
 }
 
 /// 类型标识符到文件扩展名的映射（P1 图片落盘时使用）。

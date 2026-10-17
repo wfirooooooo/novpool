@@ -9,6 +9,17 @@ public protocol PasteboardReading: Sendable {
     var availableTypeIdentifiers: [String] { get }
     func data(forTypeIdentifier typeIdentifier: String) -> Data?
     func string(forTypeIdentifier typeIdentifier: String) -> String?
+    /// 同一类型在多个 pasteboard item 上的全部字符串。
+    ///
+    /// Finder 多文件拖拽常为「每个文件一个 item」，此时 `string(forType:)` 只返回第一项；
+    /// 默认实现退化为单值数组，真实 `NSPasteboardReader` 会枚举全部 item。
+    func allStrings(forTypeIdentifier typeIdentifier: String) -> [String]
+}
+
+extension PasteboardReading {
+    public func allStrings(forTypeIdentifier typeIdentifier: String) -> [String] {
+        string(forTypeIdentifier: typeIdentifier).map { [$0] } ?? []
+    }
 }
 
 /// 粘贴板类型标识符常量（避免 `NovPoolCore` 依赖 AppKit）。

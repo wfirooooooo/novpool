@@ -33,6 +33,24 @@ struct PasteboardResolverTests {
         #expect(expanded.map { $0.fileURLs.map(\.lastPathComponent) } == [["a.png"], ["b.txt"]])
     }
 
+    @Test("P0：多个 pasteboard item 时枚举全部文件 URL")
+    func multiplePasteboardItems() throws {
+        // 模拟 NSPasteboardReader.allStrings：每个 item 一个 URL
+        struct MultiItemPasteboard: PasteboardReading {
+            var availableTypeIdentifiers: [String] { [PasteboardTypeID.fileURL] }
+            func data(forTypeIdentifier typeIdentifier: String) -> Data? { nil }
+            func string(forTypeIdentifier typeIdentifier: String) -> String? {
+                // 与真实 NSPasteboard 一样：聚合读取只给第一项
+                "file:///tmp/only-first.png"
+            }
+            func allStrings(forTypeIdentifier typeIdentifier: String) -> [String] {
+                ["file:///tmp/only-first.png", "file:///tmp/second.txt"]
+            }
+        }
+        let content = try #require(resolver.resolve(from: MultiItemPasteboard()))
+        #expect(content.fileURLs.map(\.lastPathComponent) == ["only-first.png", "second.txt"])
+    }
+
     @Test("P1：网页图片走内存字节流，不依赖图片 URL 二次下载")
     func imageBytesWinOverLink() throws {
         let bytes = Data(repeating: 0x89, count: 64)

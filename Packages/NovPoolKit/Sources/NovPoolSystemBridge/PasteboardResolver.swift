@@ -82,17 +82,18 @@ public struct PasteboardResolver: Sendable {
 
     private func fileURLs(in pasteboard: PasteboardReading) -> [URL]? {
         guard pasteboard.availableTypeIdentifiers.contains(PasteboardTypeID.fileURL) else { return nil }
-        // 多文件拖拽时 `public.file-url` 表示层以换行分隔。
-        let raw = pasteboard.string(forTypeIdentifier: PasteboardTypeID.fileURL)
-            ?? pasteboard.data(forTypeIdentifier: PasteboardTypeID.fileURL)
-                .map { String(decoding: $0, as: UTF8.self) }
-        guard let raw else { return nil }
-
-        let urls = raw
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .compactMap { URL(string: String($0)) }
+        // 多文件可能是：多个 pasteboard item，或单个表示层里换行分隔的 URL 列表。
+        var chunks = pasteboard.allStrings(forTypeIdentifier: PasteboardTypeID.fileURL)
+        if chunks.isEmpty,
+           let raw = pasteboard.data(forTypeIdentifier: PasteboardTypeID.fileURL)
+            .map({ String(decoding: $0, as: UTF8.self) }) {
+            chunks = [raw]
+        }
+        let urls = chunks
+            .flatMap { $0.split(separator: "\n", omittingEmptySubsequences: true) }
+            .compactMap { URL(string: String($0).trimmingCharacters(in: .whitespacesAndNewlines)) }
             .filter(\.isFileURL)
-        return urls
+        return urls.isEmpty ? nil : urls
     }
 
     private func imagePayload(in pasteboard: PasteboardReading, types: Set<String>) -> ResolvedDragContent? {
