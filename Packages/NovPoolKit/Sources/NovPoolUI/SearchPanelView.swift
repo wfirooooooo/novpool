@@ -177,6 +177,7 @@ public struct SearchPanelView: View {
                             ForEach(Array(snapshot.results.enumerated()), id: \.element.id) { index, result in
                                 SearchResultRow(
                                     result: result,
+                                    query: snapshot.query,
                                     isSelected: index == snapshot.selectedIndex,
                                     onSelect: { [viewModel] in viewModel.select(index) },
                                     onOpen: { [viewModel] in
@@ -256,7 +257,7 @@ public struct SearchPanelView: View {
     private func previewColumn(_ snapshot: SearchSnapshot) -> some View {
         if let result = snapshot.selectedResult {
             VStack(alignment: .leading, spacing: 10) {
-                Text(result.title)
+                Text(SearchHighlight.attributed(result.title, query: snapshot.query))
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -284,7 +285,7 @@ public struct SearchPanelView: View {
                 Divider()
 
                 ScrollView {
-                    Text(previewText(result))
+                    Text(SearchHighlight.attributed(previewText(result), query: snapshot.query))
                         .font(.system(size: 11.5))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -379,6 +380,7 @@ public struct SearchPanelView: View {
 /// 单条结果行。
 struct SearchResultRow: View {
     let result: KnowledgeSearchResult
+    let query: String
     let isSelected: Bool
     let onSelect: @MainActor () -> Void
     let onOpen: @MainActor () -> Void
@@ -392,11 +394,11 @@ struct SearchResultRow: View {
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(result.title)
+                Text(highlighted(result.title))
                     .font(.system(size: 12.5, weight: .medium))
                     .lineLimit(1)
                 if let snippet = result.snippet ?? result.summary, !snippet.isEmpty {
-                    Text(snippet)
+                    Text(highlighted(snippet))
                         .font(.system(size: 10.5))
                         .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
                         .lineLimit(2)
@@ -443,5 +445,17 @@ struct SearchResultRow: View {
         }
         parts.append(result.createdAt.formatted(date: .numeric, time: .omitted))
         return parts.joined(separator: " · ")
+    }
+
+    /// 选中行底色偏亮时用更醒目的高亮，避免黄底被 accent 淹没。
+    private func highlighted(_ text: String) -> AttributedString {
+        SearchHighlight.attributed(
+            text,
+            query: query,
+            highlightBackground: isSelected
+                ? Color.white.opacity(0.35)
+                : Color.yellow.opacity(0.45),
+            highlightForeground: isSelected ? .white : nil
+        )
     }
 }
