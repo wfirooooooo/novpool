@@ -1,5 +1,6 @@
 .build/
 **/build/
+!build/screenshots/
 **/DerivedData/
 *.xcuserstate
 xcuserdata/

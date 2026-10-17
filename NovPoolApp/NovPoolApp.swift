@@ -10,12 +10,17 @@ struct NovPoolApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
+        let args = Array(CommandLine.arguments.dropFirst())
         // 无界面自检：不启动 GUI，直接验证数据目录 / 建库 / 暂存 / 入库 / 检索整条链路。
-        if CommandLine.arguments.contains("--selftest") {
+        if args.contains("--selftest") {
             exit(SelfTest.run())
         }
+        // Phase A 本机冒烟 / 文件入库 CLI。
+        if let code = PhaseASmoke.run(arguments: args) {
+            exit(code)
+        }
         // 连接器与同步的命令行入口（供脚本化配置与排障）。
-        if let code = ConnectorCLI.run(arguments: Array(CommandLine.arguments.dropFirst())) {
+        if let code = ConnectorCLI.run(arguments: args) {
             exit(code)
         }
     }
