@@ -2,16 +2,16 @@ import Foundation
 import Testing
 @testable import NovPoolUI
 
-@Suite("检索关键词高亮")
+@Suite("Search Keyword Highlight")
 struct SearchHighlightTests {
-    @Test("空查询或空文本不产生区间")
+    @Test("Empty query or empty text does not generate an interval")
     func emptyInputs() {
-        #expect(SearchHighlight.ranges(in: "标题", query: "").isEmpty)
-        #expect(SearchHighlight.ranges(in: "标题", query: "   ").isEmpty)
-        #expect(SearchHighlight.ranges(in: "", query: "词").isEmpty)
+        #expect(SearchHighlight.ranges(in: "Title", query: "").isEmpty)
+        #expect(SearchHighlight.ranges(in: "Title", query: "   ").isEmpty)
+        #expect(SearchHighlight.ranges(in: "", query: "Word").isEmpty)
     }
 
-    @Test("不区分大小写匹配英文")
+    @Test("Case-insensitive match in English")
     func caseInsensitive() {
         let text = "Apple Neural Engine"
         let ranges = SearchHighlight.ranges(in: text, query: "neural")
@@ -19,7 +19,7 @@ struct SearchHighlightTests {
         #expect(String(text[ranges[0]]) == "Neural")
     }
 
-    @Test("中文子串多次出现全部标出")
+    @Test("All occurrences of a Chinese substring are marked")
     func chineseMultiple() {
         let text = "多云路由与多云治理"
         let ranges = SearchHighlight.ranges(in: text, query: "多云")
@@ -27,7 +27,7 @@ struct SearchHighlightTests {
         #expect(ranges.map { String(text[$0]) } == ["多云", "多云"])
     }
 
-    @Test("AttributedString 在命中处带背景色")
+    @Test("AttributedString with background color at the hit location")
     func attributedMarksHits() {
         let attributed = SearchHighlight.attributed("hello world", query: "WORLD")
         let plain = String(attributed.characters)
@@ -37,7 +37,7 @@ struct SearchHighlightTests {
         let hit = ranges[0]
         guard let lower = AttributedString.Index(hit.lowerBound, within: attributed),
               let upper = AttributedString.Index(hit.upperBound, within: attributed) else {
-            Issue.record("无法映射高亮区间")
+            Issue.record("Unable to map highlight range")
             return
         }
         #expect(attributed[lower..<upper].backgroundColor != nil)

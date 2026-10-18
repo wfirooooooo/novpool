@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import NovPoolCore
 
-/// 暂存资产描述。`relativePath` 以 Staging 根目录为基准，写入数据库。
+/// Temporary asset description. `relativePath` is based on the Staging root directory, write to the database.
 public struct StagedAsset: Sendable, Equatable {
     public let relativePath: String
     public let absoluteURL: URL
@@ -10,7 +10,7 @@ public struct StagedAsset: Sendable, Equatable {
     public let byteCount: Int
 }
 
-/// Staging 目录管理器：原子写入 + SHA256 去重。
+/// Staging Directory Manager: atomic write + SHA256 deduplication.
 public actor StagingStore {
     public nonisolated let root: URL
     private let fileManager: FileManager
@@ -25,7 +25,7 @@ public actor StagingStore {
         try StagingStore(root: NovPoolPaths.stagingRoot())
     }
 
-    /// 暂存内存字节流（P1 网页图片走这条路径）。
+    /// Temporarily store memory byte stream (P1 WebImage follows this path).
     @discardableResult
     public func stage(data: Data, preferredExtension: String) throws -> StagedAsset {
         let directoryName = UUID().uuidString
@@ -48,7 +48,7 @@ public actor StagingStore {
         )
     }
 
-    /// 暂存磁盘文件（P0 本地文件走这条路径）。先复制到临时名再原子重命名，避免半成品文件被索引。
+    /// Temporary disk File (P0 local File follows this path). First copy to a temporary name and then atomically rename it to avoid incomplete Files being indexed.
     @discardableResult
     public func stage(fileURL: URL) throws -> StagedAsset {
         let directoryName = UUID().uuidString
@@ -91,16 +91,16 @@ public actor StagingStore {
         }
     }
 
-    // MARK: - 哈希
+    // MARK: - Hash
 
     public static func sha256Hex(of data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// 流式哈希，避免把大文件整体读入内存。
+    /// Stream hashing, to avoid loading the entire large file into memory.
     public static func sha256Hex(ofFileAt url: URL) throws -> String {
         guard let handle = try? FileHandle(forReadingFrom: url) else {
-            throw NovPoolError.stagingFailure("无法读取文件：\(url.path(percentEncoded: false))")
+            throw NovPoolError.stagingFailure("Could not read file: \(url.path(percentEncoded: false))")
         }
         defer { try? handle.close() }
 

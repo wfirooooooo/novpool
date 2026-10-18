@@ -4,10 +4,10 @@ import Foundation
 import NovPoolConnectors
 import NovPoolCore
 
-/// 用系统浏览器完成 OAuth 授权（`ASWebAuthenticationSession`）。
+/// Complete OAuth authorization using the system browser (`ASWebAuthenticationSession`).
 ///
-/// 走系统组件而不是内置 WebView：用户能直接用浏览器里已有的登录态，
-/// 不需要在应用里再输一次账号密码，密码也不会经过本应用。
+/// Use system components instead of the built-in WebView: users can directly use the login status already present in the browser.
+/// There is no need to enter your account and password again in the app, and the password will not go through this app.
 @MainActor
 public struct WebBrowserAuthorizationSession: BrowserAuthorizationSession {
     private let anchorProvider: @MainActor @Sendable () -> NSWindow?
@@ -21,10 +21,10 @@ public struct WebBrowserAuthorizationSession: BrowserAuthorizationSession {
         self.logger = logger
     }
 
-    /// 优先用常规窗口（设置窗口）做 anchor。
+    /// Prefer to use the regular window (settings window) as the anchor.
     ///
-    /// 菜单栏应用里"第一个可见窗口"很可能是那个 `.nonactivatingPanel` 悬浮窗，
-    /// 用它做 anchor 会导致授权窗口弹不出来——所以这里按「key → 常规窗口 → 任意可见」挑。
+    /// In the menu bar application, the 'First visible window' is most likely that `.nonactivatingPanel` floating window,
+    /// Using it as an anchor will cause the authorization window not to pop up—so here, press 'key → normal window → any visible' to select.
     @MainActor
     static func defaultAnchor() -> NSWindow? {
         if let key = NSApp.keyWindow, key.isVisible { return key }
@@ -35,13 +35,13 @@ public struct WebBrowserAuthorizationSession: BrowserAuthorizationSession {
     }
 
     public func authorize(url: URL, callbackURLScheme: String) async throws -> URL {
-        logger?("授权：打开浏览器 \(url.host() ?? "") 回调 scheme=\(callbackURLScheme)")
-        // ASWebAuthenticationSession 必须一直被持有到回调发生，否则系统会立刻取消流程；
-        // presentationContextProvider 还是 weak 引用，anchor 也必须自己保住。
+        logger?("Auth: open browser\(url.host() ?? "")  callback scheme=\(callbackURLScheme)")
+        // ASWebAuthenticationSession must be retained until the callback occurs; otherwise, the system will immediately cancel the process.
+        // presentationContextProvider is still a weak reference, and the anchor must also be kept by yourself.
         let keeper = SessionKeeper()
         return try await withCheckedThrowingContinuation { continuation in
             let anchor = anchorProvider()
-            logger?("授权：presentation anchor = \(anchor.map { "\(type(of: $0))" } ?? "无（可能弹不出窗口）")")
+            logger?("Auth: presentation anchor =\(anchor.map { "\(type(of: $0))" } ?? "none (window may not appear)")")
             let contextProvider = AnchorProvider(window: anchor)
             keeper.contextProvider = contextProvider
 
@@ -51,36 +51,36 @@ public struct WebBrowserAuthorizationSession: BrowserAuthorizationSession {
             ) { callbackURL, error in
                 defer { keeper.finish() }
                 if let callbackURL {
-                    // 只记 scheme/host，避免把授权码写进日志。
-                    self.logger?("授权：收到回调 \(callbackURL.scheme ?? "")://\(callbackURL.host() ?? "")")
+                    // Only record the scheme/host, and avoid writing the authorization code into the logs.
+                    self.logger?("Auth: received callback\(callbackURL.scheme ?? "")://\(callbackURL.host() ?? "")")
                     continuation.resume(returning: callbackURL)
                     return
                 }
                 if let error = error as? ASWebAuthenticationSessionError,
                    error.code == .canceledLogin {
-                    self.logger?("授权：用户取消")
-                    continuation.resume(throwing: NovPoolError.authenticationRequired("授权被取消"))
+                    self.logger?("Auth: user canceled")
+                    continuation.resume(throwing: NovPoolError.authenticationRequired("Authorization canceled"))
                     return
                 }
-                self.logger?("授权：失败 \(error?.localizedDescription ?? "未知错误")")
+                self.logger?("Auth: failed\(error?.localizedDescription ?? "unknown error")")
                 continuation.resume(throwing: NovPoolError.authenticationRequired(
-                    "浏览器授权失败：\(error?.localizedDescription ?? "未知错误")"
+                    "Browser authorization failed: \(error?.localizedDescription ?? "unknown error")"
                 ))
             }
             keeper.session = session
-            // 复用浏览器已有登录态；不启用隐私模式。
+            // Reuse the existing login state of the browser; do not enable private mode.
             session.prefersEphemeralWebBrowserSession = false
             session.presentationContextProvider = contextProvider
             if !session.start() {
-                logger?("授权：session.start() 返回 false（无法打开授权窗口）")
-                continuation.resume(throwing: NovPoolError.authenticationRequired("无法打开浏览器授权窗口"))
+                logger?("Auth: session.start() returned false (could not open auth window)")
+                continuation.resume(throwing: NovPoolError.authenticationRequired("Could not open the browser authorization window"))
             } else {
-                logger?("授权：浏览器窗口已打开，等待用户完成登录")
+                logger?("Auth: browser window opened; waiting for user to finish login")
             }
         }
     }
 
-    /// 在授权流程期间持有 session 与 anchor。
+    /// Hold session and anchor during the authorization process.
     private final class SessionKeeper: @unchecked Sendable {
         var session: ASWebAuthenticationSession?
         var contextProvider: AnchorProvider?

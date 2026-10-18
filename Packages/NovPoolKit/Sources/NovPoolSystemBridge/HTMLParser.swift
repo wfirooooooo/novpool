@@ -1,8 +1,8 @@
 import Foundation
 
-// MARK: - 轻量 DOM
+// MARK: - Lightweight DOM
 
-/// 极简 HTML 文档树。只保留正文提取与 Markdown 渲染所需的信息。
+/// Minimal HTML Document tree. Only retain the information needed for Body extraction and Markdown rendering.
 public enum HTMLNode: Sendable, Equatable {
     case element(HTMLElement)
     case text(String)
@@ -33,7 +33,7 @@ public struct HTMLElement: Sendable, Equatable {
         classNames.contains { $0.lowercased().contains(needle) }
     }
 
-    /// 递归收集纯文本（HTML 语义：块级之间补空白）。
+    /// Recursively collect Plain Text (HTML Semantic: insert spaces between block-level elements).
     public var textContent: String {
         var output = ""
         collectText(into: &output)
@@ -59,12 +59,12 @@ public struct HTMLElement: Sendable, Equatable {
     }
 }
 
-// MARK: - 解析器
+// MARK: - Parser
 
-/// 容错 HTML 解析器。
+/// Fault-tolerant HTML parser.
 ///
-/// 不追求 HTML5 规范的完整实现，只保证正文型页面的树结构正确：
-/// 处理 void 元素、常见隐式闭合、未闭合标签、注释、`script/style` 原始文本与实体转义。
+/// Do not pursue a complete implementation of the HTML5 specification, only ensure that the tree structure of Body-type pages is correct:
+/// Handle void elements, common implicit closures, unclosed tags, comments, `script/style` raw text, and entity escaping.
 public struct HTMLParser: Sendable {
     public init() {}
 
@@ -73,7 +73,7 @@ public struct HTMLParser: Sendable {
         "link", "meta", "param", "source", "track", "wbr",
     ]
 
-    /// 内容不应参与正文/渲染的原始文本元素。
+    /// Content should not be included in the Body/raw Text elements for rendering.
     static let rawTextSkipElements: Set<String> = ["script", "style", "noscript", "iframe", "svg", "template"]
 
     static let blockLevelTags: Set<String> = [
@@ -83,11 +83,11 @@ public struct HTMLParser: Sendable {
         "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul",
     ]
 
-    /// 新标签出现时的隐式闭合表。
+    /// Implicitly closed table when a new tag appears.
     ///
-    /// 语义是「打开 X 时，若栈顶是集合中的元素就闭合它」——方向很关键：
-    /// 是 `p` 被下一个 `p` 闭合，而不是 `p` 去闭合 `article`。
-    /// 另外任何块级标签都会闭合正处于打开状态的 `p`（见 `closableOnOpen`）。
+    /// Semantic is 'When opening X, if the top of the stack is an element in the set, then close it' — the direction is very important:
+    /// It is the `p` that is closed by the next `p`, not the `p` that closes the `article`.
+    /// In addition, any block-level tag will close a `p` that is currently in an open state (see `closableOnOpen`).
     static let autoCloseOnOpen: [String: Set<String>] = [
         "p": ["p"],
         "li": ["li"],
@@ -99,27 +99,27 @@ public struct HTMLParser: Sendable {
         "option": ["option"],
     ]
 
-    /// 打开 `name` 前需要闭合的栈顶元素集合。
+    /// The set of top-of-stack elements that need to be closed before opening `name`.
     static func closableOnOpen(_ name: String) -> Set<String> {
         var closable = autoCloseOnOpen[name] ?? []
         if blockLevelTags.contains(name) { closable.insert("p") }
         return closable
     }
 
-    /// 解析完整文档，返回合成根节点 `<document>`。
+    /// Parse the complete document and return the composite root node `<document>`.
     public func parse(_ html: String) -> HTMLElement {
         let builder = HTMLTreeBuilder()
         return builder.build(Self.tokens(from: html), rootName: "document").converted()
     }
 
-    /// 解析 HTML 片段（用于 P3 拖拽的 `.html` 表示层）。
+    /// Parse HTML fragments (for the `.html` representation layer used in P3 drag-and-drop).
     public func parseFragment(_ html: String) -> [HTMLNode] {
         let builder = HTMLTreeBuilder()
         let root = builder.build(Self.tokens(from: html), rootName: "fragment")
         return root.converted().children
     }
 
-    // MARK: - 词法
+    // MARK: - Lexical
 
     enum Token: Equatable {
         case text(String)
@@ -144,7 +144,7 @@ public struct HTMLParser: Sendable {
             }
             guard open < html.endIndex else { break }
 
-            // 注释 / doctype / CDATA 直接跳过
+            // Comments / doctype / CDATA are skipped directly
             if html[open...].hasPrefix("<!--") {
                 if let end = html.range(of: "-->", range: html.index(open, offsetBy: 4)..<html.endIndex) {
                     index = end.upperBound
@@ -185,7 +185,7 @@ public struct HTMLParser: Sendable {
             guard !name.isEmpty else { continue }
             tokens.append(.startTag(name, attributes, isSelfClosing))
 
-            // script / style 等原始文本元素：内容整体跳过
+            // Original text elements such as script/style: skip the entire content
             if !isSelfClosing, rawTextSkipElements.contains(name) {
                 let closingTag = "</\(name)"
                 if let end = html[index...].range(of: closingTag, options: .caseInsensitive) {
@@ -258,12 +258,12 @@ public struct HTMLParser: Sendable {
     }
 }
 
-// MARK: - 构建期节点
+// MARK: - Construction Phase Milestone
 
-/// 构建期使用的引用型节点。
+/// Reference-type nodes used during the build phase.
 ///
-/// 必须用引用类型：值类型节点放进解析栈后拿到的是副本，给副本追加子节点不会影响
-/// 父节点里那一份，出栈时整棵子树就丢了。这里先建引用树，最后一次性转成值类型。
+/// You must use reference types: when a value type node is put into the parse stack, what you get is a copy, and adding child nodes to the copy will not have any effect.
+/// The part in the parent node—when it is popped, the entire subtree is lost. Here, we first build a reference tree, and finally convert it to a value type all at once.
 final class RawElement {
     let name: String
     let attributes: [String: String]
@@ -295,7 +295,7 @@ enum RawChild {
     case text(String)
 }
 
-/// 容错建树：处理 void 元素、隐式闭合、未闭合标签，并限制总节点数与嵌套深度。
+/// Fault-tolerant tree construction: handles void elements, implicit closures, unclosed tags, and limits the total number of nodes and nesting depth.
 final class HTMLTreeBuilder {
     static let maxNodes = 200_000
     static let maxDepth = 256
@@ -327,7 +327,7 @@ final class HTMLTreeBuilder {
 
             case .endTag(let name):
                 guard let index = stack.lastIndex(where: { $0.name == name }), index > 0 else { continue }
-                // 未闭合的中间标签一并出栈（浏览器同样会隐式闭合）。
+                // Unclosed intermediate tags are also popped from the stack (browsers will implicitly close them as well).
                 stack.removeSubrange(index...)
             }
         }
@@ -335,7 +335,7 @@ final class HTMLTreeBuilder {
     }
 }
 
-// MARK: - 实体
+// MARK: - Entity
 
 enum HTMLText {
     static let namedEntities: [String: String] = [
@@ -386,9 +386,9 @@ enum HTMLText {
         return namedEntities[entity.lowercased()]
     }
 
-    /// HTML 空白折叠：连续空白（含换行、制表、全角空格）压成单个半角空格。
-    /// 首尾空白也会折叠成一个空格（由调用方 trim），否则 `<b>a</b> b` 这类
-    /// 跨节点的词间空格会被吞掉。
+    /// HTML whitespace collapsing: consecutive whitespace (including line breaks, tabs, full-width spaces) is compressed into a single half-width space.
+    /// Leading and trailing spaces will also be collapsed into a single space (trimmed by the caller), otherwise `<b>a</b> b>` like this
+    /// Whitespace between words across nodes will be swallowed.
     static func collapseWhitespace(_ raw: String) -> String {
         var output = ""
         var pendingSpace = false

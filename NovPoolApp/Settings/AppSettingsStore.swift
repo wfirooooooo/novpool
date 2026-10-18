@@ -5,10 +5,11 @@ import NovPoolStorage
 import NovPoolUI
 import SwiftUI
 
-/// 设置中心的读写入口。
+/// Read/write entry point for Settings.
 ///
-/// 所有可调项都落在 `UserDefaults`（键名与 `NovPoolSettings` 一致），
-/// 连接器则落在数据库（凭据在 Keychain）。设置面板只经过这一个类型，便于测试与审计。
+/// Tunables live in `UserDefaults` (same keys as `NovPoolSettings`);
+/// connectors live in the database (credentials in Keychain). The Settings panel
+/// goes through this type only, for easier testing and audit.
 @MainActor
 @Observable
 final class AppSettingsStore {
@@ -46,11 +47,11 @@ final class AppSettingsStore {
     private(set) var queueCounts: [String: Int] = [:]
     private(set) var statusMessage: String?
     private(set) var statusIsError = false
-    /// 云连接器授权健康（id → 状态）。
+    /// Cloud connector auth health (id → status).
     private(set) var authStatuses: [String: ConnectorAuthStatus] = [:]
     private(set) var isProbingAuth = false
 
-    // 云端连接器表单草稿
+    // Cloud connector form drafts
     var notionToken = ""
     var notionDatabaseID = ""
     var notionTitleProperty = "Name"
@@ -71,17 +72,17 @@ final class AppSettingsStore {
     var notionClientID = ""
     var notionClientSecret = ""
     private(set) var isAuthorizing = false
-    /// 浏览器授权编排（会话由 NovPoolUI 提供，走系统组件复用浏览器登录态）。
+    /// Browser OAuth orchestration (session from NovPoolUI; reuses browser login state).
     private let authorizer: ConnectorAuthorizationCoordinator
 
-    /// 扇区槽位草稿（最多四个）。
+    /// Drop-zone sector drafts (up to four).
     var zoneDrafts: [DropZone] = []
-    /// 本机 llama.cpp 服务。
+    /// Local llama.cpp server.
     let localLLM = LocalLLMServerManager()
     var prefersLocalLLM: Bool
-    /// 由 AppEnvironment 注入：批量重新总结尚无摘要的条目。
+    /// Injected by AppEnvironment: batch re-summarize items still missing a summary.
     var resummarizeMissingHandler: (@MainActor () async -> String)?
-    /// 由 AppEnvironment 注入：把已持久化的设置推到运行中的服务（快捷键 / 路由 / AI / 同步）。
+    /// Injected by AppEnvironment: push persisted settings into running services (hotkey / routes / AI / sync).
     var applyRuntimeHandler: (@MainActor () async -> String)?
     private(set) var isResummarizing = false
 
@@ -101,7 +102,7 @@ final class AppSettingsStore {
         isAIEnabled = settings.isAIEnabled
         aiProvider = settings.aiProvider
         uiLanguage = settings.uiLanguage
-        categoriesText = settings.categories.joined(separator: "、")
+        categoriesText = settings.categories.joined(separator: ", ")
         chatModel = settings.chatModel
         embeddingModel = settings.embeddingModel
         ollamaBaseURL = settings.ollamaBaseURL.absoluteString
@@ -132,13 +133,13 @@ final class AppSettingsStore {
         )
     }
 
-    // MARK: - 加载 / 保存
+    // MARK: - Load / save
 
     func reloadConnectors() async {
         connectors = (try? await connectorRepository.list()) ?? []
     }
 
-    /// 探测各云连接器钥匙串凭据是否仍可用。
+    /// Probe whether each cloud connector's Keychain credentials are still usable.
     func refreshAuthStatuses() async {
         isProbingAuth = true
         defer { isProbingAuth = false }
@@ -179,7 +180,7 @@ final class AppSettingsStore {
         do {
             try NovPoolSettings.saveOpenAIAPIKey(openAIAPIKey, defaults: defaults, keychain: keychain)
         } catch {
-            showStatus("API Key 写入钥匙串失败：\(error.localizedDescription)", isError: true)
+            showStatus("Failed to write API Key to Keychain: \(error.localizedDescription)", isError: true)
             return
         }
         defaults.set(isSyncEnabled, forKey: "novpool.sync.enabled")
@@ -195,17 +196,17 @@ final class AppSettingsStore {
         Task { await applyRuntimeChanges() }
     }
 
-    /// 持久化后热推到运行中的服务。
+    /// Persist, then hot-push into running services.
     private func applyRuntimeChanges() async {
         if let applyRuntimeHandler {
             let message = await applyRuntimeHandler()
             showStatus(message)
         } else {
-            showStatus("已保存（部分项需重启生效）")
+            showStatus("Saved (some items need a restart)")
         }
     }
 
-    /// 持久化 OAuth 应用配置（Client ID 等非令牌字段），重启后仍可点「重新授权」。
+    /// Persist OAuth app config (non-token fields like Client ID) so “Re-authorize” still works after relaunch.
     private func persistOAuthDrafts() {
         defaults.set(driveClientID, forKey: "novpool.oauth.gdrive.clientID")
         defaults.set(driveFolderID, forKey: "novpool.oauth.gdrive.folderID")
@@ -229,25 +230,25 @@ final class AppSettingsStore {
 
     func validateRouteRules() {
         guard !routeRulesJSON.isEmpty else {
-            showStatus("路由规则为空：所有条目都会走默认连接器")
+            showStatus("Route rules empty: every item uses the default connectors")
             return
         }
         guard let data = routeRulesJSON.data(using: .utf8) else {
-            showStatus("路由规则不是有效文本", isError: true)
+            showStatus("Route rules are not valid text", isError: true)
             return
         }
         do {
             let rules = try JSONDecoder().decode([RouteRule].self, from: data)
-            showStatus("路由规则可用，共 \(rules.count) 条")
+            showStatus("Route rules OK (\(rules.count) rules)")
         } catch {
-            showStatus("路由规则解析失败：\(error.localizedDescription)", isError: true)
+            showStatus("Failed to parse route rules: \(error.localizedDescription)", isError: true)
         }
     }
 
-    // MARK: - 连接器
+    // MARK: - Connectors
 
-    /// 添加本地云盘挂载目录（Google Drive / OneDrive / iCloud / Obsidian 库）。
-    /// 用安全作用域书签持久化访问权限，因此重启后依然可写。
+    /// Add a local cloud-mount directory (Google Drive / OneDrive / iCloud / Obsidian vault).
+    /// Security-scoped bookmarks persist access across relaunches.
     func addLocalMountConnector(id: String, name: String, directory: URL, namingTemplate: String) async {
         do {
             let bookmark = try SecurityScopedBookmark.make(for: directory)
@@ -263,21 +264,21 @@ final class AppSettingsStore {
                 configJSON: String(decoding: config, as: UTF8.self)
             ))
             await reloadConnectors()
-            showStatus("已添加归档目录：\(directory.lastPathComponent)")
+            showStatus("Added archive folder: \(directory.lastPathComponent)")
         } catch {
-            showStatus("添加失败：\(error.localizedDescription)", isError: true)
+            showStatus("Add failed: \(error.localizedDescription)", isError: true)
         }
     }
 
-    // MARK: - 云端连接器
+    // MARK: - Cloud connectors
 
-    /// 用钥匙串里的 Notion Token 拉取数据库列表（优先 OAuth 结果，回退草稿 Token）。
+    /// List Notion databases using the Keychain token (OAuth result first, draft token fallback).
     func fetchNotionDatabases() async {
         isFetchingNotionDatabases = true
         defer { isFetchingNotionDatabases = false }
         let token = await resolvedNotionToken()
         guard let token, !token.isEmpty else {
-            showStatus("请先完成 Notion 浏览器授权", isError: true)
+            showStatus("Authorize Notion in the browser first", isError: true)
             return
         }
         let connector = NotionConnector(token: token)
@@ -287,15 +288,15 @@ final class AppSettingsStore {
                 configJSON: try JSONEncoder().encode(config)
             )
             if notionDatabases.isEmpty {
-                showStatus("该授权下没有可写入的数据库：请先把集成添加进目标数据库", isError: true)
+                showStatus("No writable databases for this auth: add the integration to the target database first", isError: true)
             } else {
-                showStatus("拉到 \(notionDatabases.count) 个数据库")
+                showStatus("Fetched \(notionDatabases.count) databases")
             }
         } catch {
             let message = SecretRedactor.redact(
                 (error as? NovPoolError)?.errorDescription ?? error.localizedDescription
             )
-            showStatus("拉取数据库失败：\(message)", isError: true)
+            showStatus("Failed to fetch databases: \(message)", isError: true)
         }
     }
 
@@ -312,11 +313,11 @@ final class AppSettingsStore {
 
     func saveNotionConnector() async {
         guard !notionToken.isEmpty else {
-            showStatus("请先填写 Notion Integration Token（ntn_ 开头）", isError: true)
+            showStatus("Enter a Notion Integration Token (starts with ntn_)", isError: true)
             return
         }
         guard !notionDatabaseID.isEmpty else {
-            showStatus("请填写或选择目标数据库 ID", isError: true)
+            showStatus("Enter or select a target database ID", isError: true)
             return
         }
         let config = NotionConnector.Config(
@@ -337,11 +338,11 @@ final class AppSettingsStore {
                 token: notionToken
             )
         } catch {
-            showStatus("配置序列化失败：\(error.localizedDescription)", isError: true)
+            showStatus("Failed to serialize config: \(error.localizedDescription)", isError: true)
         }
     }
 
-    /// 浏览器授权（Google Drive）：用户只点按钮 + 登录，令牌自动写入钥匙串。
+    /// Browser OAuth for Google Drive: user clicks + signs in; tokens land in Keychain.
     func authorizeGoogleDrive() async {
         persistOAuthDrafts()
         await runAuthorization(label: "Google Drive") {
@@ -376,7 +377,7 @@ final class AppSettingsStore {
         }
     }
 
-    /// 浏览器授权（Notion）：授权后 token 进钥匙串，随后再挑数据库与属性。
+    /// Browser OAuth for Notion: token goes to Keychain, then pick database + properties.
     func authorizeNotion() async {
         persistOAuthDrafts()
         let config = notionConfig()
@@ -392,21 +393,21 @@ final class AppSettingsStore {
         }
     }
 
-    /// 按连接器类型触发重新授权（列表行「重新授权」按钮）。
+    /// Re-authorize by connector type (list-row “Re-authorize” button).
     func reauthorize(connectorID: String) async {
         switch connectorID {
         case "gdrive": await authorizeGoogleDrive()
         case "onedrive": await authorizeOneDrive()
         case "notion": await authorizeNotion()
         default:
-            showStatus("未知连接器：\(connectorID)", isError: true)
+            showStatus("Unknown connector: \(connectorID)", isError: true)
         }
     }
 
-    /// 授权完成后保存数据库与属性映射（不需要重新授权）。
+    /// Save database + property mapping after auth (no re-authorize needed).
     func saveNotionProperties() async {
         guard !notionDatabaseID.isEmpty else {
-            showStatus("请先选择或填写目标数据库", isError: true)
+            showStatus("Select or enter a target database first", isError: true)
             return
         }
         do {
@@ -420,9 +421,9 @@ final class AppSettingsStore {
                 configJSON: String(decoding: try JSONEncoder().encode(config), as: UTF8.self)
             ))
             await reloadConnectors()
-            showStatus("已保存 Notion 数据库与属性映射")
+            showStatus("Saved Notion database and property mapping")
         } catch {
-            showStatus("保存失败：\(error.localizedDescription)", isError: true)
+            showStatus("Save failed: \(error.localizedDescription)", isError: true)
         }
     }
 
@@ -438,28 +439,28 @@ final class AppSettingsStore {
     }
 
     private func runAuthorization(
-        label: String = "连接器",
+        label: String = "connector",
         _ work: @escaping () async throws -> ConnectorAuthorizationCoordinator.Outcome
     ) async {
         isAuthorizing = true
         defer { isAuthorizing = false }
-        NovPoolLog.write("授权：开始（\(label)）")
+        NovPoolLog.write("Auth: start (\(label))")
         do {
             let outcome = try await work()
             await reloadConnectors()
             await refreshAuthStatuses()
             showStatus(outcome.detail)
-            NovPoolLog.write("授权：成功 - \(outcome.detail)")
+            NovPoolLog.write("Auth: success - \(outcome.detail)")
         } catch {
             let message = SecretRedactor.redact(
                 (error as? NovPoolError)?.errorDescription ?? error.localizedDescription
             )
-            showStatus("授权失败：\(message)", isError: true)
-            NovPoolLog.write("授权：失败 - \(message)")
+            showStatus("Authorization failed: \(message)", isError: true)
+            NovPoolLog.write("Auth: failed - \(message)")
         }
     }
 
-    /// 登记一个云端连接器（凭据写入 Keychain，配置只存非敏感字段）。
+    /// Register a cloud connector (credentials in Keychain; config stores non-sensitive fields only).
     func upsertRemoteConnector(
         id: String,
         name: String,
@@ -487,9 +488,9 @@ final class AppSettingsStore {
                 configJSON: configJSON
             ))
             await reloadConnectors()
-            showStatus("已保存连接器：\(name)")
+            showStatus("Saved connector: \(name)")
         } catch {
-            showStatus("保存失败：\(error.localizedDescription)", isError: true)
+            showStatus("Save failed: \(error.localizedDescription)", isError: true)
         }
     }
 
@@ -505,45 +506,50 @@ final class AppSettingsStore {
         }
         try? await connectorRepository.delete(id: connectorID)
         await reloadConnectors()
-        showStatus("已删除连接器：\(connectorID)")
+        showStatus("Deleted connector: \(connectorID)")
     }
 
-    // MARK: - 重新总结
+    // MARK: - Re-summarize
 
-    /// 对尚无 AI 摘要、但已有正文/OCR 的条目重新跑总结；失败原因写进状态栏。
+    /// Re-run summarization for items with body/OCR but no AI summary; failures go to the status bar.
     func resummarizeMissingSummaries() async {
         guard !isResummarizing else { return }
         isResummarizing = true
         defer { isResummarizing = false }
-        showStatus("正在重新总结…")
-        let message = await resummarizeMissingHandler?() ?? "重新总结未接线"
-        let isError = message.contains("失败") || message.contains("未接线")
-        showStatus(message, isError: isError && !message.contains("成功"))
+        showStatus("Re-summarizing…")
+        let message = await resummarizeMissingHandler?() ?? "Re-summarize not wired"
+        // Match kit status copy (still Chinese in NovPoolKit) and English app strings.
+        let isError = message.contains("失败") || message.contains("failed")
+            || message.contains("未接线") || message.contains("not wired")
+            || message.lowercased().contains("fail")
+        let looksSuccessful = message.contains("成功") || message.lowercased().contains("success")
+            || message.contains("已处理") || message.lowercased().contains("processed")
+        showStatus(message, isError: isError && !looksSuccessful)
     }
 
-    /// 用本机常见路径填充空的 llama-server / 模型字段。
+    /// Fill empty llama-server / model fields from common local paths.
     func fillDetectedLocalLLMPaths() {
         var filled: [String] = []
         if localLLM.configuration.binaryPath.trimmingCharacters(in: .whitespaces).isEmpty,
            let binary = LocalLLMConfiguration.firstExistingBinaryPath() {
             localLLM.configuration.binaryPath = binary
-            filled.append("二进制")
+            filled.append("binary")
         }
         if localLLM.configuration.modelPath.trimmingCharacters(in: .whitespaces).isEmpty,
            let model = LocalLLMConfiguration.firstExistingModelPath() {
             localLLM.configuration.modelPath = model
-            filled.append("模型")
+            filled.append("model")
         }
         if filled.isEmpty {
-            showStatus("未探测到 \(LocalLLMConfiguration.setupHint)", isError: true)
+            showStatus("Not found: \(LocalLLMConfiguration.setupHint)", isError: true)
         } else {
-            showStatus("已填充：\(filled.joined(separator: "、"))")
+            showStatus("Filled: \(filled.joined(separator: ", "))")
         }
     }
 
-    // MARK: - AI 后端互斥
+    // MARK: - Mutually exclusive AI backends
 
-    /// 开启某一个后端（关掉其它）；`nil` 表示全部关闭并停用 AI。
+    /// Enable one backend (turns others off); `nil` disables AI entirely.
     func selectAIProvider(_ provider: AIProvider?) {
         if let provider {
             if aiProvider == .localLlama, provider != .localLlama, localLLM.isRunning {
@@ -571,7 +577,7 @@ final class AppSettingsStore {
         save()
     }
 
-    /// 互斥开关绑定：打开当前项，或关掉当前项（停用 AI）。
+    /// Binding for exclusive toggles: turn this one on, or turn it off (disable AI).
     func bindingForProvider(_ provider: AIProvider) -> Binding<Bool> {
         Binding(
             get: { self.isAIEnabled && self.aiProvider == provider },
@@ -585,15 +591,15 @@ final class AppSettingsStore {
         )
     }
 
-    // MARK: - 本机 llama.cpp
+    // MARK: - Local llama.cpp
 
-    /// 启动本机模型；成功后把 AI 请求指向它的 Base URL（OpenAI 兼容，完全不出网）。
+    /// Start the local model; point AI requests at its Base URL (OpenAI-compatible, fully offline).
     func startLocalLLM() async {
         selectAIProvider(.localLlama)
         localLLM.configuration.syncAPIBaseURLFromPort()
         if let problem = localLLM.start() {
             showStatus(problem, isError: true)
-            NovPoolLog.write("llama.cpp：启动失败 - \(problem)")
+            NovPoolLog.write("llama.cpp: start failed - \(problem)")
             return
         }
         openAIBaseURL = localLLM.configuration.baseURL.absoluteString
@@ -601,9 +607,9 @@ final class AppSettingsStore {
         defaults.set(openAIBaseURL, forKey: "novpool.openai.baseURL")
         defaults.set(chatModel, forKey: "novpool.ai.chatModel")
         let detail = await localLLM.probe()
-        let applied = await applyRuntimeHandler?() ?? "已保存"
-        showStatus("已启动本机模型（\(localLLM.configuration.modelName)）：\(detail)；\(applied)")
-        NovPoolLog.write("llama.cpp：已启动，\(localLLM.configuration.baseURL.absoluteString) - \(detail)")
+        let applied = await applyRuntimeHandler?() ?? "Saved"
+        showStatus("Started local model (\(localLLM.configuration.modelName)): \(detail); \(applied)")
+        NovPoolLog.write("llama.cpp: started, \(localLLM.configuration.baseURL.absoluteString) - \(detail)")
     }
 
     func stopLocalLLM() {
@@ -613,7 +619,7 @@ final class AppSettingsStore {
         } else {
             Task { await applyRuntimeChanges() }
         }
-        NovPoolLog.write("llama.cpp：已停止")
+        NovPoolLog.write("llama.cpp: stopped")
     }
 
     func testLocalLLM() async {
@@ -621,23 +627,23 @@ final class AppSettingsStore {
             showStatus(problem, isError: true)
             return
         }
-        // 测试连接时同步把运行中的 AI 指到该 URL。
+        // On test, also point the running AI at this URL.
         openAIBaseURL = localLLM.configuration.baseURL.absoluteString
         selectAIProvider(.localLlama)
         let detail = await localLLM.probe()
         showStatus(detail)
-        NovPoolLog.write("llama.cpp：探测 \(localLLM.configuration.baseURL.absoluteString) - \(detail)")
+        NovPoolLog.write("llama.cpp: probe \(localLLM.configuration.baseURL.absoluteString) - \(detail)")
     }
 
-    // MARK: - 扇区槽位
+    // MARK: - Drop-zone sectors
 
     func saveZones() {
         let sanitized = DropZoneConfiguration.sanitize(zoneDrafts)
         zoneDrafts = sanitized
         defaults.set(DropZoneConfiguration.encode(sanitized), forKey: DropZoneConfiguration.defaultsKey)
         Task {
-            let applied = await applyRuntimeHandler?() ?? "已保存"
-            showStatus("已保存 \(sanitized.count) 个扇区槽位；\(applied)")
+            let applied = await applyRuntimeHandler?() ?? "Saved"
+            showStatus("Saved \(sanitized.count) drop-zone sectors; \(applied)")
         }
     }
 
@@ -645,8 +651,8 @@ final class AppSettingsStore {
         zoneDrafts = DropZone.defaultZones
         defaults.removeObject(forKey: DropZoneConfiguration.defaultsKey)
         Task {
-            let applied = await applyRuntimeHandler?() ?? "已保存"
-            showStatus("已恢复默认扇区槽位（本机入库）；\(applied)")
+            let applied = await applyRuntimeHandler?() ?? "Saved"
+            showStatus("Restored default drop-zone sectors (local ingest); \(applied)")
         }
     }
 
@@ -655,7 +661,7 @@ final class AppSettingsStore {
         let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
         let removed = (try? await repository.pruneFinished(olderThan: cutoff)) ?? 0
         await reloadQueue()
-        showStatus("已清理 \(removed) 条已完成任务")
+        showStatus("Pruned \(removed) finished jobs")
     }
 
     func showStatus(_ message: String, isError: Bool = false) {
@@ -671,7 +677,7 @@ final class AppSettingsStore {
 }
 
 private extension String {
-    /// 空串与纯空白都当作「未填写」。
+    /// Empty or whitespace-only counts as unset.
     var nilIfBlank: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed

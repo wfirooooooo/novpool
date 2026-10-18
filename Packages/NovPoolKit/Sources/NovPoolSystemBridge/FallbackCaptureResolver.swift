@@ -1,10 +1,10 @@
 import Foundation
 import NovPoolCore
 
-/// 全局拖拽兜底的内容解析顺序。
+/// Content resolution order for the global drag fallback.
 ///
-/// 优先读真实拖拽粘贴板；但拖拽粘贴板会残留上一次 Finder 文件，
-/// 拖网页标签时常被误当成「又拖了那份文档」。此时若能拿到浏览器活跃标签，改用标签。
+/// Prefer the real drag pasteboard; it may still hold the previous Finder file,
+/// so dragging a browser tab can look like that old document. Prefer the active browser tab when available.
 public enum FallbackCaptureResolver: Sendable {
     public struct BrowserFallback: Sendable, Equatable {
         public var pageURL: URL?
@@ -17,7 +17,7 @@ public enum FallbackCaptureResolver: Sendable {
             self.fileExistsAtPageURL = fileExistsAtPageURL
         }
 
-        /// 前台浏览器有可归档的 http(s) 标签。
+        /// Frontmost browser has an archivable http(s) tab.
         public var hasWebPage: Bool {
             guard let pageURL, let scheme = pageURL.scheme?.lowercased() else { return false }
             return scheme == "http" || scheme == "https"
@@ -34,8 +34,8 @@ public enum FallbackCaptureResolver: Sendable {
         }
     }
 
-    /// 解析顺序：拖拽粘贴板（链接优先）→ 通用粘贴板 → 浏览器活跃标签 → 选中文字。
-    /// 仅含文件、且浏览器有网页标签时，跳过粘贴板文件（视为上一次拖拽残留）。
+    /// Order: drag pasteboard (links first) → general pasteboard → active browser tab → selected text.
+    /// When only files are present and the browser has a web tab, skip pasteboard files (stale drag residue).
     public static func resolve(
         dragPasteboard: (any PasteboardReading)?,
         generalPasteboard: (any PasteboardReading)?,
@@ -48,7 +48,7 @@ public enum FallbackCaptureResolver: Sendable {
            let content = resolver.resolve(from: dragPasteboard, preferWebLinksOverFiles: true),
            let decision = acceptPasteboardContent(
                content,
-               source: "拖拽粘贴板",
+               source: "Drag pasteboard",
                browser: browser,
                fileExists: fileExists
            ) {
@@ -58,7 +58,7 @@ public enum FallbackCaptureResolver: Sendable {
            let content = resolver.resolve(from: generalPasteboard, preferWebLinksOverFiles: true),
            let decision = acceptPasteboardContent(
                content,
-               source: "通用粘贴板",
+               source: "General pasteboard",
                browser: browser,
                fileExists: fileExists
            ) {
@@ -72,14 +72,14 @@ public enum FallbackCaptureResolver: Sendable {
             if !trimmed.isEmpty {
                 return Decision(
                     content: ResolvedDragContent(contentType: .plainText, text: selectedText),
-                    source: "选中文字"
+                    source: "Selected text"
                 )
             }
         }
         return nil
     }
 
-    /// 文件型载荷在「浏览器有网页标签」时视为陈旧残留，让位给标签。
+    /// File-only payloads yield to the browser tab when a web tab is present (treat as stale residue).
     static func acceptPasteboardContent(
         _ content: ResolvedDragContent,
         source: String,
@@ -99,7 +99,7 @@ public enum FallbackCaptureResolver: Sendable {
         return Decision(content: content, source: source)
     }
 
-    /// 只有本地文件、没有网页链接/正文时，判定为「文件型载荷」。
+    /// File-only payload: local files with no web link or body text.
     public static func isFileOnlyPayload(_ content: ResolvedDragContent) -> Bool {
         guard !content.fileURLs.isEmpty else { return false }
         if content.pageURL != nil { return false }
@@ -126,7 +126,7 @@ public enum FallbackCaptureResolver: Sendable {
                     fileURLs: [url],
                     linkTitle: browser.pageTitle
                 ),
-                source: "浏览器本地文件"
+                source: "Browser local file"
             )
         }
         guard browser.hasWebPage else { return nil }
@@ -136,7 +136,7 @@ public enum FallbackCaptureResolver: Sendable {
                 pageURL: url,
                 linkTitle: browser.pageTitle
             ),
-            source: "浏览器标签"
+            source: "Browser tab"
         )
     }
 }

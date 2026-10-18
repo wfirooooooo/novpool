@@ -1,10 +1,10 @@
 import Foundation
 import NovPoolCore
 
-/// 结构化增强服务（摘要、分类、标签、向量）。
+/// Structured enhancement services (summary, classification, tagging, embedding).
 ///
-/// best-effort 设计：模型不可用、超时或输出不合规时一律返回 `nil`，
-/// 绝不阻塞或污染已经落库的原始条目。
+/// Best-effort design: If the model is unavailable, times out, or produces non-compliant output, it always returns `nil`.
+/// Never block or pollute raw entries that have already been stored in the database.
 public actor AIEnhancementService {
     public struct Configuration: Sendable {
         public var isEnabled: Bool
@@ -12,7 +12,7 @@ public actor AIEnhancementService {
         public var maxTags: Int
         public var maxSummaryCharacters: Int
         public var maxInputCharacters: Int
-        /// 是否把标题 + 摘要送去向量化（比整篇正文更省 token，语义也足够）。
+        /// Whether to send the title + abstract for embedding (saves tokens compared to the entire body, and the semantics are sufficient).
         public var embedSummaryOnly: Bool
 
         public init(
@@ -52,7 +52,7 @@ public actor AIEnhancementService {
         self.configuration = configuration
     }
 
-    /// 设置保存或本机模型启停后热切换，无需重启进程。
+    /// Set Save or local model start/stop for hot switching, without needing to restart the process.
     public func updateProviders(
         completer: (any LLMCompleting)?,
         embedder: (any EmbeddingProviding)?,
@@ -67,10 +67,10 @@ public actor AIEnhancementService {
 
     public func enrichDetailed(_ request: AIEnrichmentRequest) async -> AIEnrichmentOutcome {
         guard configuration.isEnabled else {
-            return .failure("AI 增强已关闭（设置 → 检索与 AI）")
+            return .failure("AI enrichment is off (Settings → Search & AI)")
         }
         guard let completer else {
-            return .failure("未配置可用的对话模型（Ollama / OpenAI 兼容 / 本机 llama-server）")
+            return .failure("No usable chat model configured (Ollama / OpenAI-compatible / local llama-server)")
         }
 
         let systemPrompt = AIEnrichmentPrompt.systemPrompt(
@@ -93,20 +93,20 @@ public actor AIEnhancementService {
                 maxSummaryCharacters: configuration.maxSummaryCharacters
             )
             if enrichment == nil {
-                return .failure("模型返回无法解析为摘要 JSON")
+                return .failure("Model response could not be parsed as summary JSON")
             }
         } catch {
-            return .failure("模型请求失败：\(error.localizedDescription)")
+            return .failure("Model request failed: \(error.localizedDescription)")
         }
 
         guard var result = enrichment else {
-            return .failure("模型返回无法解析为摘要 JSON")
+            return .failure("Model response could not be parsed as summary JSON")
         }
         result.embedding = await embedding(for: request, enrichment: result)
         return .success(result)
     }
 
-    /// best-effort：失败时返回 `nil`（入库主路径不阻塞）。
+    /// best-effort: returns `nil` on failure (does not block the main storage path).
     public func enrich(_ request: AIEnrichmentRequest) async -> AIEnrichment? {
         await enrichDetailed(request).enrichment
     }
@@ -117,12 +117,12 @@ public actor AIEnhancementService {
         if configuration.embedSummaryOnly {
             let summaryText = [enrichment.title ?? request.title, enrichment.summary]
                 .compactMap { $0 }
-                .joined(separator: "。")
+                .joined(separator: ". ")
             text = summaryText.isEmpty ? String(request.text.prefix(1_000)) : summaryText
         } else {
             text = String(request.text.prefix(configuration.maxInputCharacters))
         }
-        // 向量化失败不影响摘要/标签的落库。
+        // Embedding failure does not affect the storage of summaries/tags.
         return (try? await embedder.embed(text)) ?? nil
     }
 }

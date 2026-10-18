@@ -4,7 +4,7 @@ import NovPoolStorage
 import Testing
 @testable import NovPoolConnectors
 
-/// 模拟浏览器授权：直接返回一个带 code 的回调地址。
+/// Simulate browser authorization: directly return a callback URL with a code.
 struct FakeBrowserSession: BrowserAuthorizationSession {
     struct Cancelled: Error {}
     var callbackURL: URL
@@ -17,7 +17,7 @@ struct FakeBrowserSession: BrowserAuthorizationSession {
     }
 }
 
-/// 内存凭据存储（沙盒里钥匙串不可用，用它验证编排逻辑）。
+/// In-memory credential storage (Keychain is not available in the sandbox, use this to validate orchestration logic).
 final class InMemoryCredentials: CredentialStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String: Data] = [:]
@@ -43,17 +43,17 @@ final class InMemoryCredentials: CredentialStoring, @unchecked Sendable {
     }
 }
 
-@Suite("浏览器授权流程")
+@Suite("Browser Authorization Process")
 struct OAuthFlowTests {
-    // MARK: - 回调解析
+    // MARK: - Callback Parsing
 
-    @Test("回调解析：取出 code，校验 state")
+    @Test("Callback parsing: extract code, verify state")
     func callbackParsing() throws {
         let url = URL(string: "novpool://oauth?code=abc123&state=st-1")!
         #expect(try OAuthCallbackParser.authorizationCode(from: url, expectedState: "st-1") == "abc123")
     }
 
-    @Test("回调解析：state 不匹配一律拒绝（防伪造回调）")
+    @Test("Callback parsing: state mismatch will always be rejected (to prevent forged callbacks)")
     func callbackStateMismatch() {
         let url = URL(string: "novpool://oauth?code=abc&state=evil")!
         #expect(throws: OAuthCallbackParser.Failure.stateMismatch) {
@@ -61,10 +61,10 @@ struct OAuthFlowTests {
         }
     }
 
-    @Test("回调解析：服务端拒绝与缺少 code 都有明确错误")
+    @Test("Callback parsing: The server has clear errors for both rejection and missing code")
     func callbackErrors() {
-        let denied = URL(string: "novpool://oauth?error=access_denied&error_description=用户拒绝")!
-        #expect(throws: OAuthCallbackParser.Failure.providerError("用户拒绝")) {
+        let denied = URL(string: "novpool://oauth?error=access_denied&error_description=User refused")!
+        #expect(throws: OAuthCallbackParser.Failure.providerError("User refused")) {
             try OAuthCallbackParser.authorizationCode(from: denied, expectedState: "s")
         }
         let empty = URL(string: "novpool://oauth?state=s")!
@@ -73,9 +73,9 @@ struct OAuthFlowTests {
         }
     }
 
-    // MARK: - 授权地址
+    // MARK: - Authorized Address
 
-    @Test("Google 授权地址带 PKCE 与离线访问参数")
+    @Test("Google authorization URL with PKCE and offline access parameters")
     func googleAuthorizationURL() throws {
         let url = OAuthProviderDefinition.google(clientID: "cid").authorizationURL(
             clientID: "cid",
@@ -95,7 +95,7 @@ struct OAuthFlowTests {
         #expect(items["scope"]?.contains("drive.file") == true)
     }
 
-    @Test("Microsoft 授权地址跟随租户；Notion 不带 PKCE 但带 owner")
+    @Test("Microsoft authorization URL follows the tenant; Notion does not include PKCE but includes owner")
     func otherProviderURLs() throws {
         let microsoft = OAuthProviderDefinition.microsoft(clientID: "cid", tenant: "contoso")
         #expect(microsoft.authorizationEndpoint.host == "login.microsoftonline.com")
@@ -113,7 +113,7 @@ struct OAuthFlowTests {
         #expect(!names.contains("code_challenge"))
     }
 
-    // MARK: - 编排
+    // MARK: - Arrangement
 
     private func makeHarness(
         callback: URL,
@@ -137,7 +137,7 @@ struct OAuthFlowTests {
         return (coordinator, repository, credentials, transport, database)
     }
 
-    @Test("Google 授权：走完浏览器回调 → 换令牌 → 写凭据 → 登记连接器")
+    @Test("Google Authorization: Complete browser callback → Exchange token → Write credentials → Register connector")
     func googleFlow() async throws {
         let callback = URL(string: "novpool://oauth?code=code-1&state=fixed-state")!
         let harness = try await makeHarness(
@@ -160,14 +160,14 @@ struct OAuthFlowTests {
         #expect(outcome.connectorID == "gdrive")
         #expect(outcome.account == "gdrive.oauth")
 
-        // 令牌交换请求：授权码 + PKCE verifier
+        // Token exchange request: authorization code + PKCE verifier
         let request = try #require(harness.transport.requests.first)
         let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
         #expect(body.contains("grant_type=authorization_code"))
         #expect(body.contains("code=code-1"))
         #expect(body.contains("code_verifier="))
 
-        // 凭据落到（内存）钥匙串，连接器登记到数据库
+        // Credentials fall into the (memory) Keychain, and the connector registers to the database
         let stored = try #require(harness.credentials.secret(for: "gdrive.oauth"))
         let storedCredentials = try #require(OAuthCredentials.decoded(stored))
         #expect(storedCredentials.refreshToken == "rt")
@@ -180,7 +180,7 @@ struct OAuthFlowTests {
         #expect(record.configJSON.contains("folder-1"))
     }
 
-    @Test("OneDrive 授权：租户与目标路径写进配置")
+    @Test("OneDrive Authorization: Tenant and Target Path Written into Configuration")
     func oneDriveFlow() async throws {
         let callback = URL(string: "novpool://oauth?code=code-2&state=fixed-state")!
         let harness = try await makeHarness(
@@ -196,19 +196,19 @@ struct OAuthFlowTests {
             clientID: "cid",
             clientSecret: nil,
             tenant: "contoso",
-            targetPath: "NovPool/技术"
+            targetPath: "NovPool/Technology"
         )
         let record = try #require(try await harness.repository.fetch(id: "onedrive"))
         #expect(record.configJSON.contains("contoso"))
-        #expect(record.configJSON.contains("NovPool/技术"))
+        #expect(record.configJSON.contains("NovPool/Technology"))
     }
 
-    @Test("Notion 授权：Basic 认证换长期 token，按 token 方式登记")
+    @Test("Notion Authorization: Basic authentication switched to long-term token, register using token method")
     func notionFlow() async throws {
         let callback = URL(string: "novpool://oauth?code=code-3&state=fixed-state")!
         let harness = try await makeHarness(
             callback: callback,
-            tokenResponse: HTTPPayload(json: #"{"access_token":"ntn_long","workspace_name":"我的团队"}"#)
+            tokenResponse: HTTPPayload(json: #"{"access_token":"ntn_long","workspace_name":"My team"}"#)
         )
 
         let outcome = try await harness.coordinator.authorizeNotionConnector(
@@ -217,10 +217,10 @@ struct OAuthFlowTests {
             definition: .notion(clientID: "cid"),
             clientID: "cid",
             clientSecret: "secret",
-            config: NotionConnector.Config(databaseID: "db-1", titleProperty: "名称")
+            config: NotionConnector.Config(databaseID: "db-1", titleProperty: "Name")
         )
 
-        #expect(outcome.detail.contains("我的团队"))
+        #expect(outcome.detail.contains("My team"))
         let request = try #require(harness.transport.requests.first)
         let expectedBasic = Data("cid:secret".utf8).base64EncodedString()
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Basic \(expectedBasic)")
@@ -232,7 +232,7 @@ struct OAuthFlowTests {
         #expect(record.configJSON.contains("db-1"))
     }
 
-    @Test("授权被取消时抛出可读错误，不留下半成品连接器")
+    @Test("Readable errors are thrown when authorization is canceled, without leaving a half-finished connector.")
     func cancelledFlow() async throws {
         let harness = try await makeHarness(
             callback: URL(string: "novpool://oauth?code=x&state=fixed-state")!,
@@ -256,7 +256,7 @@ struct OAuthFlowTests {
         #expect(harness.credentials.secret(for: "gdrive.oauth") == nil)
     }
 
-    @Test("缺少 client ID 时直接报错，不打开浏览器")
+    @Test("Directly report an error when the client ID is missing, without opening the browser")
     func missingClientIDSkipsBrowser() async throws {
         let harness = try await makeHarness(
             callback: URL(string: "novpool://oauth?code=x&state=fixed-state")!,

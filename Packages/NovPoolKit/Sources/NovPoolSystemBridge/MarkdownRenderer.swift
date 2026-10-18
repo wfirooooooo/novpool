@@ -1,14 +1,14 @@
 import Foundation
 
-/// HTML → Markdown 渲染器。
+/// HTML → Markdown renderer.
 ///
-/// 产品白皮书规划用内嵌的 Turndown.js（JavaScriptCore）做同一件事；开发环境离线无法取得
-/// 该脚本，这里用等价的原生 Swift 实现，保留标题、列表、代码块、引用、加粗/斜体、链接、
-/// 图片与 GFM 表格结构。`ArticleExtracting` 协议保留了替换为 JS 引擎的接入点。
+/// The product white paper planning uses embedded Turndown.js (JavaScriptCore) to do the same thing; it cannot be accessed offline in the development environment.
+/// This script is implemented here in equivalent native Swift, retaining headings, lists, code blocks, blockquotes, bold/italic, links,
+/// Image and GFM table structures. The `ArticleExtracting` protocol retains the access point for replacement with the JS engine.
 public struct MarkdownRenderer: Sendable {
     public var baseURL: URL?
 
-    /// 完全不参与渲染的标签。
+    /// Tags that do not participate in rendering at all.
     static let skippedTags: Set<String> = [
         "script", "style", "noscript", "iframe", "svg", "template", "canvas",
         "form", "button", "input", "select", "textarea", "label", "option",
@@ -16,7 +16,7 @@ public struct MarkdownRenderer: Sendable {
         "link", "meta", "base", "head", "title", "dialog",
     ]
 
-    /// 透明容器：自身不产生 Markdown 语法，只渲染子节点。
+    /// Transparent container: does not produce Markdown syntax on its own, only renders child nodes.
     static let transparentTags: Set<String> = [
         "html", "body", "document", "fragment", "figure-inline", "div", "section",
         "article", "main", "header", "footer", "aside", "nav", "span", "center", "font",
@@ -29,7 +29,7 @@ public struct MarkdownRenderer: Sendable {
         self.baseURL = baseURL
     }
 
-    /// 渲染一组节点，块之间用空行分隔。
+    /// Render a set of nodes, with empty lines separating the blocks.
     public func render(_ nodes: [HTMLNode]) -> String {
         normalize(renderBlocks(nodes).joined(separator: "\n\n"))
     }
@@ -38,7 +38,7 @@ public struct MarkdownRenderer: Sendable {
         render(element.children)
     }
 
-    // MARK: - 块级
+    // MARK: - Block level
 
     private func renderBlocks(_ nodes: [HTMLNode]) -> [String] {
         var blocks: [String] = []
@@ -60,8 +60,8 @@ public struct MarkdownRenderer: Sendable {
                 let name = element.name
                 if Self.skippedTags.contains(name) { continue }
 
-                // 透明容器（div / section / article / main …）：不产生自身语法，
-                // 但必须按「块」递归，否则内部标题、列表、代码块会被压成一行。
+                // Transparent containers (div / section / article / main …): do not generate their own semantics,
+                // But it must be recursive by 'blocks', otherwise internal headings, lists, and code blocks will be compressed into a single line.
                 if Self.transparentTags.contains(name) {
                     flushInline()
                     blocks.append(contentsOf: renderBlocks(element.children))
@@ -119,7 +119,7 @@ public struct MarkdownRenderer: Sendable {
         return blocks.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
-    /// 块级标签判定：HTML 块级集合去掉透明容器，再补上真正产生块语法的标签。
+    /// Block-level tag determination: Remove transparent containers from the HTML block-level set, then add back the tags that actually generate block-level syntax.
     static func isBlock(_ name: String) -> Bool {
         let structural: Set<String> = [
             "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li",
@@ -129,7 +129,7 @@ public struct MarkdownRenderer: Sendable {
         return HTMLParser.blockLevelTags.contains(name) && !transparentTags.contains(name)
     }
 
-    // MARK: - 行内
+    // MARK: - Inline
 
     private func renderInline(_ element: HTMLElement) -> String {
         var output = ""
@@ -168,7 +168,7 @@ public struct MarkdownRenderer: Sendable {
               URLResolver.isRenderableLink(url) else {
             return label
         }
-        // 只包一张图片的链接：保留为图片（外面再套可点击链接）。
+        // Only wrap one image link: keep it as an image (then you can wrap it again with a clickable link outside).
         if element.children.count == 1,
            case .element(let only) = element.children[0],
            only.name == "img" {
@@ -189,7 +189,7 @@ public struct MarkdownRenderer: Sendable {
         return "[\(image)](\(escapeDestination(linkURL.absoluteString)))"
     }
 
-    // MARK: - 列表 / 表格 / 定义列表
+    // MARK: - List / Table / Definition List
 
     private func renderList(_ element: HTMLElement, ordered: Bool) -> String {
         var position = Int(element.attribute("start") ?? "1") ?? 1
@@ -284,7 +284,7 @@ public struct MarkdownRenderer: Sendable {
         return blocks.isEmpty ? renderBlocks(element.children) : blocks
     }
 
-    // MARK: - 工具
+    // MARK: - Tool
 
     static func codeBlock(_ element: HTMLElement) -> String? {
         let code = firstDescendant(in: element, named: "code") ?? element
@@ -308,7 +308,7 @@ public struct MarkdownRenderer: Sendable {
             .joined(separator: "\n")
     }
 
-    /// 包强调标记：把首尾空白留在标记之外，避免产出 `** 粗体 **` 这类无效语法。
+    /// Emphasis marker: leave the leading and trailing spaces outside the marker to avoid producing invalid syntax like `** bold **`.
     static func wrap(_ marker: String, _ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
@@ -378,7 +378,7 @@ public struct MarkdownRenderer: Sendable {
         }
     }
 
-    /// 收敛空白：去掉行尾空格，连续空行压成一个空行。
+    /// Trim whitespace: remove trailing spaces and compress consecutive blank lines into a single blank line.
     private func normalize(_ markdown: String) -> String {
         var lines: [String] = []
         var previousBlank = false
@@ -398,14 +398,14 @@ public struct MarkdownRenderer: Sendable {
     }
 }
 
-/// 相对 URL 解析与可渲染性判定。
+/// Relative URL parsing and renderability determination.
 public enum URLResolver {
     public static func resolve(_ raw: String?, base: URL?) -> URL? {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let lowered = trimmed.lowercased()
-        // 丢弃脚本协议与内联数据（data: 图片体积庞大，且不适合作为归档引用）。
+        // Discard script protocols and inline data (data: Images are large in size and not suitable for archival references).
         guard !lowered.hasPrefix("javascript:"), !lowered.hasPrefix("data:") else { return nil }
         if lowered.hasPrefix("mailto:") || lowered.hasPrefix("tel:") {
             return URL(string: trimmed)

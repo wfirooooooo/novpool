@@ -1,10 +1,10 @@
 import AppKit
 import Foundation
 
-/// 悬浮窗位置的持久化（`UserDefaults`，编码成 `"x,y"` 便于 `defaults read` 直接看）。
+/// Persistence of the floating window position (`UserDefaults`, encoded as "x,y" for easy direct viewing with `defaults read`).
 ///
-/// 不声明 `Sendable`：`UserDefaults` 本身不是 `Sendable`，而本类型只在主 actor 上使用
-/// （面板位置读写都发生在 UI 线程），标成 `Sendable` 反而是在撒谎。
+/// Not declaring `Sendable`: `UserDefaults` itself is not `Sendable`, and this type is only used on the main actor
+///  (Reading and writing the panel position both occur on the UI thread), marking it as `Sendable` is actually lying.
 public struct PanelPositionStore {
     public static let defaultKey = "novpool.panel.origin"
 

@@ -1,10 +1,10 @@
 import Foundation
 import NovPoolCore
 
-/// 本机 llama.cpp 服务进程的启停管理。
+/// Starts / stops a local llama.cpp server process.
 ///
-/// 只负责「把 llama-server 拉起来 / 停下来 / 把输出留下来排错」，
-/// 启动参数与校验逻辑在可测的 `LocalLLMConfiguration` 里。
+/// Only responsible for bringing llama-server up / down / retaining output for debugging.
+/// Launch arguments and validation live in the testable `LocalLLMConfiguration`.
 @MainActor
 @Observable
 final class LocalLLMServerManager {
@@ -32,18 +32,18 @@ final class LocalLLMServerManager {
 
     var isRunningState: Bool { isRunning }
 
-    /// 启动本机模型服务。返回 nil 表示成功，否则返回可读原因。
+    /// Start the local model server. Returns nil on success, otherwise a readable reason.
     func start() -> String? {
         if let process, process.isRunning { return nil }
         if let problem = configuration.validationMessage { return problem }
 
         let binary = URL(filePath: configuration.binaryPath)
         guard FileManager.default.isExecutableFile(atPath: binary.path(percentEncoded: false)) else {
-            return "找不到可执行的 llama-server：\(configuration.binaryPath)"
+            return "llama-server executable not found: \(configuration.binaryPath)"
         }
         let model = URL(filePath: configuration.modelPath)
         guard FileManager.default.fileExists(atPath: model.path(percentEncoded: false)) else {
-            return "找不到模型文件：\(configuration.modelPath)"
+            return "Model file not found: \(configuration.modelPath)"
         }
 
         let task = Process()
@@ -60,7 +60,7 @@ final class LocalLLMServerManager {
         task.terminationHandler = { [weak self] finished in
             Task { @MainActor [weak self] in
                 self?.isRunning = false
-                self?.append("llama-server 已退出（code \(finished.terminationStatus)）")
+                self?.append("llama-server exited (code \(finished.terminationStatus))")
                 self?.process = nil
             }
         }
@@ -68,13 +68,13 @@ final class LocalLLMServerManager {
         do {
             try task.run()
         } catch {
-            return "启动失败：\(error.localizedDescription)"
+            return "Failed to start: \(error.localizedDescription)"
         }
         process = task
         isRunning = true
         lastError = nil
         recentOutput.removeAll()
-        append("已启动：\(binary.lastPathComponent) \(configuration.arguments().joined(separator: " "))")
+        append("Started: \(binary.lastPathComponent) \(configuration.arguments().joined(separator: " "))")
         return nil
     }
 
@@ -84,21 +84,21 @@ final class LocalLLMServerManager {
             return
         }
         process.terminate()
-        append("已请求停止 llama-server")
+        append("Requested stop of llama-server")
     }
 
-    /// 探测 OpenAI 兼容接口是否就绪。
+    /// Probe whether the OpenAI-compatible API is ready.
     func probe() async -> String {
         var request = URLRequest(url: configuration.baseURL.appending(path: "models"))
         request.timeoutInterval = 3
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            guard (200..<300).contains(status) else { return "接口返回 HTTP \(status)" }
+            guard (200..<300).contains(status) else { return "API returned HTTP \(status)" }
             let text = String(decoding: data.prefix(200), as: UTF8.self)
-            return "连接正常：\(text)"
+            return "Connected: \(text)"
         } catch {
-            return "连接失败：\(error.localizedDescription)"
+            return "Connection failed: \(error.localizedDescription)"
         }
     }
 

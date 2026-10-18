@@ -1,8 +1,8 @@
 import Foundation
 
-/// 日志与错误文案脱敏：避免 access_token / API Key 等明文落盘。
+/// Log and error copy desensitization: avoid storing access_token / API Key in plain text.
 public enum SecretRedactor {
-    /// 常见敏感片段：Bearer、sk-、ntn_、长 hex/base64、JSON 里的 token 字段。
+    /// Common sensitive fragments: Bearer, sk-, ntn_, long hex/base64, token fields in JSON.
     private static let patterns: [NSRegularExpression] = {
         let raw = [
             #"(?i)(bearer\s+)[a-z0-9\-._~+/]+=*"#,

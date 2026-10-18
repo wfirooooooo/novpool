@@ -5,10 +5,10 @@ import NovPoolSystemBridge
 import Testing
 @testable import NovPoolUI
 
-/// 用真实 `NSPasteboard` + 真实 `DragReceivingView` 验证浏览器标签拖拽链路。
+/// Use a real `NSPasteboard` + a real `DragReceivingView` to verify the browser tab drag-and-drop workflow.
 ///
-/// 需要 WindowServer / pboard 守护进程；在无 GUI 的受限环境里自动跳过。
-/// 运行方式：`swift test --filter DragIntegrationTests`（必要时在沙盒外执行）。
+/// Requires the WindowServer / pboard daemon; automatically skip in restricted environments without a GUI.
+/// Run command: `swift test --filter DragIntegrationTests` (execute outside the sandbox if necessary).
 private enum PasteboardAvailability {
     static let isAvailable: Bool = {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("novpool.probe.\(UUID().uuidString)"))
@@ -18,7 +18,7 @@ private enum PasteboardAvailability {
     }()
 }
 
-/// 只实现拖拽接收所需的成员。
+/// Only implement the members required for drag-and-drop reception.
 final class TestDraggingInfo: NSObject, NSDraggingInfo {
     let pasteboard: NSPasteboard
     var location: NSPoint
@@ -54,7 +54,7 @@ final class TestDraggingInfo: NSObject, NSDraggingInfo {
     func resetSpringLoading() {}
 }
 
-@Suite("浏览器标签拖拽（真实粘贴板集成）", .enabled(if: PasteboardAvailability.isAvailable))
+@Suite("Browser tab drag-and-drop (real clipboard integration)", .enabled(if: PasteboardAvailability.isAvailable))
 @MainActor
 struct DragIntegrationTests {
     private func makePasteboard() -> NSPasteboard {
@@ -63,7 +63,7 @@ struct DragIntegrationTests {
         return pasteboard
     }
 
-    /// 走完整的接收链路：draggingEntered → prepare → performDragOperation。
+    /// Complete the entire receiving chain: draggingEntered → prepare → performDragOperation.
     private func runDrop(
         pasteboard: NSPasteboard,
         location: NSPoint,
@@ -72,7 +72,7 @@ struct DragIntegrationTests {
         let view = DragReceivingView(frame: NSRect(x: 0, y: 0, width: 440, height: 440))
         let bridge = DragCaptureBridge()
         bridge.hoverDelay = .zero
-        // 几何用例固定 4 槽；与产品默认「本机单槽」解耦。
+        // Geometry use case fixed at 4 slots; decoupled from the product's default 'single-slot on this machine'.
         bridge.zoneCount = zoneCount
         var captured: ResolvedDragContent?
         var capturedZone: Int?
@@ -84,17 +84,17 @@ struct DragIntegrationTests {
 
         let info = TestDraggingInfo(pasteboard: pasteboard, location: location)
         let entered = view.draggingEntered(info)
-        // 真实拖拽序列里，扇区命中是在 draggingUpdated 中更新的
+        // In a real drag sequence, sector hits are updated in draggingUpdated.
         _ = view.draggingUpdated(info)
         let prepared = view.prepareForDragOperation(info)
         let performed = view.performDragOperation(info)
         return (captured, capturedZone, entered == .copy && prepared && performed)
     }
 
-    @Test("Firefox 标签：真实粘贴板里的 UTF-16LE moz-url 被解析并投递")
+    @Test("Firefox tab: UTF-16LE moz-url in the real clipboard is parsed and dispatched")
     func firefoxTabDrop() throws {
         let pasteboard = makePasteboard()
-        let payload = "https://example.com/firefox-tab\nFirefox 标签标题"
+        let payload = "https://example.com/firefox-tab\nFirefox Label Title"
         pasteboard.setData(payload.data(using: .utf16LittleEndian)!, forType: NSPasteboard.PasteboardType("text/x-moz-url"))
         pasteboard.setString("https://example.com/firefox-tab", forType: .string)
 
@@ -102,14 +102,14 @@ struct DragIntegrationTests {
         #expect(result.accepted)
         #expect(result.content?.contentType == .webLink)
         #expect(result.content?.pageURL?.absoluteString == "https://example.com/firefox-tab")
-        #expect(result.content?.linkTitle == "Firefox 标签标题")
+        #expect(result.content?.linkTitle == "Firefox Label Title")
     }
 
-    @Test("Chrome 标签：uri-list 被接受并解析出 URL")
+    @Test("Chrome tab: uri-list is accepted and parsed into a URL")
     func chromeTabDrop() throws {
         let pasteboard = makePasteboard()
         pasteboard.setString(
-            "# 来源：Chrome\nhttps://example.com/chrome-tab",
+            "# Source:Chrome\nhttps://example.com/chrome-tab",
             forType: NSPasteboard.PasteboardType("text/uri-list")
         )
 
@@ -118,29 +118,29 @@ struct DragIntegrationTests {
         #expect(result.content?.pageURL?.absoluteString == "https://example.com/chrome-tab")
     }
 
-    @Test("Safari 标签：public.url + public.url-name 带出标题")
+    @Test("Safari tab: public.url + public.url-name displays the title")
     func safariTabDrop() throws {
         let pasteboard = makePasteboard()
         pasteboard.setString("https://example.com/safari-tab", forType: .URL)
-        pasteboard.setString("Safari 标签标题", forType: NSPasteboard.PasteboardType("public.url-name"))
+        pasteboard.setString("Safari Label Title", forType: NSPasteboard.PasteboardType("public.url-name"))
 
         let result = runDrop(pasteboard: pasteboard, location: NSPoint(x: 220, y: 220))
         #expect(result.accepted)
-        #expect(result.content?.linkTitle == "Safari 标签标题")
+        #expect(result.content?.linkTitle == "Safari Label Title")
     }
 
-    @Test("松手位置落在扇区方向时带回对应槽位索引")
+    @Test("When the release position falls in the direction of a sector, return the corresponding slot index")
     func zoneDetection() throws {
         let pasteboard = makePasteboard()
         pasteboard.setString("https://example.com/zone", forType: .URL)
 
-        // 画布中心 (220,220)，正右方落在第一个扇区（index 1）
+        // Canvas center (220,220), directly to the right falls in the first sector (index 1)
         let result = runDrop(pasteboard: pasteboard, location: NSPoint(x: 320, y: 220))
         #expect(result.accepted)
         #expect(result.zone == 1)
     }
 
-    @Test("图标死区内松手走智能路由（zone 为 nil）")
+    @Test("Release within the icon dead zone to activate smart routing (zone is nil)")
     func deadZoneMeansSmartRoute() throws {
         let pasteboard = makePasteboard()
         pasteboard.setString("https://example.com/smart", forType: .URL)

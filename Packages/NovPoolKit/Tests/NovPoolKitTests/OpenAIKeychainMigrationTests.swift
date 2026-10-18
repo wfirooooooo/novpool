@@ -2,10 +2,10 @@ import Foundation
 import NovPoolStorage
 import Testing
 
-/// OpenAI Key 迁移逻辑在 App 目标里；这里用同等规则验证钥匙串读写与 UserDefaults 清理约定。
-@Suite("OpenAI Key 钥匙串约定")
+/// The OpenAI Key migration logic is in the App target; here, the same rules are used to verify Keychain read/write and UserDefaults cleanup conventions.
+@Suite("OpenAI Key Keychain Agreement")
 struct OpenAIKeychainMigrationTests {
-    @Test("钥匙串可写入并读回 API Key，删除后为空")
+    @Test("The keychain can write and read back the API Key; after deletion, it is empty.")
     func storeLoadDelete() throws {
         let account = "openai.apiKey.test.\(UUID().uuidString)"
         let keychain = KeychainStore(service: "com.novpool.app.tests")

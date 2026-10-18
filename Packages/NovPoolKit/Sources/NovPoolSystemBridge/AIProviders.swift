@@ -2,9 +2,9 @@ import Foundation
 import NaturalLanguage
 import NovPoolCore
 
-// MARK: - OpenAI 兼容
+// MARK: - OpenAI compatible
 
-/// OpenAI 兼容接口（OpenAI / DeepSeek / 兼容网关 / 自建 vLLM 等）。
+/// OpenAI compatible interfaces (OpenAI / DeepSeek / compatible gateway / self-built vLLM, etc.).
 public struct OpenAICompatibleClient: LLMCompleting, EmbeddingProviding {
     public struct Configuration: Sendable {
         public var baseURL: URL
@@ -40,7 +40,7 @@ public struct OpenAICompatibleClient: LLMCompleting, EmbeddingProviding {
         let body: [String: Any] = [
             "model": configuration.chatModel,
             "temperature": 0.2,
-            // Structured Outputs：由服务端保证返回合法 JSON 对象。
+            // Structured Outputs: The server ensures that a valid JSON object is returned.
             "response_format": ["type": "json_object"],
             "messages": [
                 ["role": "system", "content": systemPrompt],
@@ -52,7 +52,7 @@ public struct OpenAICompatibleClient: LLMCompleting, EmbeddingProviding {
               let choices = object["choices"] as? [[String: Any]],
               let message = choices.first?["message"] as? [String: Any],
               let content = message["content"] as? String else {
-            throw NovPoolError.notImplemented("LLM 响应结构不符合 OpenAI 兼容格式")
+            throw NovPoolError.notImplemented("LLM response structure is not OpenAI-compatible")
         }
         return content
     }
@@ -81,7 +81,7 @@ public struct OpenAICompatibleClient: LLMCompleting, EmbeddingProviding {
 
         let payload = try await transport.get(request)
         guard (200..<300).contains(payload.statusCode) else {
-            throw NovPoolError.notImplemented("LLM 接口返回 HTTP \(payload.statusCode)")
+            throw NovPoolError.notImplemented("LLM API returned HTTP\(payload.statusCode)")
         }
         return payload.body
     }
@@ -89,7 +89,7 @@ public struct OpenAICompatibleClient: LLMCompleting, EmbeddingProviding {
 
 // MARK: - Ollama
 
-/// 本地 Ollama（默认 `http://127.0.0.1:11434`），完全离线可用。
+/// Local Ollama (default `http://127.0.0.1:11434`), fully functional offline.
 public struct OllamaClient: LLMCompleting, EmbeddingProviding {
     public struct Configuration: Sendable {
         public var baseURL: URL
@@ -125,7 +125,7 @@ public struct OllamaClient: LLMCompleting, EmbeddingProviding {
         let body: [String: Any] = [
             "model": configuration.chatModel,
             "stream": false,
-            // Ollama 的 `format: json` 等价于受限解码，保证输出是合法 JSON。
+            // `format: json` in Ollama is equivalent to constrained decoding, ensuring the output is valid JSON.
             "format": "json",
             "options": ["temperature": 0.2],
             "messages": [
@@ -137,7 +137,7 @@ public struct OllamaClient: LLMCompleting, EmbeddingProviding {
         guard let object = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any],
               let message = object["message"] as? [String: Any],
               let content = message["content"] as? String else {
-            throw NovPoolError.notImplemented("Ollama 响应结构不符合预期")
+            throw NovPoolError.notImplemented("Ollama response structure unexpected")
         }
         return content
     }
@@ -162,18 +162,18 @@ public struct OllamaClient: LLMCompleting, EmbeddingProviding {
 
         let payload = try await transport.get(request)
         guard (200..<300).contains(payload.statusCode) else {
-            throw NovPoolError.notImplemented("Ollama 接口返回 HTTP \(payload.statusCode)")
+            throw NovPoolError.notImplemented("Ollama API returned HTTP\(payload.statusCode)")
         }
         return payload.body
     }
 }
 
-// MARK: - 端侧句向量兜底
+// MARK: - Fallback for terminal-side sentence embedding
 
-/// 向量化回退链：按顺序尝试，前一个返回 `nil` 或抛错时用下一个。
+/// Embedding fallback chain: try in order, use the next one when the previous returns `nil` or throws an error.
 ///
-/// 对应白皮书的「向量化双模式」——优先配置的 embedding 模型（云端或 Ollama），
-/// 完全离线时回退到 macOS 原生 `NLEmbedding`。
+/// Corresponding to the white paper's 'Embedding-based dual mode' — the embedding model of priority configuration (cloud or Ollama),
+/// Fallback to macOS native `NLEmbedding` when completely offline.
 public struct ChainedEmbeddingProvider: EmbeddingProviding {
     private let providers: [any EmbeddingProviding]
 
@@ -191,9 +191,9 @@ public struct ChainedEmbeddingProvider: EmbeddingProviding {
     }
 }
 
-/// 完全离线时的向量兜底：macOS 原生 `NLEmbedding` 句向量。
+/// Fallback Embedding when completely offline: native macOS `NLEmbedding` sentence embedding.
 ///
-/// 该接口依赖系统语言资源；资源缺失时返回 `nil`，流水线跳过向量化而不是整条失败。
+/// This interface relies on system language resources; if resources are missing, it returns `nil`, and the pipeline skips embedding instead of failing entirely.
 public struct NaturalLanguageEmbeddingProvider: EmbeddingProviding {
     private let language: NLLanguage
 

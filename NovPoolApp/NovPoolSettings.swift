@@ -4,32 +4,32 @@ import NovPoolStorage
 import NovPoolUI
 import NovPoolSystemBridge
 
-/// 运行期设置。
+/// Runtime settings.
 ///
-/// 多数项在 `UserDefaults`；OpenAI API Key 走钥匙串（D4）。
+/// Most keys live in `UserDefaults`; the OpenAI API key goes in Keychain (D4).
 struct NovPoolSettings: Sendable {
     static let openAIAPIKeyAccount = "openai.apiKey"
     static let openAIAPIKeyDefaultsKey = "novpool.openai.apiKey"
     var isAIEnabled: Bool
-    /// 当前 AI 后端（与 `isAIEnabled` 联用；关闭总开关时不发起模型请求）。
+    /// Active AI backend (with `isAIEnabled`; master off skips model calls).
     var aiProvider: AIProvider
     var ollamaBaseURL: URL
     var chatModel: String
     var embeddingModel: String
     var categories: [String]
-    /// OpenAI 兼容接口配置（仅在 `aiProvider == .openAICompatible` 或本机 llama 时使用）。
+    /// OpenAI-compatible config (used when `aiProvider` is `.openAICompatible` or local llama).
     var openAIBaseURL: URL?
     var openAIAPIKey: String?
     var uiLanguage: AppLanguage
-    /// 呼出检索面板的全局快捷键。
+    /// Global hotkey that opens the search panel.
     var searchHotKey: HotKeySpec
-    /// 是否启用后台云同步（发件箱工作器）。
+    /// Whether background cloud sync (outbox worker) is enabled.
     var isSyncEnabled: Bool
-    /// 路由规则（JSON 字符串，设置面板可编辑）。
+    /// Route rules JSON (editable in Settings).
     var routeRulesJSON: String
-    /// 默认兜底连接器（无规则命中时使用）。
+    /// Fallback connectors when no rule matches.
     var defaultConnectorIDs: [String]
-    /// 悬浮窗拖拽展开的槽位（用户可在设置面板里自定义）。
+    /// Drop-zone sectors shown on drag (customizable in Settings).
     var zones: [DropZone]
 
     static let defaults = NovPoolSettings(
@@ -38,11 +38,11 @@ struct NovPoolSettings: Sendable {
         ollamaBaseURL: URL(string: "http://127.0.0.1:11434")!,
         chatModel: "qwen2.5:7b",
         embeddingModel: "bge-m3",
-        // 主题分类树（按内容含义，不是文件类型）。用户可在设置里改。
-        categories: ["技术", "产品", "生活", "阅读", "工作", "其他"],
+        // Topic tree (by meaning, not file type). Editable in Settings.
+        categories: ["Tech", "Product", "Life", "Reading", "Work", "Other"],
         openAIBaseURL: nil,
         openAIAPIKey: nil,
-        uiLanguage: .zh,
+        uiLanguage: .en,
         searchHotKey: .default,
         isSyncEnabled: false,
         routeRulesJSON: "",
@@ -76,7 +76,7 @@ struct NovPoolSettings: Sendable {
         )
     }
 
-    /// 钥匙串优先；若仅有 UserDefaults 遗留值则迁移后删除偏好设置里的明文。
+    /// Keychain first; migrate a legacy UserDefaults plaintext value if present, then remove it.
     static func loadOpenAIAPIKey(
         defaults: UserDefaults,
         keychain: KeychainStore
@@ -107,7 +107,7 @@ struct NovPoolSettings: Sendable {
         }
     }
 
-    /// 解析路由规则：容错——JSON 写错时按「无规则」处理，不让整个 app 起不来。
+    /// Parse route rules: on bad JSON treat as no rules so the app still launches.
     var routeRules: [RouteRule] {
         guard let data = routeRulesJSON.data(using: .utf8), !routeRulesJSON.isEmpty else { return [] }
         return (try? JSONDecoder().decode([RouteRule].self, from: data)) ?? []
@@ -117,7 +117,7 @@ struct NovPoolSettings: Sendable {
         RouteEvaluator(rules: routeRules, defaultConnectorIDs: defaultConnectorIDs)
     }
 
-    /// 按当前互斥选中的后端构造对话客户端。
+    /// Build a chat client for the currently selected backend.
     func makeCompleter() -> (any LLMCompleting)? {
         guard isAIEnabled else { return nil }
         switch aiProvider {
@@ -138,7 +138,7 @@ struct NovPoolSettings: Sendable {
         }
     }
 
-    /// 向量化回退链：当前后端 → macOS 原生句向量。
+    /// Embedding fallback chain: current backend → macOS NaturalLanguage.
     func makeEmbedder() -> any EmbeddingProviding {
         var providers: [any EmbeddingProviding] = []
         if isAIEnabled {

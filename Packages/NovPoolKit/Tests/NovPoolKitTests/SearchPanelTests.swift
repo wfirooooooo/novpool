@@ -6,7 +6,7 @@ import NovPoolStorage
 import Testing
 @testable import NovPoolUI
 
-/// 记录动作调用的替身（全局 actor 隔离，测试无需加锁）。
+/// Record the substitute for action calls (global actor isolation, no need for locking in tests).
 @MainActor
 final class SpyActions {
     private(set) var openedURLs: [URL] = []
@@ -16,7 +16,7 @@ final class SpyActions {
     private(set) var quickLookedFiles: [URL] = []
     private(set) var organizations: [(UUID, KnowledgeOrganization)] = []
     private(set) var resummarizedIDs: [UUID] = []
-    var resummarizeMessage = "已重新总结（AI 标签）"
+    var resummarizeMessage = "Re-summarized (AI tags)"
     private(set) var dismissCount = 0
 
     func make() -> SearchActions {
@@ -40,7 +40,7 @@ final class SpyActions {
     }
 }
 
-/// 记录查询串并返回预置结果的替身。
+/// A substitute that records query strings and returns preset results.
 @MainActor
 final class SpySearch {
     private(set) var queries: [String] = []
@@ -56,7 +56,7 @@ final class SpySearch {
     }
 }
 
-@Suite("检索面板行为")
+@Suite("Search panel behavior")
 @MainActor
 struct SearchPanelTests {
     private func makeViewModel(
@@ -74,7 +74,7 @@ struct SearchPanelTests {
     }
 
     private func sample(
-        title: String = "条目",
+        title: String = "entry",
         url: String? = nil,
         fileURL: URL? = nil,
         summary: String? = nil
@@ -85,25 +85,25 @@ struct SearchPanelTests {
             summary: summary,
             contentType: .webLink,
             sourceURL: url.flatMap(URL.init(string:)),
-            previewBody: "正文",
+            previewBody: "Body",
             localFileURL: fileURL
         )
     }
 
-    /// 等待去抖 Task 跑完。
+    /// Waiting for the Douyin task to finish running.
     private func settle() async {
         try? await Task.sleep(for: .milliseconds(60))
     }
 
-    // MARK: - 生命周期
+    // MARK: - Lifecycle
 
-    @Test("唤起面板：清空查询、递增聚焦令牌、先加载最近条目")
+    @Test("Invoke panel: clear query, increment focus token, load Recent entries first")
     func activateLoadsRecent() async {
         let search = SpySearch()
-        search.results = [sample(title: "最近条目")]
+        search.results = [sample(title: "Recententry")]
         let (viewModel, spy, _) = makeViewModel(search: search)
 
-        viewModel.updateQuery("残留的旧查询")
+        viewModel.updateQuery("Residual old queries")
         await settle()
         viewModel.activate()
         await settle()
@@ -116,10 +116,10 @@ struct SearchPanelTests {
         #expect(viewModel.selectedIndex == 0)
     }
 
-    @Test("输入触发检索，结果就绪后选中项回到第一条")
+    @Test("Enter to trigger the search, after the results are ready, select the first item")
     func queryDrivesSearch() async {
         let search = SpySearch()
-        search.results = [sample(title: "甲"), sample(title: "乙"), sample(title: "丙")]
+        search.results = [sample(title: "A"), sample(title: "B"), sample(title: "C")]
         let (viewModel, spy, _) = makeViewModel(search: search)
 
         viewModel.activate()
@@ -127,16 +127,16 @@ struct SearchPanelTests {
         viewModel.moveSelection(by: 2)
         #expect(viewModel.selectedIndex == 2)
 
-        viewModel.updateQuery("多云路由")
+        viewModel.updateQuery("Cloud Routing")
         await settle()
 
-        #expect(spy.queries.last == "多云路由")
+        #expect(spy.queries.last == "Cloud Routing")
         #expect(viewModel.selectedIndex == 0)
         #expect(viewModel.phase == .results)
         #expect(viewModel.isBusy == false)
     }
 
-    @Test("无结果与检索失败都有明确状态，面板不会卡在空白")
+    @Test("Both 'no results' and 'search failure' have clear statuses, and the panel will not get stuck on blank.")
     func emptyAndFailureStates() async {
         let search = SpySearch()
         search.results = []
@@ -146,24 +146,24 @@ struct SearchPanelTests {
         #expect(viewModel.phase == .empty)
 
         let failing = SpySearch()
-        failing.failure = NovPoolError.database("库被锁住")
+        failing.failure = NovPoolError.database("The warehouse is locked")
         let (failingViewModel, _, _) = makeViewModel(search: failing)
         failingViewModel.activate()
         await settle()
         if case .failed(let message) = failingViewModel.phase {
-            #expect(message.contains("库被锁住"))
+            #expect(message.contains("The warehouse is locked"))
         } else {
-            Issue.record("检索失败时应进入 failed 状态，实际是 \(failingViewModel.phase)")
+            Issue.record("When the search fails, it should enter the failed state; in reality, it is\(failingViewModel.phase)")
         }
         #expect(failingViewModel.results.isEmpty)
     }
 
-    // MARK: - 选择
+    // MARK: - Select
 
-    @Test("上下移动在两端夹紧，不会越界")
+    @Test("Move up and down and clamp at both ends, without going out of bounds")
     func selectionClamping() async {
         let search = SpySearch()
-        search.results = [sample(title: "甲"), sample(title: "乙")]
+        search.results = [sample(title: "A"), sample(title: "B")]
         let (viewModel, _, _) = makeViewModel(search: search)
         viewModel.activate()
         await settle()
@@ -174,10 +174,10 @@ struct SearchPanelTests {
         #expect(viewModel.selectedIndex == 1)
         viewModel.select(99)
         #expect(viewModel.selectedIndex == 1)
-        #expect(viewModel.selectedResult?.title == "乙")
+        #expect(viewModel.selectedResult?.title == "B")
     }
 
-    @Test("结果为空时移动选择不崩溃")
+    @Test("Moving Select does not crash when the result is empty")
     func selectionWithNoResults() async {
         let search = SpySearch()
         search.results = []
@@ -188,12 +188,12 @@ struct SearchPanelTests {
         #expect(viewModel.selectedResult == nil)
     }
 
-    // MARK: - 动作
+    // MARK: - Actions
 
-    @Test("回车打开网页条目并收起面板")
+    @Test("Press Enter to open the Web entry and collapse the panel")
     func confirmOpensWebResult() async {
         let search = SpySearch()
-        search.results = [sample(title: "文章", url: "https://example.com/a")]
+        search.results = [sample(title: "Article", url: "https://example.com/a")]
         var dismissed = 0
         let (viewModel, _, actions) = makeViewModel(search: search, onDismiss: { dismissed += 1 })
         viewModel.activate()
@@ -205,11 +205,11 @@ struct SearchPanelTests {
         #expect(dismissed == 1)
     }
 
-    @Test("回车打开纯本地文件条目")
+    @Test("Press Enter to Open a purely local File entry")
     func confirmRevealsLocalFile() async {
         let file = URL(filePath: "/tmp/novpool-report.pdf")
         let search = SpySearch()
-        search.results = [sample(title: "本地报告", fileURL: file)]
+        search.results = [sample(title: "Local Report", fileURL: file)]
         var dismissed = 0
         let (viewModel, _, actions) = makeViewModel(search: search, onDismiss: { dismissed += 1 })
         viewModel.activate()
@@ -221,23 +221,23 @@ struct SearchPanelTests {
         #expect(dismissed == 1)
     }
 
-    @Test("既无链接也无文件的条目回退为复制，避免回车毫无反应")
+    @Test("Entries with neither Link nor File revert to Copy, preventing Enter from having no response.")
     func confirmFallsBackToCopy() async {
         let search = SpySearch()
-        search.results = [sample(title: "纯文本笔记", summary: "摘要")]
+        search.results = [sample(title: "Plain TextNotes", summary: "Summary")]
         let (viewModel, _, actions) = makeViewModel(search: search)
         viewModel.activate()
         await settle()
 
         viewModel.confirmSelection()
         #expect(actions.copiedText.count == 1)
-        #expect(actions.copiedText[0].contains("纯文本笔记"))
+        #expect(actions.copiedText[0].contains("Plain TextNotes"))
     }
 
-    @Test("复制按钮写入剪贴板文本")
+    @Test("Copy button write clipboard Text")
     func copySelection() async {
         let search = SpySearch()
-        search.results = [sample(title: "甲"), sample(title: "乙")]
+        search.results = [sample(title: "A"), sample(title: "B")]
         let (viewModel, _, actions) = makeViewModel(search: search)
         viewModel.activate()
         await settle()
@@ -245,14 +245,14 @@ struct SearchPanelTests {
         viewModel.moveSelection(by: 1)
         viewModel.copySelection()
         #expect(actions.copiedText.count == 1)
-        #expect(actions.copiedText[0].contains("# 乙"))
+        #expect(actions.copiedText[0].contains("# B"))
     }
 
-    @Test("删除选中条目后从结果列表移除")
+    @Test("After deleting the selected item, remove it from the results list")
     func deleteSelectionRemovesResult() async {
         let search = SpySearch()
-        let first = sample(title: "甲")
-        let second = sample(title: "乙")
+        let first = sample(title: "A")
+        let second = sample(title: "B")
         search.results = [first, second]
         let (viewModel, _, actions) = makeViewModel(search: search)
         viewModel.activate()
@@ -262,23 +262,23 @@ struct SearchPanelTests {
         await settle()
 
         #expect(actions.deletedIDs == [first.id])
-        #expect(viewModel.results.map(\.title) == ["乙"])
-        #expect(viewModel.selectedResult?.title == "乙")
+        #expect(viewModel.results.map(\.title) == ["B"])
+        #expect(viewModel.selectedResult?.title == "B")
     }
 
-    @Test("按类型与时间筛选收窄结果")
+    @Test("Narrow results by type and time")
     func filtersNarrowResults() async {
         let search = SpySearch()
         let web = KnowledgeSearchResult(
             id: UUID(),
-            title: "网页",
+            title: "Web",
             contentType: .webLink,
             sourceURL: URL(string: "https://example.com"),
             createdAt: Date()
         )
         let oldFile = KnowledgeSearchResult(
             id: UUID(),
-            title: "旧文件",
+            title: "Old File",
             contentType: .genericFile,
             createdAt: Date().addingTimeInterval(-40 * 24 * 3600)
         )
@@ -289,7 +289,7 @@ struct SearchPanelTests {
         #expect(viewModel.results.count == 2)
 
         viewModel.setContentKindFilter(.web)
-        #expect(viewModel.results.map(\.title) == ["网页"])
+        #expect(viewModel.results.map(\.title) == ["Web"])
 
         viewModel.setContentKindFilter(.file)
         viewModel.setTimeFilter(.month)
@@ -299,11 +299,11 @@ struct SearchPanelTests {
         #expect(viewModel.results.count == 2)
     }
 
-    @Test("访达按钮揭示本地文件")
+    @Test("Finder button reveals local File")
     func revealInFinder() async {
         let file = URL(filePath: "/tmp/novpool-local.txt")
         let search = SpySearch()
-        search.results = [sample(title: "本地", fileURL: file)]
+        search.results = [sample(title: "Local", fileURL: file)]
         let (viewModel, _, actions) = makeViewModel(search: search)
         viewModel.activate()
         await settle()
@@ -312,11 +312,11 @@ struct SearchPanelTests {
         #expect(actions.revealedFiles == [file])
     }
 
-    @Test("预览按钮触发 Quick Look")
+    @Test("The Preview button triggers Quick Look")
     func quickLookSelection() async {
         let file = URL(filePath: "/tmp/novpool-preview.png")
         let search = SpySearch()
-        search.results = [sample(title: "图片", fileURL: file)]
+        search.results = [sample(title: "Image", fileURL: file)]
         let (viewModel, _, actions) = makeViewModel(search: search)
         viewModel.activate()
         await settle()
@@ -325,10 +325,10 @@ struct SearchPanelTests {
         #expect(actions.quickLookedFiles == [file])
     }
 
-    @Test("重新总结调用注入动作并展示状态")
+    @Test("Re-summarize calls the injection action and displays the status")
     func resummarizeSelection() async {
         let search = SpySearch()
-        let item = sample(title: "待总结")
+        let item = sample(title: "To be summarized")
         search.results = [item]
         let actions = SpyActions()
         let (viewModel, _, _) = makeViewModel(search: search, actions: actions)
@@ -340,16 +340,16 @@ struct SearchPanelTests {
         await settle()
 
         #expect(actions.resummarizedIDs == [item.id])
-        #expect(viewModel.statusMessage?.contains("重新总结") == true)
+        #expect(viewModel.statusMessage?.contains("Re-summarize") == true)
     }
 
-    @Test("保存整理后更新结果并支持收藏筛选")
+    @Test("Update the results after SaveOrganize and support Favorite filtering")
     func saveOrganizationAndFavoriteFilter() async {
         let search = SpySearch()
         let item = KnowledgeSearchResult(
             id: UUID(),
-            title: "待整理",
-            category: "旧",
+            title: "To be organized",
+            category: "old",
             tags: ["a"],
             contentType: .plainText
         )
@@ -359,7 +359,7 @@ struct SearchPanelTests {
         await settle()
 
         let organization = KnowledgeOrganization(
-            category: "技术",
+            category: "Technology",
             tags: ["swift"],
             isPinned: true,
             isFavorite: true
@@ -369,7 +369,7 @@ struct SearchPanelTests {
 
         #expect(actions.organizations.count == 1)
         #expect(actions.organizations[0].0 == item.id)
-        #expect(viewModel.selectedResult?.category == "技术")
+        #expect(viewModel.selectedResult?.category == "Technology")
         #expect(viewModel.selectedResult?.tags == ["swift"])
         #expect(viewModel.selectedResult?.isPinned == true)
         #expect(viewModel.selectedResult?.isFavorite == true)
@@ -378,16 +378,16 @@ struct SearchPanelTests {
         #expect(viewModel.results.count == 1)
 
         viewModel.saveOrganization(
-            KnowledgeOrganization(category: "技术", tags: ["swift"], isPinned: true, isFavorite: false)
+            KnowledgeOrganization(category: "Technology", tags: ["swift"], isPinned: true, isFavorite: false)
         )
         await settle()
         #expect(viewModel.results.isEmpty)
     }
 }
 
-@Suite("检索面板布局与快捷键规格")
+@Suite("Search Panel Layout and Shortcut Specifications")
 struct SearchPanelLayoutTests {
-    @Test("面板水平居中，垂直略高于屏幕中心，且完整落在可见区域内")
+    @Test("The panel is horizontally centered, slightly above the screen center vertically, and fully within the visible area.")
     func placement() {
         let visible = NSRect(x: 0, y: 0, width: 1512, height: 900)
         let origin = SearchPanelPlacement.origin(in: visible)
@@ -398,7 +398,7 @@ struct SearchPanelLayoutTests {
         #expect(frame.midY > visible.midY)
     }
 
-    @Test("窗口尺寸可持久化，过小会被夹到最小尺寸")
+    @Test("Window size can be persisted, and if it is too small, it will be clamped to the minimum size")
     func contentSizePersistence() {
         let suite = "novpool.tests.searchPanel.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -415,7 +415,7 @@ struct SearchPanelLayoutTests {
         #expect(clamped.height == SearchPanelLayout.minimumContentSize.height)
     }
 
-    @Test("多显示器：按鼠标所在屏幕弹出，找不到则退回首屏")
+    @Test("Multiple monitors: pop up on the screen where the mouse is located; if not found, return to the primary screen")
     func screenSelection() {
         let primary = NSRect(x: 0, y: 0, width: 1512, height: 900)
         let secondary = NSRect(x: 1512, y: 0, width: 1280, height: 800)
@@ -427,7 +427,7 @@ struct SearchPanelLayoutTests {
         #expect(SearchPanelPlacement.screenIndex(containing: .zero, frames: []) == nil)
     }
 
-    @Test("快捷键解析：默认组合、别名、顺序无关、非法输入")
+    @Test("Hotkey Analysis: Default Combination, Alias, Order Irrelevant, Invalid Input")
     func hotKeyParsing() {
         let spec = HotKeySpec(named: "cmd+shift+space")
         #expect(spec?.keyCode == HotKeySpec.default.keyCode)
@@ -438,9 +438,9 @@ struct SearchPanelLayoutTests {
         #expect(HotKeySpec(named: "⌥+space")?.displayName == "⌥Space")
         #expect(HotKeySpec(named: "ctrl+alt+a")?.carbonModifiers == UInt32(controlKey | optionKey))
 
-        #expect(HotKeySpec(named: "space") == nil)          // 缺少修饰键
-        #expect(HotKeySpec(named: "cmd+shift") == nil)      // 缺少主键
-        #expect(HotKeySpec(named: "cmd+unknown") == nil)    // 无法识别的键名
+        #expect(HotKeySpec(named: "space") == nil)          // Missing modifier key
+        #expect(HotKeySpec(named: "cmd+shift") == nil)      // Missing primary key
+        #expect(HotKeySpec(named: "cmd+unknown") == nil)    // Unrecognized key name
         #expect(HotKeySpec(named: "") == nil)
     }
 }

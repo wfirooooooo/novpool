@@ -1,17 +1,17 @@
 import Foundation
 
-/// Reciprocal Rank Fusion（RRF）。
+/// Reciprocal Rank Fusion (RRF).
 ///
-/// 全文检索（BM25 量纲）与向量相似度（余弦量纲）不可直接相加，RRF 只使用「名次」，
-/// 因此天然免疫量纲差异：`score = Σ 1 / (k + rank)`，`k` 越大越削弱头部优势。
+/// Full-text search (BM25 scale) and embedding similarity (cosine scale) cannot be directly added; RRF only uses "rank".
+/// Therefore, the natural immunity dimensional difference: `score = Σ 1 / (k + rank)`, the larger the `k`, the more it weakens the head advantage.
 public enum RankFusion {
-    /// 业界常用取值，先验来自 Cormack 等人的 RRF 论文。
+    /// Values commonly used in the industry, with priors coming from Cormack and others' RRF paper.
     public static let defaultK = 60
 
-    /// 融合多路排序结果，返回 id → 分数。
+    /// Merge multiple sorting results and return id → score.
     ///
-    /// 同一个 id 在多路中都出现时会累加分数（这正是 RRF 的效果：
-    /// 两路排名都靠前的条目会显著胜出）。
+    /// When the same ID appears in multiple paths, the scores will accumulate (this is precisely the effect of RRF:
+    /// Entries that rank high in both categories will significantly stand out.
     public static func fuse(_ rankings: [[UUID]], k: Int = RankFusion.defaultK) -> [UUID: Double] {
         var scores: [UUID: Double] = [:]
         for ranking in rankings {
@@ -22,7 +22,7 @@ public enum RankFusion {
         return scores
     }
 
-    /// 按融合分数降序输出 id；分数相同则按原始出现顺序稳定排列。
+    /// Output the IDs in descending order of fusion score; if the scores are the same, maintain the original order of appearance.
     public static func ranked(_ rankings: [[UUID]], k: Int = RankFusion.defaultK) -> [UUID] {
         let scores = fuse(rankings, k: k)
         var order: [UUID: Int] = [:]

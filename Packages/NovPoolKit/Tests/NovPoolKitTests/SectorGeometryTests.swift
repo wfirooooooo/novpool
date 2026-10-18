@@ -2,11 +2,11 @@ import Foundation
 import Testing
 @testable import NovPoolCore
 
-@Suite("扇区几何")
+@Suite("Sector Geometry")
 struct SectorGeometryTests {
     private let center = CGPoint(x: 130, y: 130)
 
-    @Test("四个扇区按上 → 右 → 下 → 左顺时针分布")
+    @Test("The four sectors are arranged clockwise in the order: top → right → bottom → left")
     func clockwiseQuadrants() {
         #expect(SectorGeometry.zoneIndex(for: CGPoint(x: 130, y: 200), center: center, zoneCount: 4) == 0)
         #expect(SectorGeometry.zoneIndex(for: CGPoint(x: 200, y: 130), center: center, zoneCount: 4) == 1)
@@ -14,17 +14,17 @@ struct SectorGeometryTests {
         #expect(SectorGeometry.zoneIndex(for: CGPoint(x: 60, y: 130), center: center, zoneCount: 4) == 3)
     }
 
-    @Test("图标死区内不命中任何扇区")
+    @Test("Does not hit any sector within the icon dead zone")
     func deadZone() {
         #expect(SectorGeometry.zoneIndex(for: CGPoint(x: 135, y: 135), center: center, zoneCount: 4) == nil)
     }
 
-    @Test("超出最大半径不命中，保证画布外的拖拽不被劫持")
+    @Test("Misses if it exceeds the maximum radius, ensuring that dragging outside the canvas is not hijacked")
     func outOfBounds() {
         #expect(SectorGeometry.zoneIndex(for: CGPoint(x: 130, y: 260), center: center, zoneCount: 4) == nil)
     }
 
-    @Test("槽位中心与命中判定互为逆运算")
+    @Test("The slot center and hit detection are inverse operations of each other")
     func roundTrip() {
         for count in [2, 3, 4] {
             for index in 0..<count {

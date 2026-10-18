@@ -2,7 +2,7 @@ import Foundation
 import NovPoolCore
 import Security
 
-/// macOS 钥匙串访问。OAuth token 与 Notion Integration Token 只存这里。
+/// macOS Keychain access. OAuth token and Notion Integration Token are stored only here.
 public struct KeychainStore: Sendable {
     public let service: String
 
@@ -21,16 +21,16 @@ public struct KeychainStore: Sendable {
         let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if updateStatus == errSecSuccess { return }
         guard updateStatus == errSecItemNotFound else {
-            throw Self.error(status: updateStatus, action: "更新")
+            throw Self.error(status: updateStatus, action: "update")
         }
 
         var insert = query
         insert[kSecValueData as String] = secret
-        // 不设置 kSecAttrAccessible：macOS 的旧钥匙串对它的支持依赖数据保护钥匙串，
-        // ad-hoc 签名的 app 上可能直接报 errSecParam；登录钥匙串在用户登录期间本就是解锁的。
+        // If kSecAttrAccessible is not set: older Keychains on macOS rely on data protection Keychain for support.
+        // Apps signed with ad-hoc may directly report errSecParam; the Keychain is already unlocked during the user's login.
         let addStatus = SecItemAdd(insert as CFDictionary, nil)
         guard addStatus == errSecSuccess else {
-            throw Self.error(status: addStatus, action: "写入")
+            throw Self.error(status: addStatus, action: "write")
         }
     }
 
@@ -54,7 +54,7 @@ public struct KeychainStore: Sendable {
         case errSecItemNotFound:
             return nil
         default:
-            throw Self.error(status: status, action: "读取")
+            throw Self.error(status: status, action: "read")
         }
     }
 
@@ -70,20 +70,20 @@ public struct KeychainStore: Sendable {
         ]
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw Self.error(status: status, action: "删除")
+            throw Self.error(status: status, action: "Delete")
         }
     }
 
-    /// 把 OSStatus 翻成可诊断的信息——钥匙串在受限环境（无登录会话 / 沙盒）里是整体不可用的。
+    /// Translate OSStatus into diagnosable information — Keychain is completely unavailable in restricted environments (no login session / sandbox).
     static func error(status: OSStatus, action: String) -> NovPoolError {
         switch status {
         case errSecNotAvailable, errSecInteractionNotAllowed, errSecParam:
             .authenticationRequired(
-                "系统钥匙串不可用（\(action)失败，OSStatus \(status)）："
-                    + "请确认在已登录的图形会话中运行，且沙盒未拦截 keychain 访问"
+                "System keychain unavailable (\(action) failed, OSStatus \(status)):"
+                    + "Confirm you are in a logged-in GUI session and the sandbox is not blocking keychain access"
             )
         default:
-            .authenticationRequired("钥匙串\(action)失败（OSStatus \(status)）")
+            .authenticationRequired("Keychain \(action) failed (OSStatus \(status))")
         }
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 import NovPoolCore
 
-/// `knowledge_items` 行模型。
+/// `knowledge_items` row model.
 public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
     public var id: UUID
     public var contentType: ContentType
@@ -17,9 +17,9 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
     public var fileHashSHA256: String?
     public var localRelativePath: String?
     public var embedding: [Float]?
-    /// 人工置顶：最近列表与检索结果中优先展示。
+    /// Manually Pinned: Prioritized display in the Recent list and search results.
     public var isPinned: Bool
-    /// 人工收藏：可在检索面板按收藏筛选。
+    /// Manual Favorite: You can filter by Favorite on the search panel.
     public var isFavorite: Bool
     public var createdAt: Date
     public var updatedAt: Date
@@ -64,7 +64,7 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
         self.updatedAt = updatedAt
     }
 
-    /// 由流水线载荷构造行模型。
+    /// Construct a row model from the assembly line payload.
     public init(payload: NormalizedPayload, localRelativePath: String?, now: Date = Date()) {
         self.init(
             id: payload.id,
@@ -86,7 +86,7 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
         )
     }
 
-    /// 还原为流水线载荷（供连接器推送使用）。
+    /// Restore to pipeline payload (for use with connector push).
     public func toPayload() -> NormalizedPayload {
         NormalizedPayload(
             id: id,
@@ -113,7 +113,7 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
     }
 }
 
-/// `connectors` 行模型。敏感凭据只存 Keychain，这里仅存引用与书签。
+/// `connectors` row model. Sensitive credentials are only stored in the Keychain, only references and bookmarks are stored here.
 public struct ConnectorRecord: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String
@@ -147,7 +147,7 @@ public struct ConnectorRecord: Codable, Sendable, Equatable, Identifiable {
     public var configData: Data { Data(configJSON.utf8) }
 }
 
-/// `sync_outbox_jobs` 行模型。
+/// `sync_outbox_jobs` row model.
 public struct OutboxJobRecord: Codable, Sendable, Equatable, Identifiable {
     public enum Status: String, Codable, Sendable {
         case pending = "PENDING"
@@ -196,7 +196,7 @@ public struct OutboxJobRecord: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-/// 检索命中结果。
+/// Search hit results.
 public struct KnowledgeSearchHit: Sendable, Equatable, Identifiable {
     public var id: UUID
     public var title: String
@@ -207,7 +207,7 @@ public struct KnowledgeSearchHit: Sendable, Equatable, Identifiable {
     public var sourceURL: URL?
     public var sourceTitle: String?
     public var createdAt: Date
-    /// FTS5 `snippet()` 片段，或向量检索的正文截断。
+    /// FTS5 `snippet()` fragments, or truncation of the Body in Embedding retrieval.
     public var snippet: String?
 
     public init(

@@ -1,20 +1,20 @@
 import Foundation
 import NovPoolCore
 
-/// 悬浮窗渲染快照。
+/// Floating window render snapshot.
 ///
-/// 为什么需要它：SwiftUI 结果构建器里的闭包（`ForEach` 的 content、`ZStack` 的 content、
-/// `onAppear`…）签名都是**非隔离**的。在这些闭包里直接读 `@MainActor @Observable` 模型，
-/// 编译器会插入运行时"当前执行器"检查（`swift_task_isCurrentExecutor…`）。
-/// 该检查在真实窗口渲染 + release 优化下出现过 `EXC_BAD_ACCESS`（踩坏指针）。
+/// Why you need it: closures in SwiftUI result builders (`ForEach`'s content, `ZStack`'s content,
+/// `onAppear`…) signatures are all **non-isolated**. In these closures, you can directly read `@MainActor @Observable` models,
+/// The compiler will insert a runtime "Current executor" check (`swift_task_isCurrentExecutor…`).
+/// This check has experienced `EXC_BAD_ACCESS` (dereferenced a bad pointer) under real window rendering + release optimization.
 ///
-/// 因此视图只消费这份纯值快照：闭包里不再出现任何模型访问，检查自然消失。
+/// Therefore, the view only consumes this pure value snapshot: there is no longer any model access in the closure, and the inspection naturally disappears.
 struct PanelSnapshot: Equatable {
     struct Chip: Equatable, Identifiable {
         var id: String
         var title: String
         var systemImage: String
-        /// 相对环心的偏移（SwiftUI 坐标：y 向下为正）。
+        /// Offset relative to the center of the circle (SwiftUI coordinates: y is positive downward).
         var offset: CGPoint
         var isHighlighted: Bool
     }
@@ -36,15 +36,15 @@ struct PanelSnapshot: Equatable {
         ringOffset = viewModel.ringOffset
         ringRadius = viewModel.ringRadius
 
-        // 关键：先在 init 作用域（main actor）把模型状态取成局部值，
-        // 再交给非隔离的 map 闭包。闭包字面量传给 map / filter / sorted 这类
-        // 非隔离泛型函数时，闭包类型也是非隔离的——在里面读 @MainActor 状态
-        // 会插入运行时隔离检查，而该检查在真实 app 里曾稳定崩在
-        // `swift_task_isCurrentExecutorWithFlagsImpl`。
+        // Key: first, in the init scope (main actor), take the model state as a local value,
+        // Then pass it to a non-isolated map closure. Closure literals are passed to map / filter / sorted, etc.
+        // When a non-isolated generic function, the closure type is also non-isolated—reading @MainActor state inside
+        // Runtime isolation checks will be inserted, and this check has previously caused stable crashes in real apps
+        // `swift_task_isCurrentExecutorWithFlagsImpl`.
         let zones = viewModel.zones
         let highlightedIndex = viewModel.highlightedZoneIndex
 
-        // AppKit 视图坐标（y 向上）→ SwiftUI 偏移（y 向下）
+        // AppKit view coordinates (y up) → SwiftUI offset (y down)
         let offsets = SectorLayout.chipOffsets(
             zoneCount: zones.count,
             radius: viewModel.ringRadius
@@ -61,7 +61,7 @@ struct PanelSnapshot: Equatable {
         }
     }
 
-    /// 主图标命中区域（静默态）/ 整块画布（展开态）。
+    /// Main icon hit area (idle state) / entire canvas (expanded state).
     func interactiveRect(canvasSize: CGSize, iconSize: CGFloat) -> CGRect {
         isExpanded
             ? CGRect(origin: .zero, size: canvasSize)

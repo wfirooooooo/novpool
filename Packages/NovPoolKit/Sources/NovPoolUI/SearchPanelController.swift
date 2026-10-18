@@ -3,12 +3,12 @@ import Foundation
 import NovPoolStorage
 import SwiftUI
 
-/// 检索面板控制器：装配面板、注册全局快捷键、管理焦点归还。
+/// Search panel controller: builds the panel, registers the global hotkey, restores focus.
 @MainActor
 public final class SearchPanelController: NSObject, NSWindowDelegate {
     public let panel: SearchPanel
-    /// 视图模型需要在 `super.init()` 之后构造（它的 `onDismiss` 要回调本对象），
-    /// 因此这里用隐式解包：构造完成后立即赋值，外部拿到的永远是有效实例。
+    /// The view model must be built after `super.init()` (its `onDismiss` callbacks into self),
+    /// so this uses an implicitly unwrapped optional: assigned right after init; callers always see a valid instance.
     public private(set) var viewModel: SearchViewModel!
 
     private var hotKey: GlobalHotKey?
@@ -25,7 +25,7 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
         self.panel = SearchPanel(contentSize: contentSize)
         super.init()
 
-        // 无论外部是否注入动作，Quick Look 都走本控制器持有的实例，避免单例并发告警。
+        // Regardless of injected actions, Quick Look uses this controller's instance to avoid singleton concurrency warnings.
         let base = actions ?? SearchPanelController.liveActions { _ in false }
         let quickLook = quickLookController
         let resolvedActions = SearchActions(
@@ -58,10 +58,10 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// 快捷键是否注册成功（可能被系统或其他应用占用）。
+    /// Whether the hotkey registered (may be taken by the system or another app).
     public var isHotKeyRegistered: Bool { hotKey != nil }
 
-    /// 设置热生效：释放旧热键并按新规格重新注册。
+    /// Apply settings live: release the old hotkey and re-register with the new spec.
     @discardableResult
     public func updateHotKey(_ spec: HotKeySpec) -> Bool {
         hotKey = nil
@@ -78,7 +78,7 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
     }
 
     public func show() {
-        // 记住当前前台应用，收起时把焦点还回去（菜单栏工具的礼仪）。
+        // Remember the frontmost app and restore focus on dismiss (menu-bar tool etiquette).
         previousApp = NSWorkspace.shared.frontmostApplication
         if let screen = SearchPanelPlacement.screenForMouse(
             screens: NSScreen.screens,
@@ -100,23 +100,23 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
         target?.activate()
     }
 
-    /// 点到别处自动收起（Spotlight 习惯）。
+    /// Dismiss when clicking elsewhere (Spotlight habit).
     public func windowDidResignKey(_ notification: Notification) {
         guard panel.isVisible else { return }
         hide()
     }
 
-    /// 用户拖完窗口边角后记住尺寸，下次呼出沿用。
+    /// Remember the size after the user resizes, reuse on next open.
     public func windowDidEndLiveResize(_ notification: Notification) {
         SearchPanelLayout.persistContentSize(panel.frame.size)
     }
 
-    // MARK: - 真实动作实现
+    // MARK: - Real action implementations
 
     public static func liveActions(
         deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool,
         updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in },
-        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> String = { _ in "未接线" }
+        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> String = { _ in "Not wired" }
     ) -> SearchActions {
         SearchActions(
             openURL: { url in NSWorkspace.shared.open(url) },

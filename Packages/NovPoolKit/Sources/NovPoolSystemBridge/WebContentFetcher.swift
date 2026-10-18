@@ -1,7 +1,7 @@
 import Foundation
 import NovPoolCore
 
-/// 抓取结果。失败原因保留在枚举里，便于诊断「为什么这条没提取到正文」。
+/// Capture result. The reason for failure is kept in the enumeration to facilitate diagnosing 'why this item did not extract the Body'.
 public enum WebFetchResult: Sendable, Equatable {
     case extracted(ArticleExtraction)
     case notHTML(contentType: String?)
@@ -17,9 +17,9 @@ public enum WebFetchResult: Sendable, Equatable {
     }
 }
 
-/// 网页正文抓取 + 提取。
+/// WebBody capture + extraction.
 ///
-/// 全程 best-effort：任何一步失败都只返回结果枚举，不抛出、不阻塞拖拽主流程。
+/// Full-process best-effort: If any step fails, only return the result enumeration, do not throw, do not block the main drag-and-drop flow.
 public struct WebContentFetcher: Sendable {
     public struct Configuration: Sendable {
         public var timeout: TimeInterval
@@ -100,9 +100,9 @@ public struct WebContentFetcher: Sendable {
     }
 }
 
-/// 网页字符集判定：BOM → Content-Type → `<meta charset>` → UTF-8 → Latin-1。
+/// Web character set determination: BOM → Content-Type → `<meta charset>` → UTF-8 → Latin-1.
 ///
-/// 中文站点大量使用 GBK / GB18030，不做这一步会得到满屏乱码，正文提取与检索全部失效。
+/// Chinese sites largely use GBK / GB18030. If this step is not done, you will get a screen full of garbled text, and Body extraction and all retrieval will fail.
 public enum HTMLCharset {
     public static let sniffBytes = 4096
 
@@ -118,7 +118,7 @@ public enum HTMLCharset {
         if let text = String(data: data, encoding: .utf8) {
             return text
         }
-        // 最后兜底：Latin-1 对任意字节串都不会失败，至少保证后续步骤不崩溃。
+        // Final fallback: Latin-1 will not fail on any byte string, at least ensuring that subsequent steps do not crash.
         return String(data: data, encoding: .isoLatin1)
     }
 
@@ -134,7 +134,7 @@ public enum HTMLCharset {
         return nil
     }
 
-    /// 从前若干字节里嗅探 `<meta charset="...">` / `<meta http-equiv=... content="text/html; charset=...">`。
+    /// Previously, sniff `<meta charset="...">` / `<meta http-equiv=... content="text/html; charset=...">` within a certain number of bytes.
     public static func charsetName(inMetaTagOf data: Data) -> String? {
         let prefix = data.prefix(sniffBytes)
         guard let head = String(data: prefix, encoding: .isoLatin1) else { return nil }
@@ -142,8 +142,8 @@ public enum HTMLCharset {
 
         if let range = lowered.range(of: "charset=") {
             var tail = lowered[range.upperBound...]
-            // 现实中几乎都是 <meta charset="gbk">（带引号）；不剥掉引号会得到空值，
-            // 进而退回 Latin-1，整页中文变成乱码。
+            // In reality, it is almost always <meta charset="gbk"> (with quotes); if the quotes are not removed, an empty value will be obtained.
+            // Then reverting to Latin-1, the entire page of Chinese became garbled.
             if let first = tail.first, first == "\"" || first == "'" {
                 tail = tail.dropFirst()
             }
@@ -162,7 +162,7 @@ public enum HTMLCharset {
         return nil
     }
 
-    /// IANA 字符集名 → Swift 编码（覆盖 utf-8 / gbk / gb18030 / big5 / shift_jis / euc-kr 等）。
+    /// IANA character set name → Swift encoding (overrides utf-8 / gbk / gb18030 / big5 / shift_jis / euc-kr, etc.).
     static func encoding(named name: String) -> String.Encoding? {
         let cfEncoding = CFStringConvertIANACharSetNameToEncoding(name as CFString)
         guard cfEncoding != kCFStringEncodingInvalidId else { return nil }

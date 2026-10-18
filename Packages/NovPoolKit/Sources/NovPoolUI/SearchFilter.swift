@@ -2,7 +2,7 @@ import Foundation
 import NovPoolCore
 import NovPoolStorage
 
-/// 检索结果客户端过滤（在混合检索召回之后再收窄）。
+/// Client-side filter applied after hybrid search recall.
 public enum SearchContentKindFilter: String, Sendable, CaseIterable, Identifiable, Equatable {
     case all
     case web
@@ -16,13 +16,13 @@ public enum SearchContentKindFilter: String, Sendable, CaseIterable, Identifiabl
 
     public var title: String {
         switch self {
-        case .all: "全部"
-        case .web: "网页"
-        case .image: "图片"
-        case .video: "视频"
+        case .all: "All"
+        case .web: "Web"
+        case .image: "Image"
+        case .video: "Video"
         case .document: "PDF"
-        case .text: "文本"
-        case .file: "文件"
+        case .text: "Text"
+        case .file: "File"
         }
     }
 
@@ -49,10 +49,10 @@ public enum SearchTimeFilter: String, Sendable, CaseIterable, Identifiable, Equa
 
     public var title: String {
         switch self {
-        case .all: "不限时间"
-        case .today: "今天"
-        case .week: "近 7 天"
-        case .month: "近 30 天"
+        case .all: "Any time"
+        case .today: "Today"
+        case .week: "Last 7 days"
+        case .month: "Last 30 days"
         }
     }
 
@@ -76,9 +76,9 @@ public struct SearchFilterState: Sendable, Equatable {
     public var contentKind: SearchContentKindFilter
     public var category: String?
     public var time: SearchTimeFilter
-    /// 只看收藏。
+    /// Favorites only.
     public var favoritesOnly: Bool
-    /// 只看置顶。
+    /// Pinned only.
     public var pinnedOnly: Bool
 
     public init(

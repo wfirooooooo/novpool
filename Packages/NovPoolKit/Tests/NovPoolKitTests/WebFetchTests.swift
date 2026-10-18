@@ -3,15 +3,15 @@ import Testing
 @testable import NovPoolCore
 @testable import NovPoolSystemBridge
 
-@Suite("网页抓取与字符集处理")
+@Suite("Web Scraping and Character Set Handling")
 struct WebFetchTests {
     private let url = URL(string: "https://blog.example.com/post")!
 
-    private func articleHTML(body: String = String(repeating: "这是一段足够长的正文内容。", count: 12)) -> String {
+    private func articleHTML(body: String = String(repeating: "This is a body content that is long enough.", count: 12)) -> String {
         """
-        <html><head><title>测试文章</title></head>
-        <body><article><h1>测试文章</h1><p>\(body)</p>
-        <p><a href="/next">下一篇</a></p></article></body></html>
+        <html><head><title>Test article</title></head>
+        <body><article><h1>Test article</h1><p>\(body)</p>
+        <p><a href="/next">Next article</a></p></article></body></html>
         """
     }
 
@@ -29,7 +29,7 @@ struct WebFetchTests {
         )
     }
 
-    @Test("抓取成功：提取标题与 Markdown 正文，相对链接按重定向后的 URL 解析")
+    @Test("Capture successful: extract title and Markdown body, resolve relative links according to the redirected URL")
     func successfulFetch() async throws {
         let transport = StubTransport(responses: [
             payload(html: articleHTML(), finalURL: URL(string: "https://blog.example.com/redirected/post")!),
@@ -38,8 +38,8 @@ struct WebFetchTests {
 
         let result = await fetcher.fetchArticle(from: url)
         let article = try #require(result.article)
-        #expect(article.title == "测试文章")
-        #expect(article.markdown.contains("[下一篇](https://blog.example.com/next)"))
+        #expect(article.title == "Test article")
+        #expect(article.markdown.contains("[Next article](https://blog.example.com/next)"))
 
         let request = try #require(transport.requests.first)
         #expect(request.httpMethod == "GET")
@@ -47,7 +47,7 @@ struct WebFetchTests {
         #expect(request.value(forHTTPHeaderField: "Accept-Language")?.contains("zh") == true)
     }
 
-    @Test("非 HTML 响应直接跳过，不浪费解析")
+    @Test("Non-HTML responses are skipped directly, no parsing wasted")
     func nonHTMLResponse() async {
         let transport = StubTransport(responses: [
             HTTPPayload(statusCode: 200, headers: ["Content-Type": "image/png"], body: Data([0x89, 0x50])),
@@ -56,20 +56,20 @@ struct WebFetchTests {
         #expect(result == .notHTML(contentType: "image/png"))
     }
 
-    @Test("HTTP 错误与网络失败分别归类，不抛异常")
+    @Test("HTTP Errors and network failures are categorized separately, without throwing exceptions")
     func errorMapping() async {
         let notFound = StubTransport(responses: [payload(html: "<html></html>", statusCode: 404)])
         #expect(await WebContentFetcher(transport: notFound).fetchArticle(from: url) == .httpError(status: 404))
 
         let offline = StubTransport()
         if case .transportError = await WebContentFetcher(transport: offline).fetchArticle(from: url) {
-            // 预期分支
+            // Expected branch
         } else {
-            Issue.record("离线传输应归类为 transportError")
+            Issue.record("Offline transmission should be classified as transportError")
         }
     }
 
-    @Test("超过体积上限的页面跳过提取")
+    @Test("Pages exceeding the volume limit are skipped for extraction")
     func sizeLimit() async {
         let big = String(repeating: "x", count: 5_000)
         let transport = StubTransport(responses: [payload(html: big)])
@@ -80,7 +80,7 @@ struct WebFetchTests {
         #expect(await fetcher.fetchArticle(from: url) == .tooLarge(bytes: 5_000))
     }
 
-    @Test("非 http(s) 链接不抓取")
+    @Test("Non-http(s) links are not crawled")
     func nonHTTPScheme() async {
         let transport = StubTransport(responses: [payload(html: articleHTML())])
         let fetcher = WebContentFetcher(transport: transport)
@@ -89,47 +89,47 @@ struct WebFetchTests {
         #expect(transport.requests.isEmpty)
     }
 
-    @Test("无法提取正文的页面归类为 unparseable")
+    @Test("Pages from which the Body cannot be extracted are classified as unparseable")
     func unparseable() async {
-        let transport = StubTransport(responses: [payload(html: "<html><body><p>短</p></body></html>")])
+        let transport = StubTransport(responses: [payload(html: "<html><body><p>short</p></body></html>")])
         #expect(await WebContentFetcher(transport: transport).fetchArticle(from: url) == .unparseable)
     }
 
-    // MARK: - 字符集
+    // MARK: - Character set
 
-    @Test("Content-Type 中的 charset 生效")
+    @Test("The charset in Content-Type takes effect")
     func charsetFromContentType() {
-        let text = "中文内容"
+        let text = "Chinese content"
         let encoding = HTMLCharset.encoding(named: "gb18030")!
         let data = text.data(using: encoding)!
         let decoded = HTMLCharset.decode(data, contentType: "text/html; charset=gb18030")
-        #expect(decoded?.contains("中文内容") == true)
+        #expect(decoded?.contains("Chinese content") == true)
         #expect(HTMLCharset.charsetName(inContentType: "text/html; charset=\"UTF-8\"") == "UTF-8")
         #expect(HTMLCharset.charsetName(inContentType: "text/html") == nil)
     }
 
-    @Test("BOM 优先于声明的字符集")
+    @Test("BOM takes precedence over the declared character set")
     func bomWins() {
-        let text = "带 BOM 的文本"
+        let text = "Text with BOM"
         var data = Data([0xEF, 0xBB, 0xBF])
         data.append(text.data(using: .utf8)!)
-        #expect(HTMLCharset.decode(data, contentType: "text/html; charset=gb18030")?.contains("带 BOM 的文本") == true)
+        #expect(HTMLCharset.decode(data, contentType: "text/html; charset=gb18030")?.contains("Text with BOM") == true)
     }
 
-    @Test("无声明 charset 时从 meta 标签嗅探（GBK 站点）")
+    @Test("Sniff from meta tag when no charset is declared (GBK site)")
     func metaCharsetSniffing() throws {
-        let html = "<html><head><meta charset=\"gbk\"><title>中文站点</title></head><body>正文</body></html>"
+        let html = "<html><head><meta charset=\"gbk\"><title>Chinese site</title></head><body>Body</body></html>"
         let data = try #require(html.data(using: HTMLCharset.encoding(named: "gbk")!))
         let decoded = try #require(HTMLCharset.decode(data, contentType: "text/html"))
-        #expect(decoded.contains("中文站点"))
-        #expect(decoded.contains("正文"))
+        #expect(decoded.contains("Chinese site"))
+        #expect(decoded.contains("Body"))
     }
 
-    @Test("无任何线索时 UTF-8 兜底，非法字节不崩溃")
+    @Test("When there are no clues, fall back to UTF-8; illegal bytes do not crash")
     func fallbackDecoding() {
-        let plain = Data("纯英文".utf8)
-        #expect(HTMLCharset.decode(plain)?.contains("纯英文") == true)
-        // 非法 UTF-8 字节序列：最终由 Latin-1 兜底，保证不返回 nil、不抛错。
+        let plain = Data("Pure English".utf8)
+        #expect(HTMLCharset.decode(plain)?.contains("Pure English") == true)
+        // Illegal UTF-8 byte sequence: ultimately fall back to Latin-1 to ensure nil is not returned and no error is thrown.
         #expect(HTMLCharset.decode(Data([0x80, 0x81, 0xFF])) != nil)
     }
 }

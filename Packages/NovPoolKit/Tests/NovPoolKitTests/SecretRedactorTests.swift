@@ -2,9 +2,9 @@ import Foundation
 import NovPoolCore
 import Testing
 
-@Suite("敏感信息脱敏")
+@Suite("Sensitive information desensitization")
 struct SecretRedactorTests {
-    @Test("遮盖 Bearer / sk- / ntn_ / access_token")
+    @Test("Cover Bearer / sk- / ntn_ / access_token")
     func redactsCommonSecrets() {
         #expect(SecretRedactor.redact("Authorization: Bearer abcdefghijklmnop").contains("***"))
         #expect(!SecretRedactor.redact("key=sk-abcdefghijklmnopqrst").contains("sk-abcdefghijklmnopqrst"))
@@ -15,9 +15,9 @@ struct SecretRedactorTests {
         #expect(!redacted.contains("ya29.secret-value-here"))
     }
 
-    @Test("普通错误文案保持可读")
+    @Test("Keep ordinary error messages readable")
     func keepsNormalText() {
-        let text = "刷新令牌失败（HTTP 401）：invalid_grant"
+        let text = "Refresh token failed (HTTP401):invalid_grant"
         #expect(SecretRedactor.redact(text).contains("invalid_grant"))
     }
 }

@@ -1,9 +1,9 @@
 import Foundation
 
-// MARK: - 拖拽资源形态
+// MARK: - Drag content type
 
-/// 一次拖拽被归一化后的资源形态（网页 / 图片 / PDF…）。
-/// 决定清洗流水线分支；在 UI 里作为固定 tag 跟随条目显示，不等于主题分类。
+/// Normalized shape of a dropped item (web / image / PDF…).
+/// Chooses the enrichment branch; shown in UI as a fixed type tag, not a topic category.
 public enum ContentType: String, Codable, Sendable, CaseIterable {
     case plainText
     case richHTML
@@ -13,22 +13,22 @@ public enum ContentType: String, Codable, Sendable, CaseIterable {
     case documentPDF
     case genericFile
 
-    /// 跟随资源显示的形态 tag（中文短标签）。
+    /// Short type tag shown with the item.
     public var displayTag: String {
         switch self {
-        case .webLink: "网页"
-        case .image: "图片"
-        case .video: "视频"
+        case .webLink: "Web"
+        case .image: "Image"
+        case .video: "Video"
         case .documentPDF: "PDF"
-        case .plainText: "文本"
-        case .richHTML: "富文本"
-        case .genericFile: "文件"
+        case .plainText: "Text"
+        case .richHTML: "Rich text"
+        case .genericFile: "File"
         }
     }
 }
 
-/// 按扩展名归类文件资源。拖拽进来的文件要先分清是图片、视频、PDF 还是普通文件，
-/// 后续的暂存、OCR/摘要、云端命名与图标展示都依赖这个判断。
+/// Classify a file by extension (image / video / PDF / other).
+/// Staging, OCR/summary, cloud naming, and icons all depend on this.
 public enum FileKind: String, Sendable, Equatable {
     case image
     case video
@@ -64,9 +64,9 @@ public enum FileKind: String, Sendable, Equatable {
     }
 }
 
-// MARK: - 溯源上下文
+// MARK: - Provenance context
 
-/// 捕获瞬间的浏览器 / 应用上下文（静默溯源结果）。
+/// Browser / app context captured at drop time (silent provenance).
 public struct SourceContext: Codable, Sendable, Equatable {
     public let appBundleID: String
     public let pageURL: URL?
@@ -86,9 +86,9 @@ public struct SourceContext: Codable, Sendable, Equatable {
     }
 }
 
-// MARK: - 标准化知识载荷
+// MARK: - Normalized knowledge payload
 
-/// 流水线中间与出口的统一载荷形态。可持久化、可跨 Actor 传递。
+/// Unified payload for pipeline stages. Codable and Sendable across actors.
 public struct NormalizedPayload: Codable, Sendable, Identifiable, Equatable {
     public let id: UUID
     public let contentType: ContentType
@@ -101,7 +101,7 @@ public struct NormalizedPayload: Codable, Sendable, Identifiable, Equatable {
     public var localStagedURL: URL?
     public var fileHashSHA256: String?
     public var sourceContext: SourceContext
-    /// 跨云级联时，前置网盘连接器回填的云端预览链接。
+    /// Cloud preview URL filled in by an upstream drive connector during cascade sync.
     public var upstreamAssetURL: URL?
 
     public init(
@@ -133,7 +133,7 @@ public struct NormalizedPayload: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
-// MARK: - 云端回执
+// MARK: - Remote receipt
 
 public struct RemoteReceipt: Codable, Sendable, Equatable {
     public let connectorID: String
@@ -149,14 +149,14 @@ public struct RemoteReceipt: Codable, Sendable, Equatable {
     }
 }
 
-// MARK: - 扇区投递槽位
+// MARK: - Drop sectors
 
-/// 悬浮窗拖拽悬停时展开的快捷投递槽位（最多 4 个）。
+/// Quick-drop sectors expanded while hovering the float icon (up to 4).
 public struct DropZone: Codable, Sendable, Identifiable, Equatable {
     public let id: String
     public var title: String
     public var systemImage: String
-    /// `nil` 表示“智能路由”槽位，由 `RouteEvaluator` 决定目标连接器。
+    /// `nil` means the smart-route sector; `RouteEvaluator` picks the connector.
     public var connectorID: String?
 
     public init(id: String, title: String, systemImage: String, connectorID: String? = nil) {
@@ -168,13 +168,13 @@ public struct DropZone: Codable, Sendable, Identifiable, Equatable {
 
     public var isSmartRoute: Bool { connectorID == nil }
 
-    /// 本地优先默认槽位：只本机入库。云端扇区可在设置里自行添加。
+    /// Local-first default: save on this Mac only. Add cloud sectors in Settings.
     public static let defaultZones: [DropZone] = [
-        DropZone(id: "local", title: "本机入库", systemImage: "internaldrive"),
+        DropZone(id: "local", title: "Save locally", systemImage: "internaldrive"),
     ]
 }
 
-// MARK: - 错误
+// MARK: - Errors
 
 public enum NovPoolError: Error, Sendable, Equatable {
     case unsupportedContent
@@ -189,18 +189,18 @@ extension NovPoolError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .unsupportedContent:
-            "粘贴板中不包含可归档的内容表示层。"
+            "The pasteboard has no archivable content representation."
         case .stagingFailure(let detail):
-            "本地暂存失败：\(detail)"
+            "Staging failed: \(detail)"
         case .database(let detail):
-            "数据库错误：\(detail)"
+            "Database error: \(detail)"
         case .connectorNotConfigured(let connectorID):
-            "连接器未配置或已禁用：\(connectorID)"
+            "Connector not configured or disabled: \(connectorID)"
         case .authenticationRequired(let detail):
-            // detail 可能是连接器 ID，也可能是刷新失败原因；统一引导用户去设置重授。
-            "授权失效：\(SecretRedactor.redact(detail))。请打开设置重新授权对应云服务。"
+            // detail may be a connector id or a refresh failure reason.
+            "Authorization expired: \(SecretRedactor.redact(detail)). Open Settings to re-authorize the cloud service."
         case .notImplemented(let feature):
-            "功能尚未实现：\(feature)"
+            "Not implemented: \(feature)"
         }
     }
 }

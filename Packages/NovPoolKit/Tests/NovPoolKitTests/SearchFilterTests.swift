@@ -4,7 +4,7 @@ import NovPoolStorage
 import Testing
 @testable import NovPoolUI
 
-@Suite("检索过滤")
+@Suite("Search Filter")
 struct SearchFilterTests {
     private func result(
         type: ContentType,
@@ -13,14 +13,14 @@ struct SearchFilterTests {
     ) -> KnowledgeSearchResult {
         KnowledgeSearchResult(
             id: UUID(),
-            title: "条目",
+            title: "entry",
             category: category,
             contentType: type,
             createdAt: createdAt
         )
     }
 
-    @Test("类型过滤")
+    @Test("Type Filtering")
     func contentKind() {
         #expect(SearchContentKindFilter.web.matches(.webLink))
         #expect(SearchContentKindFilter.text.matches(.plainText))
@@ -28,7 +28,7 @@ struct SearchFilterTests {
         #expect(!SearchContentKindFilter.image.matches(.video))
     }
 
-    @Test("时间过滤")
+    @Test("Time Filter")
     func timeFilter() {
         let now = Date()
         let yesterday = now.addingTimeInterval(-24 * 3600)
@@ -39,35 +39,35 @@ struct SearchFilterTests {
         #expect(!SearchTimeFilter.month.matches(old, now: now))
     }
 
-    @Test("组合过滤")
+    @Test("Combined Filtering")
     func combined() {
         let items = [
-            result(type: .webLink, category: "技术"),
-            result(type: .image, category: "技术"),
-            result(type: .webLink, category: "生活"),
+            result(type: .webLink, category: "Technology"),
+            result(type: .image, category: "Technology"),
+            result(type: .webLink, category: "Life"),
         ]
-        let filter = SearchFilterState(contentKind: .web, category: "技术", time: .all)
+        let filter = SearchFilterState(contentKind: .web, category: "Technology", time: .all)
         #expect(filter.applying(to: items).count == 1)
-        #expect(filter.applying(to: items).first?.category == "技术")
+        #expect(filter.applying(to: items).first?.category == "Technology")
     }
 
-    @Test("收藏与置顶过滤")
+    @Test("Favorite and Pinned filtering")
     func favoriteAndPinned() {
         let starred = KnowledgeSearchResult(
             id: UUID(),
-            title: "收藏",
+            title: "Favorite",
             contentType: .plainText,
             isFavorite: true
         )
         let pinned = KnowledgeSearchResult(
             id: UUID(),
-            title: "置顶",
+            title: "Pinned",
             contentType: .plainText,
             isPinned: true
         )
-        let plain = KnowledgeSearchResult(id: UUID(), title: "普通", contentType: .plainText)
+        let plain = KnowledgeSearchResult(id: UUID(), title: "Ordinary", contentType: .plainText)
         let items = [starred, pinned, plain]
-        #expect(SearchFilterState(favoritesOnly: true).applying(to: items).map(\.title) == ["收藏"])
-        #expect(SearchFilterState(pinnedOnly: true).applying(to: items).map(\.title) == ["置顶"])
+        #expect(SearchFilterState(favoritesOnly: true).applying(to: items).map(\.title) == ["Favorite"])
+        #expect(SearchFilterState(pinnedOnly: true).applying(to: items).map(\.title) == ["Pinned"])
     }
 }

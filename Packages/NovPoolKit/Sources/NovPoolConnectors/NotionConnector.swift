@@ -1,7 +1,7 @@
 import Foundation
 import NovPoolCore
 
-/// Notion 数据库（供设置面板选择写入目标）。
+/// Notion database (for setting the panel Selectwrite target).
 public struct NotionDatabase: Sendable, Equatable, Identifiable {
     public let id: String
     public let title: String
@@ -12,22 +12,22 @@ public struct NotionDatabase: Sendable, Equatable, Identifiable {
     }
 }
 
-/// Notion 连接器：把标准化载荷写成数据库里的一条 Page（属性 + 原生 Block 正文）。
+/// Notion Connector: Write the standardized payload as a Page in the database (properties + native Block Body).
 public struct NotionConnector: DestinationConnector {
     public struct Config: Codable, Sendable, Equatable {
-        /// 目标数据库 ID。
+        /// Target database ID.
         public var databaseID: String
-        /// 标题属性名（Notion 数据库默认叫 Name / 名称）。
+        /// Title property name (Notion database default is called Name / Name).
         public var titleProperty: String
-        /// 可选：把来源 URL 或前置网盘链接写进 URL 属性。
+        /// Optional: Write the source URL or the pre-network disk link into the URL attribute.
         public var urlProperty: String?
-        /// 可选：标签写入的 multi_select 属性名。
+        /// Optional: the multi_select attribute name of the write label.
         public var tagsProperty: String?
-        /// 可选：分类写入的 select 属性名。
+        /// Optional: The select attribute name for category write.
         public var categoryProperty: String?
-        /// 可选：摘要写入的 rich_text 属性名。
+        /// Optional: the rich_text attribute name of summary write.
         public var summaryProperty: String?
-        /// 是否把跨云级联的上游链接写成正文段落。
+        /// Whether to write the upstream Link of cross-cloud cascading as a Body paragraph.
         public var includeUpstreamLinkBlock: Bool
         public var apiVersion: String
 
@@ -51,7 +51,7 @@ public struct NotionConnector: DestinationConnector {
             self.apiVersion = apiVersion
         }
 
-        /// 容错解析：只写 `databaseID` 也应该能用。
+        /// Fault-tolerant parsing: simply writing `databaseID` should also work.
         public init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             databaseID = try container.decodeIfPresent(String.self, forKey: .databaseID) ?? ""
@@ -91,7 +91,7 @@ public struct NotionConnector: DestinationConnector {
         return (200..<300).contains(payload.statusCode)
     }
 
-    /// 列出可写入的数据库（设置面板用）。
+    /// List writable databases (for settings panel).
     public func listDatabases(configJSON: Data) async throws -> [NotionDatabase] {
         let config = try decodeConfig(configJSON)
         var body: [String: Any] = ["page_size": 50]
@@ -108,13 +108,13 @@ public struct NotionConnector: DestinationConnector {
         guard (200..<300).contains(payload.statusCode),
               let object = (try? JSONSerialization.jsonObject(with: payload.body)) as? [String: Any],
               let results = object["results"] as? [[String: Any]] else {
-            throw NovPoolError.connectorNotConfigured("Notion 检索数据库失败（HTTP \(payload.statusCode)）")
+            throw NovPoolError.connectorNotConfigured("Notion list databases failed (HTTP\(payload.statusCode))")
         }
         return results.compactMap { item in
             guard let id = item["id"] as? String else { return nil }
             let title = (item["title"] as? [[String: Any]])?
                 .compactMap { ($0["plain_text"] as? String) }
-                .joined() ?? "未命名数据库"
+                .joined() ?? "Untitled database"
             return NotionDatabase(id: id, title: title)
         }
     }
@@ -122,7 +122,7 @@ public struct NotionConnector: DestinationConnector {
     public func push(payload: NormalizedPayload, configJSON: Data) async throws -> RemoteReceipt {
         let config = try decodeConfig(configJSON)
         guard config.databaseID.isEmpty == false else {
-            throw NovPoolError.connectorNotConfigured("Notion 未配置目标数据库")
+            throw NovPoolError.connectorNotConfigured("Notion target database not configured")
         }
         guard token?.isEmpty == false else {
             throw NovPoolError.authenticationRequired("notion")
@@ -149,12 +149,12 @@ public struct NotionConnector: DestinationConnector {
               let object = (try? JSONSerialization.jsonObject(with: payloadResponse.body)) as? [String: Any],
               let pageID = object["id"] as? String else {
             let detail = String(decoding: payloadResponse.body.prefix(300), as: UTF8.self)
-            throw NovPoolError.connectorNotConfigured("Notion 建档失败（HTTP \(payloadResponse.statusCode)）：\(detail)")
+            throw NovPoolError.connectorNotConfigured("Notion create page failed (HTTP\(payloadResponse.statusCode)): \(detail)")
         }
         let pageURL = (object["url"] as? String).flatMap(URL.init(string:))
             ?? URL(string: "https://www.notion.so/\(pageID.replacingOccurrences(of: "-", with: ""))")!
 
-        // 正文超过 100 个 block 时，分批追加。
+        // When the body exceeds 100 blocks, append in batches.
         var remaining = Array(blocks.dropFirst(firstBatch.count))
         while !remaining.isEmpty {
             let batch = Array(remaining.prefix(NotionBlocks.maxBlocksPerRequest))
@@ -169,7 +169,7 @@ public struct NotionConnector: DestinationConnector {
         )
     }
 
-    // MARK: - 内部
+    // MARK: - Internals
 
     private func appendBlocks(_ blocks: [[String: Any]], pageID: String, config: Config) async throws {
         guard let request = try authorizedRequest(
@@ -182,7 +182,7 @@ public struct NotionConnector: DestinationConnector {
         }
         let payload = try await transport.send(request)
         guard (200..<300).contains(payload.statusCode) else {
-            throw NovPoolError.connectorNotConfigured("Notion 追加正文失败（HTTP \(payload.statusCode)）")
+            throw NovPoolError.connectorNotConfigured("Notion append body failed (HTTP\(payload.statusCode))")
         }
     }
 
@@ -208,11 +208,11 @@ public struct NotionConnector: DestinationConnector {
         do {
             return try JSONDecoder().decode(Config.self, from: configJSON)
         } catch {
-            throw NovPoolError.connectorNotConfigured("Notion 配置解析失败：\(error.localizedDescription)")
+            throw NovPoolError.connectorNotConfigured("Notion config parse failed: \(error.localizedDescription)")
         }
     }
 
-    /// 属性映射：标题必填，其余按用户配置选择性写入。
+    /// Attribute mapping: Title is required, the rest are selectively writable according to user configuration.
     static func properties(payload: NormalizedPayload, config: Config) -> [String: Any] {
         var properties: [String: Any] = [
             config.titleProperty: ["title": NotionBlocks.richText(payload.title)],

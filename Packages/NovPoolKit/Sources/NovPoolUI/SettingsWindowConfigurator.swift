@@ -1,13 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// 让设置窗口始终浮在最上层。
+/// Keep the settings window always on top.
 ///
-/// 菜单栏应用（`LSUIElement`）没有常规主窗口，设置窗口很容易被压在别的应用后面，
-/// 用户点了「设置…」却看不到东西。这里在窗口挂载后把它提到浮动层并激活应用。
+/// The menu bar app (`LSUIElement`) does not have a regular main window, so the settings window can easily be hidden behind other applications.
+/// The user clicked "Settings…" but couldn't see anything. Here it is brought to the floating layer and activates the application after being mounted in the window.
 ///
-/// 注意：`.canJoinAllSpaces` 与 `.moveToActiveSpace` 互斥，同时设置会让 AppKit
-/// 抛 `NSInternalInconsistencyException`（本项目曾因此在启动阶段崩溃），所以只用前者。
+/// Note: `.canJoinAllSpaces` and `.moveToActiveSpace` are mutually exclusive; setting both will cause AppKit
+/// Throw `NSInternalInconsistencyException` (this previously caused a crash during the startup phase), so only the former is used.
 public struct SettingsWindowConfigurator: NSViewRepresentable {
     public init() {}
 

@@ -1,20 +1,20 @@
 import Foundation
 import NovPoolCore
 
-/// 查询向量提供者。
+/// Query the embedding provider.
 ///
-/// 定义在存储层是为了保持依赖方向：向量模型实现（Ollama / OpenAI / NLEmbedding）
-/// 位于上层模块，只要满足本协议即可注入。
+/// Defined at the storage layer to maintain the direction of dependency: Embedding model implementation (Ollama / OpenAI / NLEmbedding)
+/// Located in the upper-level module, it can be injected as long as this protocol is met.
 public protocol QueryEmbeddingProviding: Sendable {
     func embed(_ text: String) async throws -> [Float]?
 }
 
-/// 混合检索：GRDB 等价的 FTS5 全文 + Accelerate vDSP 向量相似度，用 RRF 融合。
+/// Hybrid search: GRDB equivalent FTS5 full text + Accelerate vDSP Embedding similarity, fused using RRF.
 public actor KnowledgeSearchService {
     public struct Configuration: Sendable {
-        /// 向量相似度低于该值不参与语义排序（余弦 0.2 以下基本无关）。
+        /// Embeddings with a similarity below this value will not participate in semantic ranking (cosine below 0.2 is basically irrelevant).
         public var minimumVectorScore: Float
-        /// 单路召回规模倍数：先各自多召回，再融合截断，避免漏掉只在单路出现的条目。
+        /// Single-path recall scale multiplier: first recall more separately, then merge and truncate, to avoid missing entries that appear only in a single path.
         public var candidateMultiplier: Int
         public var fusionK: Int
 
@@ -53,7 +53,7 @@ public actor KnowledgeSearchService {
         self.embedder = embedder
     }
 
-    /// 混合检索。空查询返回最近条目。
+    /// Hybrid search. An empty query returns Recent entries.
     public func search(_ rawQuery: String, limit: Int = 20) async throws -> [KnowledgeSearchResult] {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return try await recent(limit: limit) }
@@ -82,7 +82,7 @@ public actor KnowledgeSearchService {
         )
     }
 
-    /// 最近条目（面板刚打开、还没输入时的默认列表）。
+    /// Recent entries (the default list when the panel is just opened and nothing has been entered yet).
     public func recent(limit: Int = 20) async throws -> [KnowledgeSearchResult] {
         let hits = try await repository.recent(limit: limit)
         return try await assemble(
@@ -93,7 +93,7 @@ public actor KnowledgeSearchService {
         )
     }
 
-    /// 语义召回：查询向量与库内向量矩阵逐条算余弦相似度。
+    /// Semantic recall: Calculate the cosine similarity between the query embedding and each embedding in the database matrix one by one.
     private func vectorRanking(for query: String, limit: Int) async -> [UUID] {
         guard let embedder,
               let queryVector = try? await embedder.embed(query),
@@ -102,8 +102,8 @@ public actor KnowledgeSearchService {
         }
         guard let rows = try? await repository.embeddingRows(), !rows.isEmpty else { return [] }
 
-        // 先在方法作用域取值：actor 隔离属性在非隔离闭包（compactMap/sorted/map）里读
-        // 会插入运行时隔离检查。
+        // First, get the value in the method scope: read the actor-isolated property in a non-isolated closure (compactMap/sorted/map)
+        // Runtime isolation checks will be inserted.
         let minimumScore = configuration.minimumVectorScore
         return rows
             .compactMap { row -> (UUID, Float)? in
@@ -115,7 +115,7 @@ public actor KnowledgeSearchService {
             .map(\.0)
     }
 
-    /// 按给定顺序取出完整记录并补齐 UI 需要的字段。
+    /// Retrieve the complete records in the given order and fill in the fields required by the UI.
     private func assemble(
         ids: [UUID],
         snippetByID: [UUID: String?],
@@ -155,12 +155,12 @@ public actor KnowledgeSearchService {
         return results
     }
 
-    /// 人工整理并回写分类 / 标签 / 置顶 / 收藏。
+    /// Manually organize and write back categories / tags / pinned / favorite.
     public func updateOrganization(id: UUID, organization: KnowledgeOrganization) async throws {
         try await repository.updateOrganization(id: id, organization: organization)
     }
 
-    /// 删除知识条目，并清理对应 Staging 目录（若有）。
+    /// Delete the knowledge entry and clean up the corresponding Staging directory (if any).
     @discardableResult
     public func deleteItem(id: UUID) async throws -> Bool {
         let record = try await repository.fetch(id: id)
@@ -175,14 +175,14 @@ public actor KnowledgeSearchService {
         try await repository.distinctCategories(limit: limit)
     }
 
-    /// 解析并校验暂存文件；Staging 被清理过时返回 nil，避免 UI 给出死路径。
+    /// Parse and validate the temporary File; if the Staging has been cleared, return nil to avoid the UI showing a dead path.
     private func localFileURL(for record: KnowledgeItemRecord) async -> URL? {
         guard let staging, let relativePath = record.localRelativePath else { return nil }
         let url = await staging.absoluteURL(forRelativePath: relativePath)
         return fileManager.fileExists(atPath: url.path(percentEncoded: false)) ? url : nil
     }
 
-    /// 正文优先；仍为空但有本地文件时给出文件信息，避免详情页空白。
+    /// Priority to Body; if still empty but there is a local File, provide File information to avoid a blank detail page.
     private func previewBody(for record: KnowledgeItemRecord, localFileURL: URL?) -> String? {
         if let body = record.markdownBody ?? record.ocrText,
            !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -195,33 +195,33 @@ public actor KnowledgeSearchService {
     }
 }
 
-/// 检索详情页的文件信息兜底（Storage 层自包含，不依赖 SystemBridge）。
+/// File-info fallback for search details (self-contained in Storage; no SystemBridge dependency).
 public enum LocalFilePreview {
     public static func summary(for url: URL, fileManager: FileManager = .default) -> String {
         let path = url.path(percentEncoded: false)
         let size = (try? fileManager.attributesOfItem(atPath: path)[.size] as? NSNumber)?.int64Value ?? 0
         let sizeText = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
         let ext = url.pathExtension.uppercased()
-        let type = ext.isEmpty ? "文件" : "\(ext) 文件"
+        let type = ext.isEmpty ? "File" : "\(ext) file"
         return """
-        ## 文件信息
+        ## File info
 
-        - 文件名：\(url.lastPathComponent)
-        - 类型：\(type)
-        - 大小：\(sizeText)
+        - Name: \(url.lastPathComponent)
+        - Type: \(type)
+        - Size: \(sizeText)
 
-        原始文件已保存在 NovPool 暂存目录，可点击「打开」或「访达」查看。
+        The original file is saved in the NovPool staging directory. Use Open or Finder to view it.
         """
     }
 }
 
 extension KnowledgeSearchResult {
-    /// 复制到剪贴板的文本（Markdown 优先）。
+    /// Text copied to clipboard (Markdown preferred).
     public var clipboardText: String {
         var parts: [String] = ["# \(title)"]
         let tagLine = displayTags.map { "#\($0)" }.joined(separator: " ")
         if !tagLine.isEmpty { parts.append(tagLine) }
-        if let category { parts.append("主题：\(category)") }
+        if let category { parts.append("Topic: \(category)") }
         if let summary { parts.append("> \(summary)") }
         if let sourceURL { parts.append(sourceURL.absoluteString) }
         if let previewBody { parts.append(previewBody) }

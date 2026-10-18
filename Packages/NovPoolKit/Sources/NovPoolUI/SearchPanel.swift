@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-/// 检索面板布局常量（非隔离，供 UI 与测试共用）。
+/// Search panel layout constants (nonisolated; shared by UI and tests).
 public enum SearchPanelLayout {
     public static let contentSize = CGSize(width: 780, height: 520)
     public static let minimumContentSize = CGSize(width: 640, height: 400)
@@ -10,7 +10,7 @@ public enum SearchPanelLayout {
 
     public static let contentSizeDefaultsKey = "novpool.searchPanel.contentSize"
 
-    /// 读取用户拖过的窗口尺寸；非法或过小时回退默认。
+    /// Read the user-resized window size; fall back to default if invalid or too small.
     public static func resolvedContentSize(
         defaults: UserDefaults = .standard
     ) -> CGSize {
@@ -45,10 +45,10 @@ public enum SearchPanelLayout {
     }
 }
 
-/// 检索面板：可缩放的毛玻璃卡片，需要能接收键盘输入，因此 `canBecomeKey` 为 `true`。
+/// Search panel: resizable frosted card that accepts keyboard input, so `canBecomeKey` is `true`.
 ///
-/// 与拖拽悬浮窗（`.nonactivatingPanel` + 点击穿透）正好相反：这里需要抢焦点来打字，
-/// 关闭后再把焦点还给原先的前台应用。
+/// Opposite of the drag floating panel (`.nonactivatingPanel` + click-through): this panel steals focus for typing,
+/// then restores focus to the previous frontmost app when closed.
 @MainActor
 public final class SearchPanel: NSPanel {
     public static let defaultContentSize = SearchPanelLayout.contentSize
@@ -63,11 +63,11 @@ public final class SearchPanel: NSPanel {
         )
         isFloatingPanel = true
         level = .floating
-        // 注意：.canJoinAllSpaces 与 .moveToActiveSpace 互斥，二者同时设置会让 AppKit
-        // 在构造窗口时抛 NSInternalInconsistencyException 并终止进程。
-        // 检索面板是「按快捷键呼出」的，正确语义是移动到当前活跃 Space。
+        // Note: .canJoinAllSpaces and .moveToActiveSpace conflict; setting both makes AppKit
+        // throw NSInternalInconsistencyException while constructing the window and terminate.
+        // The search panel is hotkey-invoked; the correct behavior is to move to the active Space.
         collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
-        // 与设置窗口一致：用不透明系统窗口底色，避免 ultraThinMaterial 叠桌面发暗。
+        // Same as Settings: opaque system window fill so ultraThinMaterial does not darken the desktop.
         isOpaque = true
         backgroundColor = .windowBackgroundColor
         hasShadow = true
@@ -84,15 +84,15 @@ public final class SearchPanel: NSPanel {
     public override var canBecomeMain: Bool { false }
 }
 
-/// 检索面板落位：水平居中，垂直略高于屏幕中心（Spotlight / Raycast 的习惯位置），
-/// 并且跟随鼠标所在的那块屏幕。
+/// Search panel placement: horizontally centered, slightly above vertical center (Spotlight/Raycast habit),
+/// and on the screen that contains the mouse.
 public enum SearchPanelPlacement {
     public static func origin(
         in visibleFrame: NSRect,
         contentSize: CGSize = SearchPanelLayout.contentSize,
         verticalRatio: CGFloat = 0.72
     ) -> NSPoint {
-        // 理想位置：水平居中、垂直略偏上；再夹到可见区域内，避免加大面板后顶出屏幕。
+        // Ideal: centered horizontally, slightly high; then clamp into the visible area so a larger panel stays on-screen.
         var x = visibleFrame.midX - contentSize.width / 2
         var y = visibleFrame.minY + visibleFrame.height * verticalRatio - contentSize.height / 2
         let maxX = visibleFrame.maxX - contentSize.width
@@ -106,7 +106,7 @@ public enum SearchPanelPlacement {
         return NSPoint(x: x, y: y)
     }
 
-    /// 鼠标所在屏幕的下标（多显示器场景下按鼠标位置弹出更符合直觉）；无命中则退回首个屏幕。
+    /// Index of the screen under the mouse (more intuitive on multi-monitor); fall back to the first screen.
     public static func screenIndex(containing point: NSPoint, frames: [NSRect]) -> Int? {
         guard !frames.isEmpty else { return nil }
         return frames.firstIndex { NSMouseInRect(point, $0, false) } ?? 0

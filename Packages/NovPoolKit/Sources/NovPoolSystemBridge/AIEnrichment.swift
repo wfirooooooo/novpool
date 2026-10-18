@@ -2,7 +2,7 @@ import Foundation
 import NovPoolCore
 import NovPoolStorage
 
-/// 送进 LLM 的增强请求。
+/// Enrichment request sent to the LLM.
 public struct AIEnrichmentRequest: Sendable, Equatable {
     public var title: String
     public var text: String
@@ -28,7 +28,7 @@ public struct AIEnrichmentRequest: Sendable, Equatable {
     }
 }
 
-/// 结构化增强结果。
+/// Structured enrichment result.
 public struct AIEnrichment: Sendable, Equatable {
     public var title: String?
     public var summary: String?
@@ -51,23 +51,23 @@ public struct AIEnrichment: Sendable, Equatable {
     }
 }
 
-/// JSON 结构化输出的补全接口（OpenAI 兼容 / Ollama 均可实现）。
+/// JSON structured-completion interface (OpenAI-compatible or Ollama).
 public protocol LLMCompleting: Sendable {
     func completeJSON(systemPrompt: String, userPrompt: String) async throws -> String
 }
 
-/// 向量化接口。离线环境下可由 `NaturalLanguage` 句向量兜底。
+/// Embedding interface. Offline, `NaturalLanguage` sentence embeddings can serve as a fallback.
 ///
-/// 继承存储层的 `QueryEmbeddingProviding`，这样同一个实现既能给 AI 增强用，
-/// 也能直接注入检索面板做语义召回，无需适配层。
+/// Inherits storage-layer `QueryEmbeddingProviding` so one implementation can power both AI
+/// enrichment and semantic recall in the search panel without an adapter.
 public protocol EmbeddingProviding: QueryEmbeddingProviding {}
 
 // MARK: - Prompt
 
 public enum AIEnrichmentPrompt {
-    /// 期望的 JSON 形状，直接写进 system prompt，兼容不支持 JSON Schema 的本地模型。
+    /// Expected JSON shape, inlined into the system prompt for local models without JSON Schema.
     public static let jsonSchemaHint = """
-    {"title": "string(可选，仅当原标题不可用时给出)", "summary": "string", "category": "string", "tags": ["string"]}
+    {"title": "string (optional; only when the original title is unusable)", "summary": "string", "category": "string", "tags": ["string"]}
     """
 
     public static func systemPrompt(
@@ -76,38 +76,38 @@ public enum AIEnrichmentPrompt {
         maxSummaryCharacters: Int
     ) -> String {
         let categoryInstruction = categories.isEmpty
-            ? "category 是按正文主题/领域归类的中文名（如 技术、产品、生活、阅读），2～6 字；禁止用网页、图片、视频、PDF、文件、链接、文本等格式名。"
-            : "category 必须严格从以下主题列表中选一个（原样返回）：\(categories.joined(separator: "、"))。这是内容主题，不是文件格式。"
+            ? "category is a short English topic/domain label for the body (e.g. Technology, Product, Life, Reading), 2–6 words; do not use format names like Web, Image, Video, PDF, File, Link, or Text."
+            : "category must be exactly one of the following topics (return it verbatim): \(categories.joined(separator: ", ")). This is a content topic, not a file format."
         return """
-        你是知识库助手，负责为一条刚捕获的资料按「内容含义」整理元数据。
-        只输出一个 JSON 对象，不要输出 Markdown 代码块、解释或多余文本。
-        JSON 形状：\(jsonSchemaHint)
-        要求：
-        1. summary 为不超过 \(maxSummaryCharacters) 字的中文提炼，直击要点，不要「本文介绍了」这类套话。
-        2. tags 给出 1～\(maxTags) 个精炼标签，反映主题关键词，中英文均可，不要带 # 号。
+        You are a knowledge-base assistant. Organize metadata for a newly captured item by its content meaning.
+        Output exactly one JSON object — no Markdown fences, explanations, or extra text.
+        JSON shape: \(jsonSchemaHint)
+        Requirements:
+        1. summary is a concise distillation of at most \(maxSummaryCharacters) characters; hit the point; avoid boilerplate like "This article introduces…". Match the body's language when helpful.
+        2. tags: 1–\(maxTags) refined labels reflecting topic keywords (any language); no leading #.
         3. \(categoryInstruction)
-        4. 下方「资源形态」仅供参考（图片/PDF/网页等），分类必须依据正文讲了什么，绝不能把资源形态当作 category。
+        4. The "resource kind" below is for reference only (Image/PDF/Web, etc.). category must reflect what the body is about — never use the resource kind as category.
         """
     }
 
     public static func userPrompt(_ request: AIEnrichmentRequest, maxInputCharacters: Int) -> String {
-        var lines: [String] = ["标题：\(request.title)"]
+        var lines: [String] = ["Title: \(request.title)"]
         if let sourceURL = request.sourceURL {
-            lines.append("来源：\(sourceURL.absoluteString)")
+            lines.append("Source: \(sourceURL.absoluteString)")
         }
         if let sourceTitle = request.sourceTitle, sourceTitle != request.title {
-            lines.append("来源标题：\(sourceTitle)")
+            lines.append("Source title: \(sourceTitle)")
         }
-        lines.append("资源形态（非分类）：\(request.contentType.rawValue)")
-        lines.append("正文：")
+        lines.append("Resource kind (not a category): \(request.contentType.rawValue)")
+        lines.append("Body:")
         lines.append(String(request.text.prefix(maxInputCharacters)))
         return lines.joined(separator: "\n")
     }
 }
 
-// MARK: - 解析与归一化
+// MARK: - Parse & normalize
 
-/// 容错解析：模型常常会加代码块围栏、前后解释文本，甚至把 tags 写成逗号分隔字符串。
+/// Tolerant parser: models often add fences, surrounding prose, or comma-separated tags strings.
 public enum AIEnrichmentParser {
     public static func parse(
         _ raw: String,
@@ -130,7 +130,7 @@ public enum AIEnrichmentParser {
         return AIEnrichment(title: title, summary: summary, category: category, tags: tags)
     }
 
-    /// 从可能带围栏与前后文的输出里截出第一个完整 JSON 对象。
+    /// Extract the first complete JSON object from possibly fenced / padded model output.
     static func extractJSONObject(from raw: String) -> String? {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("```") {
@@ -182,14 +182,16 @@ public enum AIEnrichmentParser {
         }
     }
 
-    /// 常见「资源形态」词：误当成主题分类时丢弃。
+    /// Common resource-kind words: drop them if the model mistakes them for a topic category.
     private static let rejectedFormatCategories: Set<String> = [
-        "网页", "图片", "视频", "文件", "文档", "链接", "文本", "纯文本", "附件",
+        "Web", "Image", "Video", "File", "Document", "Link", "Text", "PlainText", "Attachment",
         "pdf", "image", "video", "file", "document", "weblink", "web", "link",
         "plaintext", "richhtml", "genericfile", "documentpdf",
+        // Chinese format words still rejected when used as free-form categories.
+        "图片", "网页", "视频", "文件", "文档", "链接", "文本", "附件",
     ]
 
-    /// 分类必须落在用户预设主题树内；未配置时接受自由主题名，但拒绝文件格式名。
+    /// Category must land in the user's topic tree; with no tree, accept free topics but reject format names.
     static func resolveCategory(_ raw: String?, categories: [String]) -> String? {
         guard let raw else { return nil }
         guard !categories.isEmpty else {
@@ -198,8 +200,8 @@ public enum AIEnrichmentParser {
         if let exact = categories.first(where: { $0.caseInsensitiveCompare(raw) == .orderedSame }) {
             return exact
         }
-        // 容忍「技术 / 编程」这类多选输出：取第一个命中的预设分类。
-        let separators: Set<Character> = ["/", "、", ",", "|"]
+        // Tolerate multi-pick output like "Technology / Programming": take the first preset hit.
+        let separators: Set<Character> = ["/", ",", "，", "|"]
         for piece in raw.split(whereSeparator: { separators.contains($0) }) {
             let candidate = piece.trimmingCharacters(in: .whitespaces)
             if let match = categories.first(where: { $0.caseInsensitiveCompare(candidate) == .orderedSame }) {
@@ -223,7 +225,7 @@ public enum AIEnrichmentParser {
         case let values as [Any]:
             rawTags = values.compactMap { string($0) }
         case let value as String:
-            let separators: Set<Character> = [",", "，", "、", ";", " "]
+            let separators: Set<Character> = [",", "，", ",", ";", " "]
             rawTags = value.split(whereSeparator: { separators.contains($0) }).map(String.init)
         default:
             break

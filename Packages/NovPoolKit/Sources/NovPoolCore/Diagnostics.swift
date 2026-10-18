@@ -1,12 +1,12 @@
 import Foundation
 
-/// 库层向宿主应用转发诊断信息的出口。
+/// The exit through which the library layer forwards diagnostic information to the host application.
 ///
-/// 各个 Kit 模块不能直接依赖 app target 的日志实现，因此这里留一个可注入的 sink；
-/// 应用启动时把它接到自己的日志文件上。
+/// Each Kit module cannot directly depend on the app target's logging implementation, so a sink that can be injected is left here.
+/// When the application starts, connect it to its own log file.
 public enum NovPoolDiagnostics {
-    /// 在应用启动时设置一次。用 `nonisolated(unsafe)` 是因为它只在启动阶段写入、
-    /// 之后仅被读取。
+    /// Set it once at application startup. Use `nonisolated(unsafe)` because it only writes during the startup phase,
+    /// Afterwards, it is only read.
     nonisolated(unsafe) public static var sink: (@Sendable (String) -> Void)?
 
     public static func log(_ message: String) {

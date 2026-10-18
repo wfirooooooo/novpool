@@ -1,15 +1,15 @@
 import AppKit
 import Foundation
 
-/// 菜单栏状态图标的尺寸规整。
+/// The size of the status icons in the menu bar is standardized.
 ///
-/// macOS 状态栏图标的标准显示尺寸是 18×18 点。位图资源若是 256×256 像素、又没有显式设置
-/// `NSImage.size`，系统会按「256×256 点」渲染——图标在菜单栏里会大得离谱。
-/// 这里把点尺寸钉死，保持与其他应用一致。
+/// The standard display size for macOS status bar icons is 18×18 points. If the bitmap resource is 256×256 pixels and there is no explicit setting
+/// `NSImage.size`, the system will render it at '256×256 points' — the icon will be ridiculously large in the menu bar.
+/// Here, the point size is fixed to maintain consistency with other applications.
 public enum MenuBarIconSizing {
     public static let pointSize = CGSize(width: 18, height: 18)
 
-    /// 规整为模板图 + 标准点尺寸。
+    /// Organize into a template diagram + standard point dimensions.
     public static func prepared(_ image: NSImage?) -> NSImage? {
         guard let image else { return nil }
         image.isTemplate = true

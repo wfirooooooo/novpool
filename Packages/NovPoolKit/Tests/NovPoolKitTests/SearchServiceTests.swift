@@ -3,14 +3,14 @@ import NovPoolCore
 import Testing
 @testable import NovPoolStorage
 
-/// 查询向量替身：返回固定向量。
+/// Query Embedding proxy: returns a fixed Embedding.
 struct FakeQueryEmbedder: QueryEmbeddingProviding {
     var vector: [Float]?
 
     func embed(_ text: String) async throws -> [Float]? { vector }
 }
 
-@Suite("混合检索（FTS5 + vDSP + RRF）")
+@Suite("Hybrid Search (FTS5 + vDSP + RRF)")
 struct SearchServiceTests {
     private struct Harness {
         let repository: KnowledgeRepository
@@ -50,7 +50,7 @@ struct SearchServiceTests {
             sourceContext: SourceContext(
                 appBundleID: "com.google.Chrome",
                 pageURL: url.flatMap(URL.init(string:)),
-                pageTitle: "来源页",
+                pageTitle: "Source page",
                 capturedAt: createdAt
             )
         )
@@ -66,27 +66,27 @@ struct SearchServiceTests {
 
     // MARK: - RRF
 
-    @Test("RRF：奖励跨路一致性——两路都靠后的条目胜过只在单路靠前的条目")
+    @Test("RRF: Reward cross-list consistency — entries that are ranked lower in both lists are favored over entries that are ranked high in only one list")
     func rrfFusion() {
         let a = UUID(), b = UUID(), c = UUID(), d = UUID()
-        // a 两路都第 1；b 只在全文路第 2；c 只在向量路第 2；d 两路都第 3
+        // a Both paths are 1; b Only 2 in the full-text path; c Only 2 in the embedding path; d Both paths are 3
         let fullText = [a, b, d]
         let vector = [a, c, d]
         let scores = RankFusion.fuse([fullText, vector])
         let ranked = RankFusion.ranked([fullText, vector])
 
-        #expect(ranked.count == 4)                        // 重复 id 不产生重复条目
+        #expect(ranked.count == 4)                        // Duplicate IDs do not generate duplicate entries
         #expect(ranked.first == a)
         #expect(ranked.filter { $0 == a }.count == 1)
-        // d 虽然两路都只排第 3，但两路一致同意它相关，于是压过只在单路排第 2 的 b / c。
+        // d, although ranked only 3rd in both routes, was agreed by both routes to be relevant, thus overriding b/c, which was ranked 2nd in only one route.
         #expect(scores[a]! > scores[d]!)
         #expect(scores[d]! > scores[b]!)
         #expect(ranked[1] == d)
-        // b 与 c 分数相同，按首次出现顺序稳定排列。
+        // b and c have the same score and are sorted stably according to their first occurrence.
         #expect(Array(ranked.suffix(2)) == [b, c])
     }
 
-    @Test("RRF：k 值越小头部优势越大")
+    @Test("RRF: The smaller the k value, the greater the head advantage")
     func rrfKSensitivity() {
         let first = UUID(), second = UUID()
         let small = RankFusion.fuse([[first, second]], k: 1)
@@ -94,168 +94,168 @@ struct SearchServiceTests {
         #expect(small[first]! - small[second]! > large[first]! - large[second]!)
     }
 
-    // MARK: - 全文
+    // MARK: - Full text
 
-    @Test("无向量通道时退化为纯 FTS5 检索")
+    @Test("Degrades to pure FTS5 retrieval when there is no Embedding channel")
     func fullTextOnly() async throws {
         let (harness, service) = try await makeHarness()
-        try await insert(harness.repository, title: "多云知识路由中枢", body: "拖拽收集与自动归档")
-        try await insert(harness.repository, title: "无关条目", body: "完全不同的内容")
+        try await insert(harness.repository, title: "Cloud Knowledge Routing Hub", body: "Drag-and-drop collection and automatic archiving")
+        try await insert(harness.repository, title: "Unrelated entry", body: "Completely different content")
 
-        let results = try await service.search("知识路由")
+        let results = try await service.search("Knowledge Routing")
         #expect(results.count == 1)
-        #expect(results[0].title == "多云知识路由中枢")
+        #expect(results[0].title == "Cloud Knowledge Routing Hub")
         #expect(results[0].isFullTextMatch)
         #expect(results[0].isSemanticMatch == false)
-        #expect(results[0].matchLabel == "关键词")
-        #expect(results[0].previewBody?.contains("拖拽收集") == true)
+        #expect(results[0].matchLabel == "Keyword")
+        #expect(results[0].previewBody?.contains("Drag-and-drop collection") == true)
     }
 
-    @Test("短查询（<3 字符）走 LIKE 兜底仍能命中")
+    @Test("Short queries (<3 characters) using LIKE fallback can still hit")
     func shortQueryFallback() async throws {
         let (harness, service) = try await makeHarness()
-        try await insert(harness.repository, title: "AI 摘要流水线")
+        try await insert(harness.repository, title: "AI Abstract Pipeline")
 
         let results = try await service.search("AI")
         #expect(results.count == 1)
         #expect(results[0].isFullTextMatch)
     }
 
-    @Test("空查询返回最近条目，按时间倒序")
+    @Test("An empty query returns recent entries, sorted by time in descending order.")
     func recentItems() async throws {
         let (harness, service) = try await makeHarness()
         let old = try await insert(
             harness.repository,
-            title: "较早的条目",
+            title: "Earlier entries",
             createdAt: Date(timeIntervalSince1970: 1_000)
         )
         let fresh = try await insert(
             harness.repository,
-            title: "最新的条目",
+            title: "Latest entry",
             createdAt: Date(timeIntervalSince1970: 2_000)
         )
 
         let results = try await service.recent(limit: 10)
         #expect(results.map(\.id) == [fresh, old])
-        #expect(results.allSatisfy { $0.matchLabel == "最近" })
+        #expect(results.allSatisfy { $0.matchLabel == "Recent" })
         #expect(try await service.search("   ").map(\.id) == [fresh, old])
     }
 
-    // MARK: - 语义
+    // MARK: - Semantic
 
-    @Test("语义召回：关键词完全没命中的条目也能被向量找到")
+    @Test("Semantic recall: Items that are completely missed by keywords can also be found through Embedding")
     func semanticRecall() async throws {
         let embedder = FakeQueryEmbedder(vector: [1, 0, 0])
         let (harness, service) = try await makeHarness(embedder: embedder)
         let onTopic = try await insert(
             harness.repository,
-            title: "端侧推理优化",
-            body: "量化与算子融合",
+            title: "Edge-side Inference Optimization",
+            body: "Quantization and Operator Fusion",
             embedding: [1, 0, 0]
         )
-        try await insert(harness.repository, title: "无关条目", body: "完全不同的内容", embedding: [0, 1, 0])
+        try await insert(harness.repository, title: "Unrelated entry", body: "Completely different content", embedding: [0, 1, 0])
 
-        // 查询词与该条目文本毫无重合，只能靠向量召回。
-        let results = try await service.search("模型加速")
+        // The query terms have no overlap with the text of this entry, so it can only be retrieved through embedding.
+        let results = try await service.search("Model Acceleration")
         #expect(results.count == 1)
         #expect(results[0].id == onTopic)
         #expect(results[0].isSemanticMatch)
         #expect(results[0].isFullTextMatch == false)
-        #expect(results[0].matchLabel == "语义")
+        #expect(results[0].matchLabel == "Semantic")
     }
 
-    @Test("两路同时命中：融合去重且标记为关键词 + 语义")
+    @Test("Hit by both routes simultaneously: merge and deduplicate while marking as Keyword + Semantic")
     func hybridDeduplication() async throws {
         let embedder = FakeQueryEmbedder(vector: [1, 0, 0])
         let (harness, service) = try await makeHarness(embedder: embedder)
         let both = try await insert(
             harness.repository,
-            title: "多云知识路由中枢",
-            body: "拖拽收集",
+            title: "Cloud Knowledge Routing Hub",
+            body: "Drag-and-drop collection",
             embedding: [1, 0, 0]
         )
-        let onlyText = try await insert(harness.repository, title: "多云知识路由的另一种实现")
-        let onlyVector = try await insert(harness.repository, title: "端侧推理", embedding: [0.9, 0.1, 0])
+        let onlyText = try await insert(harness.repository, title: "Another implementation of cloudy knowledge routing")
+        let onlyVector = try await insert(harness.repository, title: "Edge inference", embedding: [0.9, 0.1, 0])
 
-        let results = try await service.search("知识路由")
+        let results = try await service.search("Knowledge Routing")
         #expect(Set(results.map(\.id)) == Set([both, onlyText, onlyVector]))
         let top = try #require(results.first)
         #expect(top.id == both)
         #expect(top.isFullTextMatch && top.isSemanticMatch)
-        #expect(top.matchLabel == "关键词 + 语义")
+        #expect(top.matchLabel == "Keyword + Semantic")
     }
 
-    @Test("相似度过低的向量候选被丢弃；维度不一致不会崩溃")
+    @Test("Embedding candidates with too low similarity are discarded; inconsistent dimensions will not cause a crash")
     func vectorThresholdAndDimensionMismatch() async throws {
         let embedder = FakeQueryEmbedder(vector: [1, 0, 0])
         let (harness, service) = try await makeHarness(embedder: embedder)
-        try await insert(harness.repository, title: "弱相关条目", embedding: [0.1, 0.9, 0])
-        try await insert(harness.repository, title: "维度不一致条目", embedding: [1, 0])
+        try await insert(harness.repository, title: "Weakly related item", embedding: [0.1, 0.9, 0])
+        try await insert(harness.repository, title: "Entries with inconsistent dimensions", embedding: [1, 0])
 
-        #expect(try await service.search("没有关键词命中的查询").isEmpty)
+        #expect(try await service.search("Query with no Keyword matches").isEmpty)
     }
 
-    @Test("向量模型不可用时静默退化为纯全文检索")
+    @Test("When the embedding model is unavailable, silently degrade to pure full-text search")
     func embedderFailureDegrades() async throws {
         let (harness, service) = try await makeHarness(embedder: FakeQueryEmbedder(vector: nil))
-        try await insert(harness.repository, title: "多云知识路由中枢", embedding: [1, 0, 0])
-        let results = try await service.search("知识路由")
+        try await insert(harness.repository, title: "Cloud Knowledge Routing Hub", embedding: [1, 0, 0])
+        let results = try await service.search("Knowledge Routing")
         #expect(results.count == 1)
         #expect(results[0].isSemanticMatch == false)
     }
 
-    // MARK: - 结果装配
+    // MARK: - Result assembly
 
-    @Test("OCR 文本作为无正文条目的预览内容")
+    @Test("OCR text as the preview content for entries without a body")
     func previewFallsBackToOCR() async throws {
         let (harness, service) = try await makeHarness()
-        try await insert(harness.repository, title: "截图条目", ocr: "Apple Neural Engine 神经网络加速")
-        let results = try await service.search("神经网络")
-        #expect(results.first?.previewBody == "Apple Neural Engine 神经网络加速")
+        try await insert(harness.repository, title: "Screenshot entry", ocr: "Apple Neural Engine Neural network acceleration")
+        let results = try await service.search("Neural Network")
+        #expect(results.first?.previewBody == "Apple Neural Engine Neural network acceleration")
     }
 
-    @Test("暂存文件存在时给出本地路径，被清理后返回 nil")
+    @Test("When the temporary file exists, return the local path; after it is cleared, return nil")
     func localFileResolution() async throws {
         let (harness, service) = try await makeHarness()
         let asset = try await harness.staging.stage(data: Data("fake".utf8), preferredExtension: "png")
         try await insert(
             harness.repository,
-            title: "带文件的条目",
-            body: "正文内容",
+            title: "Entries with File",
+            body: "BodyContent",
             relativePath: asset.relativePath
         )
-        let results = try await service.search("正文内容")
+        let results = try await service.search("BodyContent")
         #expect(results.first?.localFileURL == asset.absoluteURL)
         #expect(results.first?.hasLocalFile == true)
 
         try await harness.staging.remove(relativePath: asset.relativePath)
-        let afterCleanup = try await service.search("正文内容")
+        let afterCleanup = try await service.search("BodyContent")
         #expect(afterCleanup.first?.localFileURL == nil)
     }
 
-    @Test("无正文但有本地文件时详情给出文件信息兜底")
+    @Test("When there is no Body but a local File exists, provide the File information as a fallback in detail")
     func previewFallsBackToFileInfo() async throws {
         let (harness, service) = try await makeHarness()
         let asset = try await harness.staging.stage(data: Data(repeating: 0x01, count: 32), preferredExtension: "bin")
         try await insert(
             harness.repository,
-            title: "二进制附件",
+            title: "Binary Attachment",
             body: nil,
             relativePath: asset.relativePath
         )
         let results = try await service.recent(limit: 5)
         let preview = try #require(results.first?.previewBody)
-        #expect(preview.contains("文件信息"))
+        #expect(preview.contains("File info"))
         #expect(preview.contains(asset.absoluteURL.lastPathComponent))
     }
 
-    @Test("删除条目同时清理 Staging")
+    @Test("Delete entry and clean Staging at the same time")
     func deleteItemRemovesStaging() async throws {
         let (harness, service) = try await makeHarness()
         let asset = try await harness.staging.stage(data: Data("to-delete".utf8), preferredExtension: "txt")
         let id = try await insert(
             harness.repository,
-            title: "待删",
+            title: "To be deleted",
             body: "to-delete-body-unique",
             relativePath: asset.relativePath
         )
@@ -265,21 +265,21 @@ struct SearchServiceTests {
         #expect(!FileManager.default.fileExists(atPath: asset.absoluteURL.path(percentEncoded: false)))
     }
 
-    @Test("limit 生效，且结果数不超过命中数")
+    @Test("limit takes effect, and the number of results does not exceed the number of hits")
     func limitRespected() async throws {
         let (harness, service) = try await makeHarness()
         for index in 0..<12 {
-            try await insert(harness.repository, title: "云路由实践 \(index)", body: "共同关键词：多云路由")
+            try await insert(harness.repository, title: "Cloud Routing Practice\(index)", body: "Common Keyword:Cloud Routing")
         }
-        #expect(try await service.search("多云路由", limit: 5).count == 5)
-        #expect(try await service.search("多云路由", limit: 100).count == 12)
+        #expect(try await service.search("Cloud Routing", limit: 5).count == 5)
+        #expect(try await service.search("Cloud Routing", limit: 100).count == 12)
     }
 
-    @Test("回车动作：网页优先、其次本地文件、都没有则不可用")
+    @Test("Enter action: Web preferred, then local File; if neither is available, it is not usable")
     func defaultActionResolution() {
         let web = KnowledgeSearchResult(
             id: UUID(),
-            title: "网页条目",
+            title: "Webentry",
             contentType: .webLink,
             sourceURL: URL(string: "https://example.com/a"),
             localFileURL: URL(filePath: "/tmp/a.png")
@@ -288,48 +288,48 @@ struct SearchServiceTests {
 
         let fileOnly = KnowledgeSearchResult(
             id: UUID(),
-            title: "本地文件",
+            title: "Local File",
             contentType: .image,
             localFileURL: URL(filePath: "/tmp/b.png")
         )
         #expect(fileOnly.defaultAction == .revealFile(URL(filePath: "/tmp/b.png")))
 
-        let neither = KnowledgeSearchResult(id: UUID(), title: "纯文本", contentType: .plainText)
+        let neither = KnowledgeSearchResult(id: UUID(), title: "Plain Text", contentType: .plainText)
         #expect(neither.defaultAction == SearchResultAction.none)
         #expect(neither.defaultAction.isEnabled == false)
     }
 
-    @Test("复制到剪贴板时带上标题、形态 tag、摘要、来源与正文")
+    @Test("Include title, Kind tag, summary, source, and body when copying to clipboard")
     func clipboardText() {
         let result = KnowledgeSearchResult(
             id: UUID(),
-            title: "多云知识路由中枢",
-            summary: "一句话摘要",
-            category: "技术",
-            tags: ["路由", "Swift"],
+            title: "Cloud Knowledge Routing Hub",
+            summary: "A one-sentence summary",
+            category: "Technology",
+            tags: ["Router", "Swift"],
             contentType: .webLink,
             sourceURL: URL(string: "https://example.com/a"),
-            previewBody: "# 正文"
+            previewBody: "# Body"
         )
         let text = result.clipboardText
-        #expect(text.contains("# 多云知识路由中枢"))
-        #expect(text.contains("#网页"))
-        #expect(text.contains("#路由"))
-        #expect(text.contains("主题：技术"))
-        #expect(text.contains("> 一句话摘要"))
+        #expect(text.contains("# Cloud Knowledge Routing Hub"))
+        #expect(text.contains("#Web"))
+        #expect(text.contains("#Router"))
+        #expect(text.contains("Topic: Technology"))
+        #expect(text.contains("> A one-sentence summary"))
         #expect(text.contains("https://example.com/a"))
-        #expect(text.contains("# 正文"))
+        #expect(text.contains("# Body"))
     }
 
-    @Test("展示标签：资源形态在前，内容关键词在后，且不去重冲突")
+    @Test("Display tags: Resource Kind first, content Keyword second, and do not deduplicate conflicts")
     func displayTagsPrecedeWithResourceType() {
         let result = KnowledgeSearchResult(
             id: UUID(),
-            title: "图",
-            tags: ["设计", "图片"],
+            title: "Picture",
+            tags: ["Design", "Image"],
             contentType: .image
         )
-        #expect(result.resourceTypeTag == "图片")
-        #expect(result.displayTags == ["图片", "设计"])
+        #expect(result.resourceTypeTag == "Image")
+        #expect(result.displayTags == ["Image", "Design"])
     }
 }

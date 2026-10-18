@@ -3,7 +3,7 @@ import ApplicationServices
 import Foundation
 import NovPoolCore
 
-/// 前台应用信息提供者（真实实现读 `NSWorkspace`）。
+/// Front-end application information provider (real implementation reads `NSWorkspace`).
 public protocol FrontmostAppProviding: Sendable {
     func frontmostApplication() -> (bundleID: String, processIdentifier: pid_t)?
 }
@@ -18,17 +18,17 @@ public struct WorkspaceFrontmostApp: FrontmostAppProviding {
     }
 }
 
-/// AppleScript 执行器抽象（便于在无 GUI 环境中注入替身）。
+/// AppleScript executor abstraction (facilitates injecting stand-ins in a GUI-less environment).
 public protocol AppleScriptRunning: Sendable {
-    /// 返回脚本输出的字符串列表；失败或超时返回 `nil`。
+    /// Returns the list of strings output by the script; returns `nil` on failure or timeout.
     func run(_ source: String, timeout: Duration) async -> [String]?
 }
 
-/// 浏览器类型判定。
+/// Browser type determination.
 public enum BrowserFamily: Sendable, Equatable {
     case chromium
     case safari
-    /// 非标准 Scriptable 浏览器（Firefox / Zen 等），走 AXUIElement 降级路径。
+    /// Non-standard Scriptable browsers (Firefox / Zen, etc.) follow the AXUIElement fallback path.
     case accessibility
 
     private static let chromiumBundleIDs: Set<String> = [
@@ -53,15 +53,15 @@ public enum BrowserFamily: Sendable, Equatable {
         return nil
     }
 
-    /// 面向脚本引擎的 AppleScript 目标引用。
+    /// AppleScript target reference for scripting engines.
     public static func scriptTarget(forBundleID bundleID: String) -> String {
         "application id \"\(bundleID)\""
     }
 }
 
-/// 静默溯源引擎：在拖拽松手瞬间取回原网页 URL 与标题。
+/// Silent Tracing Engine: Retrieve the original Web URL and title the moment you release a drag.
 public struct BrowserContextExtractor: Sendable {
-    /// 硬超时预算。超时立即静默降级，绝不阻塞入库主流程。
+    /// Strictly exceed the budget. If timeout occurs, silently degrade immediately, never blocking the main storage process.
     public static let timeout: Duration = .milliseconds(150)
 
     private let frontmostApp: FrontmostAppProviding
@@ -78,15 +78,15 @@ public struct BrowserContextExtractor: Sendable {
         self.axReader = axReader
     }
 
-    /// `BrowserContextProviding` 的默认入口。
+    /// The default entry point of `BrowserContextProviding`.
     public func captureContext() async -> SourceContext {
         await captureContext(now: Date())
     }
 
-    /// 无论成功与否都返回可持久化的 `SourceContext`（最差情况只记录来源 App）。
+    /// Regardless of success or failure, it returns a persistable `SourceContext` (in the worst case, it only records the source App).
     ///
-    /// - Parameter timeout: 溯源预算。主链路用 150ms（不能阻塞拖拽），
-    ///   全局兜底这次是用户手动触发、对延迟不敏感，可以放宽给自动化授权弹窗留时间。
+    /// - Parameter timeout: tracing budget. The main link uses 150ms (cannot block dragging),
+    ///   The global fallback this time is manually triggered by the user and is not sensitive to latency, so time can be relaxed for the automated authorization popup.
     public func captureContext(
         now: Date,
         timeout: Duration = BrowserContextExtractor.timeout
@@ -119,11 +119,11 @@ public struct BrowserContextExtractor: Sendable {
         }
         if let scripted { return scripted }
 
-        // AppleScript 不可用（最常见原因：缺「自动化」授权，错误码通常是 -1743）时，
-        // 退回辅助功能读地址栏——这条路径只需要「辅助功能」授权，是独立的第二条通路。
+        // AppleScript is not available (most common reason: missing "Automation" permission, Error code is usually -1743),
+        // Return to accessibility to read the address bar — this path only requires 'Accessibility' permission and is an independent second route.
         if let axReader,
            let snapshot = await axReader.readAddressBar(processIdentifier: frontmost.processIdentifier) {
-            NovPoolDiagnostics.log("溯源：改用 AX 地址栏（url=\(snapshot.url?.absoluteString ?? "无")）")
+            NovPoolDiagnostics.log("Provenance: falling back to AX address bar (url=\(snapshot.url?.absoluteString ?? "none"))")
             return SourceContext(
                 appBundleID: frontmost.bundleID,
                 pageURL: snapshot.url,
@@ -142,17 +142,17 @@ public struct BrowserContextExtractor: Sendable {
     ) async -> SourceContext? {
         guard let output, let rawURL = output.first else { return nil }
         guard let url = Self.normalizeURL(rawURL) else {
-            // 记录原始值，避免"脚本成功但被静默过滤"这类问题再次难查。
-            NovPoolDiagnostics.log("溯源：忽略无法识别的 URL「\(rawURL)」")
+            // Record the original values to avoid issues like 'Script succeeded but was silently filtered' being difficult to trace again.
+            NovPoolDiagnostics.log("Provenance: ignoring unrecognized URL \"\(rawURL)\"")
             return nil
         }
         let title = output.count > 1 ? Self.normalizeTitle(output[1]) : nil
         return SourceContext(appBundleID: bundleID, pageURL: url, pageTitle: title, capturedAt: now)
     }
 
-    // MARK: - 纯函数（可单测）
+    // MARK: - Pure function (testable)
 
-    /// 脚本返回值可能带空白或被污染，这里做严格校验。
+    /// The script's return value may contain whitespace or be contaminated, so strict validation is performed here.
     public static func normalizeURL(_ raw: String) -> URL? {
         URLNormalization.httpURL(from: raw)
     }
@@ -163,15 +163,15 @@ public struct BrowserContextExtractor: Sendable {
     }
 }
 
-/// 只接受可安全归档的 http(s) URL：拒绝 `mailto:`、`javascript:`、`about:` 等，
-/// 也拒绝含空白的污染值（AppleScript / AX 常常回传整段带空白的内容）。
+/// Only accept http(s) URLs that can be safely archived: reject `mailto:`, `javascript:`, `about:`, etc.
+/// Also rejects pollutant values that contain blanks (AppleScript / AX often returns entire sections of content with blanks).
 enum URLNormalization {
     static func httpURL(from raw: String) -> URL? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !trimmed.contains(where: \.isWhitespace) else { return nil }
         guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased() else { return nil }
-        // 浏览器标签常常指向本机 HTML 文件（file://），这类页面同样值得归档，
-        // 不能因为不是 http(s) 就丢掉。
+        // Browser tabs often point to local HTML files (file://), and these kinds of pages are also worth archiving.
+        // You can't discard it just because it's not http(s).
         if scheme == "file" { return url }
         guard scheme == "http" || scheme == "https", let host = url.host(), !host.isEmpty else {
             return nil
@@ -180,7 +180,7 @@ enum URLNormalization {
     }
 }
 
-// MARK: - AppleScript 执行
+// MARK: - AppleScript Execution
 
 public struct NSAppleScriptRunner: AppleScriptRunning {
     public init() {}
@@ -194,7 +194,7 @@ public struct NSAppleScriptRunner: AppleScriptRunning {
             }
             Task.detached {
                 try? await Task.sleep(for: timeout)
-                // 超时后脚本仍可能在后台结束，但结果被丢弃，主流程不被阻塞。
+                // After a timeout, the script may still finish in the background, but the results are discarded and the main process is not blocked.
                 if gate.claim() { continuation.resume(returning: nil) }
             }
         }
@@ -205,8 +205,8 @@ public struct NSAppleScriptRunner: AppleScriptRunning {
         var errorInfo: NSDictionary?
         let descriptor = script.executeAndReturnError(&errorInfo)
         if let errorInfo {
-            // -1743 通常是「未授权自动化」，其余是脚本或应用错误。
-            NovPoolDiagnostics.log("AppleScript 失败：\(errorInfo)")
+            // -1743 usually means "Unauthorized automation," the rest are script or application errors.
+            NovPoolDiagnostics.log("AppleScript failed: \(errorInfo)")
             return nil
         }
         if descriptor.descriptorType == typeNull { return nil }
@@ -219,7 +219,7 @@ public struct NSAppleScriptRunner: AppleScriptRunning {
     }
 }
 
-/// 一次性获胜标记，保证 continuation 只被 resume 一次。
+/// One-time victory marker, ensures that continuation is resumed only once.
 final class TimeoutGate: @unchecked Sendable {
     private let lock = NSLock()
     private var claimed = false
@@ -233,17 +233,17 @@ final class TimeoutGate: @unchecked Sendable {
     }
 }
 
-// MARK: - AXUIElement 降级路径
+// MARK: - AXUIElement downgrade path
 
 public struct AXBrowserSnapshot: Sendable, Equatable {
     public let url: URL?
     public let title: String?
 }
 
-/// 读取前台应用当前选中的文本（辅助功能 API）。
+/// Read the currently selected text in the front-end application (Accessibility API).
 ///
-/// 全局拖拽兜底通路里用来回答「用户到底拖了什么」：拖选中的文字时，
-/// 焦点元素的 `AXSelectedText` 就是被拖的内容。需要「辅助功能」授权。
+/// In the global drag-and-drop fallback path used to answer 'what exactly did the user drag': when dragging the selected text,
+/// The `AXSelectedText` of the focused element is the content being dragged. "Accessibility" permission is required.
 public struct AXSelectionReader: Sendable {
     public init() {}
 
@@ -276,9 +276,9 @@ public protocol AXBrowserReading: Sendable {
     func readAddressBar(processIdentifier: pid_t) async -> AXBrowserSnapshot?
 }
 
-/// 通过辅助功能 API 读取地址栏文本（Firefox / Zen 等不支持 AppleScript 的浏览器）。
+/// Read the address bar text through the accessibility API (browsers like Firefox/Zen that do not support AppleScript).
 ///
-/// 需要「辅助功能」授权；未授权时返回 `nil` 而非报错。
+/// Requires 'Accessibility' permission; returns `nil` instead of throwing an error when unauthorized.
 public struct AXBrowserReader: AXBrowserReading {
     public init() {}
 
@@ -295,7 +295,7 @@ public struct AXBrowserReader: AXBrowserReading {
         return AXBrowserSnapshot(url: url, title: title)
     }
 
-    /// 广度受限的深度优先遍历：只收集 AXTextField / AXComboBox 的文本值。
+    /// Depth-first traversal with limited breadth: Only collect the Text values of AXTextField / AXComboBox.
     private static func addressBarCandidates(in element: AXUIElement, depth: Int, budget: Int) -> [String] {
         guard depth <= 4, budget > 0 else { return [] }
         var results: [String] = []

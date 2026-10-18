@@ -1,12 +1,12 @@
 import Foundation
 
-/// 从 DOCX（OOXML Zip）提取纯文本，不引入第三方库。
+/// Extract plain text from DOCX (OOXML Zip) without introducing third-party libraries.
 ///
-/// 实现：调用系统 `unzip -p` 读出 `word/document.xml`，再用 `XMLDocument` 收集 `w:t`。
+/// Implementation: Call the system `unzip -p` to read `word/document.xml`, then use `XMLDocument` to collect `w:t`.
 enum DOCXTextExtractor {
     static let maximumCharacters = LocalFileContent.maximumCharacters
 
-    /// 从已解出的 `word/document.xml` 文本提取段落。
+    /// Extract paragraphs from the text of the already parsed `word/document.xml`.
     static func plainText(fromDocumentXML xml: String) -> String? {
         guard let data = xml.data(using: .utf8) else { return nil }
         return plainText(fromDocumentXMLData: data)
@@ -16,7 +16,7 @@ enum DOCXTextExtractor {
         guard let document = try? XMLDocument(data: data, options: [.nodePreserveWhitespace]) else {
             return nil
         }
-        // 按段落收集，段落内拼接 run 文本。
+        // Collect by paragraph, and concatenate run Text within the paragraph.
         let paragraphs = (try? document.nodes(forXPath: "//*[local-name()='p']")) ?? []
         var lines: [String] = []
         for paragraph in paragraphs {
@@ -31,12 +31,12 @@ enum DOCXTextExtractor {
         guard !lines.isEmpty else { return nil }
         var joined = lines.joined(separator: "\n\n")
         if joined.count > maximumCharacters {
-            joined = String(joined.prefix(maximumCharacters)) + "\n\n…（内容过长，已截断）"
+            joined = String(joined.prefix(maximumCharacters)) + "\n\n… (truncated; content too long)"
         }
         return joined
     }
 
-    /// 从 `.docx` 文件路径提取正文。
+    /// Extract the Body from a `.docx` file path.
     static func extract(from url: URL) -> String? {
         guard url.pathExtension.lowercased() == "docx" else { return nil }
         guard let xmlData = unzippedDocumentXML(from: url) else { return nil }

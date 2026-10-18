@@ -2,13 +2,13 @@ import CryptoKit
 import Foundation
 import NovPoolCore
 
-/// 统一内容指纹：写入 `fileHashSHA256`，用于「同一资源重复拖拽」去重。
+/// Unified content fingerprint: write `fileHashSHA256`, used for deduplication of "repeated dragging of the same resource".
 ///
-/// - 有暂存字节（文件 / 图片 / 视频）时复用 Staging 的 SHA256；
-/// - 网页链接按规范化 URL 哈希；
-/// - 纯文本 / 富文本按正文哈希。
+/// - When there are staged bytes (File / Image / Video), reuse the SHA256 of the staging;
+/// - WebLink is hashed according to the normalized URL;
+/// - Plain Text / Rich Text hashed by Body.
 public enum ContentFingerprint: Sendable {
-    /// 计算指纹。无法稳定标识的内容返回 `nil`（不去重，照常入库）。
+    /// Calculate fingerprints. Content that cannot be stably identified returns `nil` (no deduplication, stored in the database as usual).
     public static func digest(
         for content: ResolvedDragContent,
         stagedHash: String?,
@@ -35,12 +35,12 @@ public enum ContentFingerprint: Sendable {
             return sha256Hex(Data("richhtml\n\(body)".utf8))
 
         case .image, .video, .documentPDF, .genericFile:
-            // 这些类型应走 Staging；没有哈希说明暂存失败，无法去重。
+            // These types should go to Staging; failure to temporarily store without hash explanation makes deduplication impossible.
             return nil
         }
     }
 
-    /// 规范化 URL：小写 scheme/host、去掉 fragment、去掉末尾多余 `/`（根路径除外）。
+    /// Normalized URL: lowercase scheme/host, remove fragment, remove trailing slashes (except for the root path).
     public static func canonicalURLString(_ url: URL) -> String {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return url.absoluteString

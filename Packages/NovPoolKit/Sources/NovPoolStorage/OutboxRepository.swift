@@ -1,10 +1,10 @@
 import Foundation
 import NovPoolCore
 
-/// `sync_outbox_jobs` 表读写：事务性发件箱的持久化原语。
+/// `sync_outbox_jobs` table read and write: persistent primitive for the transactional outbox.
 ///
-/// 关键设计：任务与其依赖关系都落在数据库里（`dependsOnJobID`），因此跨云级联
-/// 「先传网盘拿外链，再写 Notion」在进程重启后依然成立。
+/// Key design: Tasks and their dependencies are all stored in the database (`dependsOnJobID`), enabling cross-cloud cascading
+/// "First upload to a cloud drive to get an external link, then write in Notion" still holds true after the process restarts.
 public struct OutboxRepository: Sendable {
     private let database: NovPoolDatabase
 
@@ -17,7 +17,7 @@ public struct OutboxRepository: Sendable {
         lastError, remoteItemID, remoteWebURL, updatedAt
         """
 
-    // MARK: - 写入
+    // MARK: - write
 
     @discardableResult
     public func enqueue(
@@ -88,7 +88,7 @@ public struct OutboxRepository: Sendable {
         }
     }
 
-    /// 重试次数耗尽：终止该任务，保留错误信息供诊断。
+    /// Retry attempts exhausted: terminate this task and retain the Errors information for diagnosis.
     public func markAbandoned(id: UUID, error: String, now: Date = Date()) async throws {
         try await update(id: id, now: now) { job in
             job.status = .failed
@@ -105,7 +105,7 @@ public struct OutboxRepository: Sendable {
         }
     }
 
-    /// 前置任务成功后解锁下游任务（BLOCKED → PENDING）。
+    /// After the prerequisite task is completed successfully, the downstream task is unlocked (BLOCKED → PENDING).
     @discardableResult
     public func releaseDependents(ofJobID jobID: UUID, now: Date = Date()) async throws -> [UUID] {
         let ids = try await database.query(
@@ -123,9 +123,9 @@ public struct OutboxRepository: Sendable {
         return ids
     }
 
-    // MARK: - 读取
+    // MARK: - read
 
-    /// 到期待办：PENDING 且 `nextRetryAt <= now`，按到期时间排序。
+    /// For pending actions: PENDING and `nextRetryAt <= now`, sort by due time.
     public func dueJobs(now: Date = Date(), limit: Int = 20) async throws -> [OutboxJobRecord] {
         let rows = try await database.query(
             """
@@ -172,7 +172,7 @@ public struct OutboxRepository: Sendable {
         return counts
     }
 
-    /// 清理已完结任务（保留 N 天，供设置面板的缓存清理使用）。
+    /// Clear completed tasks (keep for N days, used for cache cleaning in the settings panel).
     @discardableResult
     public func pruneFinished(olderThan cutoff: Date) async throws -> Int {
         try await database.execute(
@@ -181,8 +181,8 @@ public struct OutboxRepository: Sendable {
         )
     }
 
-    /// 前置任务永久失败时，把依赖它的任务一并终止——否则它们会永远卡在 BLOCKED，
-    /// 队列里留下一批永远不会被取出的僵尸任务。
+    /// When a prerequisite task permanently fails, terminate the tasks that depend on it as well—otherwise, they will be stuck in BLOCKED forever.
+    /// A batch of zombie tasks that will never be taken out remains in the queue.
     @discardableResult
     public func failDependents(
         ofJobID jobID: UUID,
@@ -211,7 +211,7 @@ public struct OutboxRepository: Sendable {
         return ids
     }
 
-    // MARK: - 内部
+    // MARK: - Internals
 
     private func update(
         id: UUID,
@@ -219,7 +219,7 @@ public struct OutboxRepository: Sendable {
         _ mutate: (inout OutboxJobRecord) -> Void
     ) async throws {
         guard var job = try await fetch(id: id) else {
-            throw NovPoolError.database("发件箱任务不存在：\(id.uuidString)")
+            throw NovPoolError.database("Outbox job not found: \(id.uuidString)")
         }
         mutate(&job)
         try await database.execute(
@@ -249,7 +249,7 @@ public struct OutboxRepository: Sendable {
               let connectorID = row.text("connectorID"),
               let statusRaw = row.text("status"),
               let status = OutboxJobRecord.Status(rawValue: statusRaw) else {
-            throw NovPoolError.database("sync_outbox_jobs 行数据非法")
+            throw NovPoolError.database("Illegal sync_outbox_jobs row")
         }
         return OutboxJobRecord(
             id: id,

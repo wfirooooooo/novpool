@@ -1,19 +1,19 @@
 import AppKit
 import Foundation
 
-/// 全局拖拽兜底通路。
+/// Global drag-and-drop fallback path.
 ///
-/// 有些浏览器（尤其拖标签）不会把拖拽事件递给我们的窗口，`NSDraggingDestination`
-/// 这条链路就完全收不到东西。这里改为监听**全局鼠标事件**：
-/// 按住左键移动时判断是否悬停在图标上（用于展开扇区），松手时判断是否落在图标上
-/// （用于触发捕获）。鼠标事件的全局监听不需要辅助功能授权。
+/// Some browsers (especially when dragging tabs) will not pass drag events to our window, `NSDraggingDestination`
+/// This link cannot receive anything at all. Change it here to listen to **global mouse events**:
+/// Determine whether the cursor is hovering over the icon while holding down the left mouse button to move (used to expand the sector), and determine whether it lands on the icon when released.
+///  (Used to trigger capture). Global listening for mouse events does not require accessibility permissions.
 @MainActor
 public final class GlobalDragMonitor {
-    /// 图标命中区域与悬停反馈的提供者（即悬浮窗控制器）。
+    /// The provider of the icon hit area and hover feedback (i.e., the floating window controller).
     public weak var target: (any DragTargetProviding)?
-    /// 在图标上松手。
+    /// Release on the icon.
     public var onDrop: @MainActor () -> Void = {}
-    /// 返回 `false` 时跳过本次兜底（原生通路已处理或正在处理）。
+    /// Return `false` to skip this fallback (the native channel has been processed or is being processed).
     public var shouldAcceptDrop: @MainActor () -> Bool = { true }
     public var logger: (@MainActor (String) -> Void)?
 
@@ -26,10 +26,10 @@ public final class GlobalDragMonitor {
 
     public init() {}
 
-    /// 判定是否算「拖到图标上」：必须按下过、位移超过阈值、且落点在图标矩形内。
+    /// Determine whether it counts as 'dragging onto an icon': the button must have been pressed, the displacement must exceed the threshold, and the landing point must be within the icon's rectangle.
     ///
-    /// 抽成纯函数便于验证——避免"普通点击图标也被当成拖拽",
-    /// 以及避免把窗口拖动误判为内容投递。
+    /// Make it a pure function for easier verification — avoid 'A normal icon click was treated as a drag'
+    /// And to avoid mistakenly interpreting window dragging as content delivery.
     public static func isDrop(
         iconRect: CGRect,
         point: CGPoint,
@@ -45,12 +45,12 @@ public final class GlobalDragMonitor {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
             Task { @MainActor [weak self] in self?.handle(event) }
         }
-        // 本地监听用于覆盖落在本应用窗口上的情况（全局监听不含本应用事件）。
+        // Local listening is used to override situations that occur on this application's window (global listening does not include events of this application).
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             Task { @MainActor [weak self] in self?.handle(event) }
             return event
         }
-        logger?("全局拖拽监控已启动")
+        logger?("Global drag monitor started")
     }
 
     public func stop() {
@@ -64,7 +64,7 @@ public final class GlobalDragMonitor {
         hovering = false
     }
 
-    // MARK: - 事件处理
+    // MARK: - Event handling
 
     private func handle(_ event: NSEvent) {
         let point = NSEvent.mouseLocation
@@ -86,12 +86,12 @@ public final class GlobalDragMonitor {
             updateHover(point)
             let iconRect = target?.iconScreenRect ?? .zero
             let inside = Self.isDrop(iconRect: iconRect, point: point, movedDistance: movedDistance)
-            logger?("鼠标松开：inside=\(inside) 位移=\(Int(movedDistance))pt")
+            logger?("Mouse up: inside=\(inside) distance=\(Int(movedDistance))pt")
             if inside {
                 if shouldAcceptDrop() {
                     onDrop()
                 } else {
-                    logger?("跳过全局兜底：原生拖拽通路已处理或进行中")
+                    logger?("Skip global fallback: native drag path already handled or in progress")
                 }
             }
             setHovering(false)
@@ -105,7 +105,7 @@ public final class GlobalDragMonitor {
         setHovering(inside)
     }
 
-    /// 只有真正的拖拽（位移超过阈值）才算悬停，避免普通点击也展开扇区。
+    /// Only a real drag (displacement exceeding the threshold) counts as hovering, to prevent a normal click from also expanding the sector.
     private func setHovering(_ value: Bool) {
         guard value != hovering else { return }
         hovering = value
@@ -113,11 +113,11 @@ public final class GlobalDragMonitor {
     }
 }
 
-/// 全局拖拽通路需要的两个能力。
+/// Two abilities required for global drag-and-drop pathways.
 @MainActor
 public protocol DragTargetProviding: AnyObject {
-    /// 主图标在屏幕坐标系里的矩形。
+    /// The main icon's rectangle in the screen coordinate system.
     var iconScreenRect: CGRect { get }
-    /// 悬停进入/离开（用于复用展开扇区的逻辑）。
+    /// Hover enter/leave (used for the logic of reusing expanded sectors).
     func setGlobalDragHover(_ hovering: Bool)
 }

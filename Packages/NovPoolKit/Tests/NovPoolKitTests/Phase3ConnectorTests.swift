@@ -6,33 +6,33 @@ import NovPoolCore
 import NovPoolStorage
 import Testing
 
-@Suite("Notion：Markdown → Block 转换")
+@Suite("Notion: Markdown → Block Conversion")
 struct NotionBlocksTests {
     private func types(_ markdown: String) -> [String] {
         NotionBlocks.blocks(fromMarkdown: markdown).compactMap { $0["type"] as? String }
     }
 
-    @Test("块级结构：标题、列表、待办、引用、分割线、代码、图片")
+    @Test("Block-level structures: Heading, List, To-do, Quote, Divider, Code, Image")
     func blockTypes() {
         let markdown = """
-        # 一级标题
-        ## 二级标题
-        ### 三级标题
-        #### 四级标题
+        # Heading 1
+        ## Heading 2
+        ### Heading 3
+        #### Heading 4
 
-        正文段落。
+        Body paragraph.
 
-        - 项目符号
-        * 另一个符号
-        1. 编号项
-        - [x] 已完成
-        - [ ] 待办
-        > 引用内容
+        - Bullet item
+        * Another bullet
+        1. Numbered item
+        - [x] Done
+        - [ ] Todo
+        > Quote content
         ---
         ```swift
         let value = 1
         ```
-        ![示意图](https://example.com/a.png)
+        ![Diagram](https://example.com/a.png)
         """
         #expect(types(markdown) == [
             "heading_1", "heading_2", "heading_3", "heading_3",
@@ -43,22 +43,22 @@ struct NotionBlocksTests {
         ])
     }
 
-    @Test("连续多行合并为一个段落块")
+    @Test("Combine multiple consecutive lines into a single paragraph block")
     func paragraphMerging() {
-        let blocks = NotionBlocks.blocks(fromMarkdown: "第一行\n第二行\n\n第二段")
+        let blocks = NotionBlocks.blocks(fromMarkdown: "First line\nSecond line\n\nSecond paragraph")
         #expect(blocks.count == 2)
         let first = (blocks[0]["paragraph"] as? [String: Any])?["rich_text"] as? [[String: Any]]
-        #expect((first?.first?["text"] as? [String: Any])?["content"] as? String == "第一行\n第二行")
+        #expect((first?.first?["text"] as? [String: Any])?["content"] as? String == "First line\nSecond line")
     }
 
-    @Test("待办勾选状态被保留")
+    @Test("To-do check status is retained")
     func todoCheckedState() {
-        let blocks = NotionBlocks.blocks(fromMarkdown: "- [x] 完成\n- [ ] 未完成")
+        let blocks = NotionBlocks.blocks(fromMarkdown: "- [x] Complete\n- [ ] Incomplete")
         #expect((blocks[0]["to_do"] as? [String: Any])?["checked"] as? Bool == true)
         #expect((blocks[1]["to_do"] as? [String: Any])?["checked"] as? Bool == false)
     }
 
-    @Test("代码语言映射：已知保留、别名归一、未知落 plain text")
+    @Test("Code language mapping: known reserved, alias normalized, unknown falls to plain text")
     func codeLanguageMapping() {
         #expect(NotionBlocks.notionLanguage("swift") == "swift")
         #expect(NotionBlocks.notionLanguage("js") == "javascript")
@@ -69,25 +69,25 @@ struct NotionBlocksTests {
         #expect((blocks[0]["code"] as? [String: Any])?["language"] as? String == "javascript")
     }
 
-    @Test("行内格式：加粗、行内代码、链接注解")
+    @Test("Inline formats: bold, inline code, link annotation")
     func inlineAnnotations() {
-        let rich = NotionBlocks.richText("普通 **加粗** 与 `code` 和 [链接](https://example.com/x)")
+        let rich = NotionBlocks.richText("Ordinary**Bold** and`code` and[Link](https://example.com/x)")
         let contents = rich.compactMap { ($0["text"] as? [String: Any])?["content"] as? String }
-        #expect(contents == ["普通 ", "加粗", " 与 ", "code", " 和 ", "链接"])
+        #expect(contents == ["Ordinary", "Bold", " and", "code", " and", "Link"])
 
-        let bold = rich.first { ($0["text"] as? [String: Any])?["content"] as? String == "加粗" }
+        let bold = rich.first { ($0["text"] as? [String: Any])?["content"] as? String == "Bold" }
         #expect((bold?["annotations"] as? [String: Any])?["bold"] as? Bool == true)
 
         let code = rich.first { ($0["text"] as? [String: Any])?["content"] as? String == "code" }
         #expect((code?["annotations"] as? [String: Any])?["code"] as? Bool == true)
 
-        let link = rich.first { ($0["text"] as? [String: Any])?["content"] as? String == "链接" }
+        let link = rich.first { ($0["text"] as? [String: Any])?["content"] as? String == "Link" }
         #expect((link?["text"] as? [String: Any])?["link"] as? [String: String] == ["url": "https://example.com/x"])
     }
 
-    @Test("超过 2000 字符的文本会被切成多个 rich_text 对象")
+    @Test("Text longer than 2000 characters will be split into multiple rich_text objects")
     func richTextChunking() {
-        let long = String(repeating: "字", count: 4500)
+        let long = String(repeating: "x", count: 4500)
         let rich = NotionBlocks.richText(long)
         #expect(rich.count == 3)
         #expect(rich.allSatisfy {
@@ -96,39 +96,39 @@ struct NotionBlocksTests {
         })
     }
 
-    @Test("跨云级联：上游链接作为可点击段落追加到正文")
+    @Test("Cross-cloud Cascade: Upstream Link is appended to the Body as a clickable paragraph")
     func upstreamLinkBlock() throws {
         let url = try #require(URL(string: "https://drive.google.com/file/d/ABC/view"))
-        let blocks = NotionBlocks.blocks(fromMarkdown: "正文", upstreamURL: url)
+        let blocks = NotionBlocks.blocks(fromMarkdown: "Body", upstreamURL: url)
         #expect(blocks.count == 2)
         #expect(blocks.last?["type"] as? String == "paragraph")
         let rich = (blocks.last?["paragraph"] as? [String: Any])?["rich_text"] as? [[String: Any]]
         #expect((rich?.first?["text"] as? [String: Any])?["link"] as? [String: String]
             == ["url": url.absoluteString])
 
-        #expect(NotionBlocks.blocks(fromMarkdown: "正文", upstreamURL: nil).count == 1)
+        #expect(NotionBlocks.blocks(fromMarkdown: "Body", upstreamURL: nil).count == 1)
     }
 }
 
-@Suite("Notion 连接器：请求构造与响应解析")
+@Suite("Notion Connector: Request Construction and Response Parsing")
 struct NotionConnectorTests {
     private let config = NotionConnector.Config(
         databaseID: "db-123",
-        titleProperty: "名称",
-        urlProperty: "来源",
-        tagsProperty: "标签",
-        categoryProperty: "分类",
-        summaryProperty: "摘要"
+        titleProperty: "Name",
+        urlProperty: "Source",
+        tagsProperty: "Label",
+        categoryProperty: "Classification",
+        summaryProperty: "Summary"
     )
 
     private func makePayload(upstream: URL? = nil) -> NormalizedPayload {
         NormalizedPayload(
             contentType: .documentPDF,
-            title: "季度报告",
-            markdownBody: "# 标题\n\n正文内容。",
-            aiSummary: "一句话摘要",
-            aiCategory: "技术",
-            aiTags: ["报告", "财务"],
+            title: "Quarterly report",
+            markdownBody: "# Title\n\nBodyContent.",
+            aiSummary: "A one-sentence summary",
+            aiCategory: "Technology",
+            aiTags: ["Report", "Finance"],
             sourceContext: SourceContext(
                 appBundleID: "com.apple.finder",
                 pageURL: URL(string: "https://example.com/src")
@@ -137,7 +137,7 @@ struct NotionConnectorTests {
         )
     }
 
-    @Test("建档请求：带鉴权头与 Notion-Version，属性与正文按配置映射")
+    @Test("Create record request: with authentication header and Notion-Version, attributes and body mapped according to configuration")
     func pushBuildsRequest() async throws {
         let transport = StubTransport(responses: [
             HTTPPayload(json: #"{"id":"page-1","url":"https://notion.so/page-1"}"#),
@@ -162,18 +162,18 @@ struct NotionConnectorTests {
         #expect((json["parent"] as? [String: Any])?["database_id"] as? String == "db-123")
 
         let properties = try #require(json["properties"] as? [String: Any])
-        #expect((properties["名称"] as? [String: Any])?["title"] != nil)
-        #expect((properties["来源"] as? [String: Any])?["url"] as? String == "https://example.com/src")
-        let tags = (properties["标签"] as? [String: Any])?["multi_select"] as? [[String: String]]
-        #expect(tags?.compactMap { $0["name"] } == ["报告", "财务"])
-        #expect((properties["分类"] as? [String: Any])?["select"] as? [String: String] == ["name": "技术"])
-        #expect((properties["摘要"] as? [String: Any])?["rich_text"] != nil)
+        #expect((properties["Name"] as? [String: Any])?["title"] != nil)
+        #expect((properties["Source"] as? [String: Any])?["url"] as? String == "https://example.com/src")
+        let tags = (properties["Label"] as? [String: Any])?["multi_select"] as? [[String: String]]
+        #expect(tags?.compactMap { $0["name"] } == ["Report", "Finance"])
+        #expect((properties["Classification"] as? [String: Any])?["select"] as? [String: String] == ["name": "Technology"])
+        #expect((properties["Summary"] as? [String: Any])?["rich_text"] != nil)
 
         let children = try #require(json["children"] as? [[String: Any]])
         #expect(children.first?["type"] as? String == "heading_1")
     }
 
-    @Test("级联上游链接优先于来源 URL 写入 URL 属性")
+    @Test("Upstream cascading Link takes precedence over source URL write URL attributes")
     func upstreamLinkTakesPrecedence() async throws {
         let transport = StubTransport(responses: [HTTPPayload(json: #"{"id":"p","url":"https://n/p"}"#)])
         let connector = NotionConnector(token: "t", transport: transport)
@@ -184,13 +184,13 @@ struct NotionConnectorTests {
         let body = try #require(transport.requests.first?.httpBody)
         let json = try #require((try? JSONSerialization.jsonObject(with: body)) as? [String: Any])
         let properties = try #require(json["properties"] as? [String: Any])
-        #expect((properties["来源"] as? [String: Any])?["url"] as? String
+        #expect((properties["Source"] as? [String: Any])?["url"] as? String
             == "https://drive.google.com/file/d/XYZ/view")
     }
 
-    @Test("正文超过 100 个 block 时分批追加")
+    @Test("When the body exceeds 100 blocks, append in batches")
     func appendsRemainingBlocks() async throws {
-        let markdown = (1...150).map { "段落 \($0)" }.joined(separator: "\n\n")
+        let markdown = (1...150).map { "Paragraph\($0)" }.joined(separator: "\n\n")
         let transport = StubTransport(responses: [
             HTTPPayload(json: #"{"id":"page-9","url":"https://notion.so/page-9"}"#),
             HTTPPayload(json: #"{"results":[]}"#),
@@ -209,7 +209,7 @@ struct NotionConnectorTests {
         #expect((json["children"] as? [[String: Any]])?.count == 50)
     }
 
-    @Test("缺少 token 或数据库配置时给出明确错误")
+    @Test("Provide clear errors when token or database configuration is missing")
     func configurationErrors() async throws {
         let transport = StubTransport(responses: [])
         let noToken = NotionConnector(token: nil, transport: transport)
@@ -227,20 +227,20 @@ struct NotionConnectorTests {
         }
     }
 
-    @Test("列出可写入的数据库")
+    @Test("List the databases that can be written to")
     func listDatabases() async throws {
-        let response = #"{"results":[{"id":"db-1","title":[{"plain_text":"技术库"}]},{"id":"db-2","title":[{"plain_text":"阅读库"}]}]}"#
+        let response = #"{"results":[{"id":"db-1","title":[{"plain_text":"Tech library"}]},{"id":"db-2","title":[{"plain_text":"Reading library"}]}]}"#
         let transport = StubTransport(responses: [HTTPPayload(json: response)])
         let connector = NotionConnector(token: "t", transport: transport)
         let databases = try await connector.listDatabases(configJSON: try JSONEncoder().encode(config))
         #expect(databases == [
-            NotionDatabase(id: "db-1", title: "技术库"),
-            NotionDatabase(id: "db-2", title: "阅读库"),
+            NotionDatabase(id: "db-1", title: "Tech library"),
+            NotionDatabase(id: "db-2", title: "Reading library"),
         ])
     }
 }
 
-@Suite("云盘连接器：上传路径与回执")
+@Suite("Cloud Drive Connector: Upload Path and Receipt")
 struct CloudDriveConnectorTests {
     private func credentials(_ provider: OAuthProviderKind) -> OAuthCredentials {
         OAuthCredentials(
@@ -256,12 +256,12 @@ struct CloudDriveConnectorTests {
         HTTPPayload(json: #"{"access_token":"\#(token)","expires_in":3600}"#)
     }
 
-    private func makePayload(fileURL: URL?, title: String = "报告") -> NormalizedPayload {
+    private func makePayload(fileURL: URL?, title: String = "Report") -> NormalizedPayload {
         NormalizedPayload(
             contentType: fileURL == nil ? .webLink : .documentPDF,
             title: title,
-            markdownBody: "# 正文",
-            aiCategory: "技术",
+            markdownBody: "# Body",
+            aiCategory: "Technology",
             localStagedURL: fileURL,
             sourceContext: SourceContext(appBundleID: "com.apple.finder")
         )
@@ -275,7 +275,7 @@ struct CloudDriveConnectorTests {
 
     // MARK: - Google Drive
 
-    @Test("Drive 小文件走 multipart，回执取 webViewLink")
+    @Test("Drive small File to multipart, get the webViewLink for receipt")
     func driveMultipartUpload() async throws {
         let directory = try TestSupport.makeTemporaryDirectory("drive")
         let file = try stagedFile(directory, name: "report.pdf", bytes: 2_048)
@@ -302,13 +302,13 @@ struct CloudDriveConnectorTests {
         #expect(body.count > 2_048)
         let text = String(decoding: body.prefix(400), as: UTF8.self)
         #expect(text.contains("\"name\""))
-        // 文件名由命名模板生成（{Category}/{YYYY}-{MM}/{Title}.{ext}），取最后一段作为云端文件名
-        #expect(text.contains("报告.pdf"))
+        // The file name is generated from the naming template ({Category}/{YYYY}-{MM}/{Title}.{ext}), taking the last segment as the cloud file name.
+        #expect(text.contains("Report.pdf"))
         #expect(text.contains("folder-9"))
         #expect(String(decoding: body.suffix(120), as: UTF8.self).contains("--") )
     }
 
-    @Test("Drive 大文件走 resumable：先建会话再 PUT 到会话地址")
+    @Test("Drive large files resumable: create a session first, then PUT to the session URL")
     func driveResumableUpload() async throws {
         let directory = try TestSupport.makeTemporaryDirectory("drive-big")
         let file = try stagedFile(directory, name: "big.pdf", bytes: GoogleDriveAPIConnector.multipartLimit + 1)
@@ -343,7 +343,7 @@ struct CloudDriveConnectorTests {
         ((try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))[.size]) as? Int) ?? 0
     }
 
-    @Test("Drive 缺少凭据时抛出需要授权")
+    @Test("Drive throws a need for authorization when credentials are missing")
     func driveRequiresCredentials() async throws {
         let connector = GoogleDriveAPIConnector(credentials: nil, transport: StubTransport(responses: []))
         await #expect(throws: NovPoolError.self) {
@@ -354,7 +354,7 @@ struct CloudDriveConnectorTests {
 
     // MARK: - OneDrive
 
-    @Test("OneDrive 小文件直接 PUT content，回执取 webUrl")
+    @Test("OneDrive small file directly PUT content, receipt obtains webUrl")
     func oneDriveSimpleUpload() async throws {
         let directory = try TestSupport.makeTemporaryDirectory("onedrive")
         let file = try stagedFile(directory, name: "note.md", bytes: 1_024)
@@ -365,19 +365,19 @@ struct CloudDriveConnectorTests {
         let connector = OneDriveAPIConnector(credentials: credentials(.microsoft), transport: transport)
         let receipt = try await connector.push(
             payload: makePayload(fileURL: file),
-            configJSON: try JSONSerialization.data(withJSONObject: ["folderPath": "NovPool/技术"])
+            configJSON: try JSONSerialization.data(withJSONObject: ["folderPath": "NovPool/Technology"])
         )
 
         #expect(receipt.remoteItemID == "item-1")
         let upload = try #require(transport.requests.last)
-        let expectedPath = OneDriveAPIConnector.encodePath("NovPool/技术/报告.md")
+        let expectedPath = OneDriveAPIConnector.encodePath("NovPool/Technology/Report.md")
         #expect(upload.url?.absoluteString
             == "https://graph.microsoft.com/v1.0/me/drive/root:/\(expectedPath):/content")
         #expect(upload.httpMethod == "PUT")
         #expect(upload.value(forHTTPHeaderField: "Content-Type") == "text/markdown")
     }
 
-    @Test("OneDrive 大文件分片上传，Content-Range 与分片大小符合 Graph 要求")
+    @Test("OneDrive large file chunked upload, Content-Range and chunk size comply with Graph requirements")
     func oneDriveChunkedUpload() async throws {
         let directory = try TestSupport.makeTemporaryDirectory("onedrive-big")
         let totalBytes = OneDriveAPIConnector.simpleUploadLimit + 4 * 1024 * 1024
@@ -410,19 +410,19 @@ struct CloudDriveConnectorTests {
         #expect(OneDriveAPIConnector.chunkSize % OneDriveAPIConnector.uploadChunkUnit == 0)
     }
 
-    @Test("OneDrive 路径清洗：剔除穿越并编码特殊字符")
+    @Test("OneDrive path cleaning: remove traversal and encode special characters")
     func oneDrivePathHandling() {
         #expect(OneDriveAPIConnector.remotePath(folderPath: nil, fileName: "a.md") == "a.md")
         #expect(OneDriveAPIConnector.remotePath(folderPath: "  ", fileName: "a.md") == "a.md")
         #expect(OneDriveAPIConnector.remotePath(folderPath: "../etc/passwd", fileName: "a.md") == "etc/passwd/a.md")
-        let encoded = OneDriveAPIConnector.encodePath("NovPool/技术 报告.md")
-        // 斜杠必须保留为层级分隔，空格必须被编码
+        let encoded = OneDriveAPIConnector.encodePath("NovPool/Technical Report.md")
+        // Slashes must be kept as hierarchy separators, and spaces must be encoded
         #expect(encoded.contains("NovPool/"))
         #expect(encoded.filter { $0 == "/" }.count == 1)
         #expect(!encoded.contains(" "))
     }
 
-    @Test("OneDrive 缺少凭据时抛出需要授权")
+    @Test("OneDrive throws 'authorization required' when credentials are missing")
     func oneDriveRequiresCredentials() async throws {
         let connector = OneDriveAPIConnector(credentials: nil, transport: StubTransport(responses: []))
         await #expect(throws: NovPoolError.self) {
@@ -430,7 +430,7 @@ struct CloudDriveConnectorTests {
         }
     }
 
-    @Test("MIME 类型映射覆盖常见归档格式")
+    @Test("MIME type mapping overrides common archive formats")
     func mimeTypes() {
         #expect(MimeType.forExtension("png") == "image/png")
         #expect(MimeType.forExtension("PDF") == "application/pdf")
@@ -440,7 +440,7 @@ struct CloudDriveConnectorTests {
     }
 }
 
-@Suite("OAuth：PKCE 与令牌刷新")
+@Suite("OAuth: PKCE and Token Refresh")
 struct OAuthTests {
     private let credentials = OAuthCredentials(
         provider: .google,
@@ -449,7 +449,7 @@ struct OAuthTests {
         refreshToken: "refresh-token"
     )
 
-    @Test("PKCE：verifier 为 URL 安全字符，challenge 为 S256 的 base64url")
+    @Test("PKCE: verifier is a URL-safe character, challenge is S256's base64url")
     func pkceDerivation() {
         let verifier = PKCE.codeVerifier()
         #expect(verifier.count >= 43)
@@ -460,12 +460,12 @@ struct OAuthTests {
         #expect(!challenge.contains("+"))
         #expect(!challenge.contains("/"))
 
-        // 与本地 SHA256 结果对齐，确认算法是 S256 而不是明文
+        // Align with the local SHA256 result to confirm that the algorithm is S256 and not plaintext.
         let expected = PKCE.base64URLEncode(Data(SHA256.hash(data: Data(verifier.utf8))))
         #expect(challenge == expected)
     }
 
-    @Test("刷新令牌请求：表单参数正确，解析 access_token")
+    @Test("Refresh token request: form parameters are correct, parsing access_token")
     func refreshTokenRequest() async throws {
         let transport = StubTransport(responses: [HTTPPayload(json: #"{"access_token":"fresh-token"}"#)])
         let service = OAuthTokenService(transport: transport)
@@ -482,7 +482,7 @@ struct OAuthTests {
         #expect(body.contains("refresh_token=refresh-token"))
     }
 
-    @Test("Microsoft 令牌端点带租户，且请求包含 scope")
+    @Test("Microsoft token endpoint includes tenant, and the request contains scope")
     func microsoftTokenEndpoint() async throws {
         let transport = StubTransport(responses: [HTTPPayload(json: #"{"access_token":"graph-token"}"#)])
         let service = OAuthTokenService(transport: transport)
@@ -497,7 +497,7 @@ struct OAuthTests {
         #expect(body.contains("scope="))
     }
 
-    @Test("无 refresh token 或服务端报错时抛出需要授权")
+    @Test("Throw 'authorization required' when there is no refresh token or the server reports an error")
     func refreshFailures() async throws {
         let empty = OAuthCredentials(provider: .google, clientID: "c", refreshToken: "")
         let service = OAuthTokenService(transport: StubTransport(responses: []))
@@ -513,7 +513,7 @@ struct OAuthTests {
         }
     }
 
-    @Test("授权地址包含 PKCE 参数与离线访问 scope")
+    @Test("The authorization address includes PKCE parameters and offline access scope")
     func authorizationURL() throws {
         let url = OAuthAuthorizationRequest.url(
             credentials: credentials,

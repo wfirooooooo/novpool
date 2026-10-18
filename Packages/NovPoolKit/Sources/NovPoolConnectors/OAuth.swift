@@ -7,14 +7,14 @@ public enum OAuthProviderKind: String, Sendable, Codable {
     case microsoft
 }
 
-/// OAuth 2.0 凭据。整体以 JSON 形式存进 Keychain——**绝不落数据库**。
+/// OAuth 2.0 credentials. Stored in the Keychain as JSON—**never in the database**.
 public struct OAuthCredentials: Sendable, Equatable, Codable {
     public var provider: OAuthProviderKind
     public var clientID: String
     public var clientSecret: String?
     public var refreshToken: String
     public var tenant: String?
-    /// 网盘目标目录（Drive 用 folderID；OneDrive 用路径）。
+    /// Target directory on the cloud drive (use folderID for Drive; use path for OneDrive).
     public var targetPath: String?
 
     public init(
@@ -41,7 +41,7 @@ public struct OAuthCredentials: Sendable, Equatable, Codable {
         try? JSONDecoder().decode(OAuthCredentials.self, from: data)
     }
 
-    /// 令牌端点。
+    /// Token endpoint.
     public var tokenEndpoint: URL {
         switch provider {
         case .google:
@@ -61,9 +61,9 @@ public struct OAuthCredentials: Sendable, Equatable, Codable {
     }
 }
 
-/// PKCE（RFC 7636）：为原生应用的授权码流程生成一次性校验值。
+/// PKCE (RFC 7636): Generates a one-time verification value for the authorization code flow of native applications.
 public enum PKCE {
-    /// code_verifier：43～128 个 URL 安全字符。
+    /// code_verifier: 43–128 URL-safe characters.
     public static func codeVerifier(byteCount: Int = 48) -> String {
         var bytes = [UInt8](repeating: 0, count: byteCount)
         for index in bytes.indices {
@@ -72,7 +72,7 @@ public enum PKCE {
         return base64URLEncode(Data(bytes))
     }
 
-    /// code_challenge = BASE64URL(SHA256(verifier))。
+    /// code_challenge = BASE64URL(SHA256(verifier)).
     public static func codeChallenge(for verifier: String) -> String {
         let digest = SHA256.hash(data: Data(verifier.utf8))
         return base64URLEncode(Data(digest))
@@ -86,7 +86,7 @@ public enum PKCE {
     }
 }
 
-/// 令牌服务：刷新 access token，并组装授权码换取令牌的请求。
+/// Token service: refresh the access token and assemble the request to exchange the authorization code for a token.
 public struct OAuthTokenService: Sendable {
     private let transport: any HTTPTransport
 
@@ -94,13 +94,13 @@ public struct OAuthTokenService: Sendable {
         self.transport = transport
     }
 
-    /// 用 refresh token 换 access token。
+    /// Use a refresh token to exchange for an access token.
     public func accessToken(
         credentials: OAuthCredentials,
         now: Date = Date()
     ) async throws -> String {
         guard !credentials.refreshToken.isEmpty else {
-            throw NovPoolError.authenticationRequired("缺少 refresh token，请先完成授权")
+            throw NovPoolError.authenticationRequired("Missing refresh token; complete authorization first")
         }
         var body: [String: String] = [
             "grant_type": "refresh_token",
@@ -114,12 +114,12 @@ public struct OAuthTokenService: Sendable {
         guard let object = (try? JSONSerialization.jsonObject(with: payload.body)) as? [String: Any],
               let token = object["access_token"] as? String, !token.isEmpty else {
             let detail = SecretRedactor.redact(String(decoding: payload.body.prefix(200), as: UTF8.self))
-            throw NovPoolError.authenticationRequired("刷新令牌失败（HTTP \(payload.statusCode)）：\(detail)")
+            throw NovPoolError.authenticationRequired("Refresh token failed (HTTP\(payload.statusCode)): \(detail)")
         }
         return token
     }
 
-    /// 授权码换令牌（授权流程回调后使用）。
+    /// Exchange authorization code for token (used after the authorization process callback).
     public func exchange(
         authorizationCode: String,
         codeVerifier: String,
@@ -139,7 +139,7 @@ public struct OAuthTokenService: Sendable {
         guard let object = (try? JSONSerialization.jsonObject(with: payload.body)) as? [String: Any],
               let refreshToken = object["refresh_token"] as? String else {
             let detail = SecretRedactor.redact(String(decoding: payload.body.prefix(200), as: UTF8.self))
-            throw NovPoolError.authenticationRequired("换取令牌失败（HTTP \(payload.statusCode)）：\(detail)")
+            throw NovPoolError.authenticationRequired("Token exchange failed (HTTP\(payload.statusCode)): \(detail)")
         }
         var updated = credentials
         updated.refreshToken = refreshToken
@@ -157,7 +157,7 @@ public struct OAuthTokenService: Sendable {
     }
 }
 
-/// 授权地址构造（供 `ASWebAuthenticationSession` 打开）。
+/// Authorization address construction (for `ASWebAuthenticationSession` Open).
 public enum OAuthAuthorizationRequest {
     public static func url(
         credentials: OAuthCredentials,

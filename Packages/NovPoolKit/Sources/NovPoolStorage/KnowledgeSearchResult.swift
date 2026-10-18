@@ -1,7 +1,7 @@
 import Foundation
 import NovPoolCore
 
-/// 检索命中（含渲染与操作所需的全部字段）。
+/// Search hits (including all fields required for rendering and operations).
 public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
     public var id: UUID
     public var title: String
@@ -12,14 +12,14 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
     public var sourceURL: URL?
     public var sourceTitle: String?
     public var createdAt: Date
-    /// 全文检索命中片段（FTS5 `snippet()`）。
+    /// Full-text search hit snippet (FTS5 `snippet()`).
     public var snippet: String?
-    /// 详情预览正文：Markdown 正文优先，其次 OCR 文本。
+    /// Details PreviewBody: Markdown Body takes priority, followed by OCR Text.
     public var previewBody: String?
-    /// 命中方式，用于在 UI 上区分「关键词命中」与「语义命中」。
+    /// Hit method, used to distinguish between 'Keyword Hit' and 'Semantic Hit' on the UI.
     public var isFullTextMatch: Bool
     public var isSemanticMatch: Bool
-    /// 本地暂存文件（已校验存在）。`nil` 表示该条目没有落盘文件或文件已被清理。
+    /// Local cached file (existence verified). `nil` indicates that this entry has no persisted file or the file has been cleaned up.
     public var localFileURL: URL?
     public var isPinned: Bool
     public var isFavorite: Bool
@@ -69,22 +69,22 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
         )
     }
 
-    /// 命中方式的可读标注。
+    /// Readable annotation of the hit method.
     public var matchLabel: String {
         switch (isFullTextMatch, isSemanticMatch) {
-        case (true, true): "关键词 + 语义"
-        case (true, false): "关键词"
-        case (false, true): "语义"
-        case (false, false): "最近"
+        case (true, true): "Keyword + Semantic"
+        case (true, false): "Keyword"
+        case (false, true): "Semantic"
+        case (false, false): "Recent"
         }
     }
 
     public var hasLocalFile: Bool { localFileURL != nil }
 
-    /// 资源形态 tag（网页 / 图片 / PDF…），始终跟随条目。
+    /// Resource Kind tag (Web / Image / PDF…), always follows the entry.
     public var resourceTypeTag: String { contentType.displayTag }
 
-    /// 展示用标签：形态 tag 在前，其后是内容关键词 tag（去重）。
+    /// Display tags: Kind tag first, followed by content Keyword tag (deduplicated).
     public var displayTags: [String] {
         var ordered: [String] = [resourceTypeTag]
         for tag in tags where ordered.allSatisfy({ $0.caseInsensitiveCompare(tag) != .orderedSame }) {
@@ -93,7 +93,7 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
         return ordered
     }
 
-    /// 回车时的默认动作。
+    /// The default action when pressing Enter.
     public var defaultAction: SearchResultAction {
         if let sourceURL, Self.isWebURL(sourceURL) { return .openURL(sourceURL) }
         if let localFileURL { return .revealFile(localFileURL) }
@@ -107,7 +107,7 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
     }
 }
 
-/// 条目的可执行动作。
+/// The executable action of the item.
 public enum SearchResultAction: Sendable, Equatable {
     case openURL(URL)
     case revealFile(URL)

@@ -1,6 +1,6 @@
 import Foundation
 
-/// 正文提取结果。
+/// Body extraction result.
 public struct ArticleExtraction: Sendable, Equatable {
     public let title: String
     public let byline: String?
@@ -11,7 +11,7 @@ public struct ArticleExtraction: Sendable, Equatable {
     public let language: String?
     public let markdown: String
     public let textLength: Int
-    /// 选中的正文容器（`article.entry-content` / `div#main` / `body`），便于诊断路由与提取质量。
+    /// The selected Body container (`article.entry-content` / `div#main` / `body`) facilitates diagnosing routes and extracting quality.
     public let contentSelector: String
 
     public init(
@@ -39,33 +39,33 @@ public struct ArticleExtraction: Sendable, Equatable {
     }
 }
 
-/// 正文提取引擎抽象。
+/// Body extraction engine abstraction.
 ///
-/// 白皮书规划的 JavaScriptCore + Readability.js/Turndown.js 引擎可在此协议下接入，
-/// 与当前的原生 Swift 实现互换，上层流水线无需改动。
+/// The JavaScriptCore + Readability.js/Turndown.js engine planned in the white paper can be integrated under this protocol,
+/// Interchangeable with the current native Swift implementation, the upper pipeline does not need to be changed.
 public protocol ArticleExtracting: Sendable {
     func extract(html: String, baseURL: URL?) -> ArticleExtraction?
 }
 
-/// 原生 Swift 正文提取器（Readability 风格打分 + Markdown 渲染）。
+/// Native Swift Body Extractor (Readability Style Scoring + Markdown Rendering).
 public struct HTMLExtractor: ArticleExtracting {
-    /// 正文长度下限：低于该值的候选容器视为导航/侧栏等噪声。
+    /// Body length lower limit: Candidate containers below this value are considered noise, such as navigation/sidebars.
     ///
-    /// Readability 的经验值（约 200 字符）是按拉丁文标定的；中文信息密度更高，
-    /// 同样的信息量只需一半左右字符，因此这里取 120，避免中文短文被直接丢弃。
+    /// The readability experience value (about 200 characters) is calibrated based on Latin; Chinese has a higher information density,
+    /// The same amount of information requires only about half the characters, so here we take 120 to avoid Chinese short texts being directly discarded.
     public static let minimumContentLength = 120
-    /// Markdown 正文长度上限，避免超长页面把数据库行撑爆。
+    /// Markdown Body length limit to prevent excessively long pages from overloading database rows.
     public static let maximumMarkdownLength = 200_000
-    /// 用于打分的候选容器标签。
+    /// Candidate container labels for scoring.
     static let candidateTags: Set<String> = ["article", "main", "div", "section", "td", "body", "blockquote"]
-    /// 噪声标签：整棵子树直接丢弃。
+    /// Noise label: discard the entire subtree directly.
     static let noiseTags: Set<String> = [
         "script", "style", "noscript", "iframe", "svg", "template", "canvas",
         "form", "button", "input", "select", "textarea", "label",
         "video", "audio", "object", "embed", "nav", "footer", "aside",
         "link", "meta", "base", "head", "dialog", "menu",
     ]
-    /// 噪声 class / id 词元（按非字母数字切分后逐词匹配，避免误伤 "canvas" 这类近似词）。
+    /// Noise class/id tokens (match word by word after splitting by non-alphanumeric characters to avoid mistakenly affecting similar words like "canvas").
     static let noiseTokens: Set<String> = [
         "ad", "ads", "advert", "advertisement", "adsbygoogle", "sponsor", "sponsored",
         "promo", "promotion", "share", "sharing", "social", "socials", "follow",
@@ -75,7 +75,7 @@ public struct HTMLExtractor: ArticleExtracting {
         "subscribe", "subscription", "cookie", "cookies", "consent", "banner",
         "popup", "modal", "overlay", "hidden", "print", "skip", "visually",
     ]
-    /// 噪声 ARIA role。
+    /// Noise ARIA role.
     static let noiseRoles: Set<String> = [
         "navigation", "banner", "complementary", "contentinfo", "search",
         "form", "dialog", "menu", "menubar", "tablist", "tooltip",
@@ -119,13 +119,13 @@ public struct HTMLExtractor: ArticleExtracting {
         )
     }
 
-    /// P3 拖拽的 `.html` 片段：不过正文打分，直接转 Markdown。
+    /// P3 Dragged `.html` fragment: Just score the Body, convert directly to Markdown.
     public func markdown(fromFragmentHTML html: String, baseURL: URL?) -> String {
         let nodes = parser.parseFragment(html)
         return MarkdownRenderer(baseURL: baseURL).render(nodes)
     }
 
-    // MARK: - 噪声清理
+    // MARK: - Noise cleanup
 
     static func strippingNoise(_ element: HTMLElement) -> HTMLElement {
         var copy = element
@@ -157,12 +157,12 @@ public struct HTMLExtractor: ArticleExtracting {
         }
     }
 
-    // MARK: - 正文容器打分
+    // MARK: - Body container scoring
 
     static func selectContentRoot(in body: HTMLElement) -> (HTMLElement?, String, Int) {
         var best: (element: HTMLElement, score: Double, textLength: Int, selector: String)?
-        /// 语义容器（article / main / itemprop=articleBody）的优先容差：
-        /// 打分接近时优先选语义标签，结果更可预测。
+        /// Priority tolerance of Semantic container (article / main / itemprop=articleBody):
+        /// When scores are close, prioritize selecting the Semantic label for more predictable results.
         var semantic: (element: HTMLElement, score: Double, textLength: Int, selector: String)?
         let semanticTolerance = 0.85
 
@@ -207,7 +207,7 @@ public struct HTMLExtractor: ArticleExtracting {
         return (element.attribute("role") ?? "").lowercased() == "main"
     }
 
-    /// 打分：正文长度 ×（1 − 链接密度）× 段落/语义加权。
+    /// Scoring: Body length × (1 − Link density) × Paragraph/Semantic weighting.
     static func contentScore(element: HTMLElement, textLength: Int) -> Double {
         let linkLength = MarkdownRenderer.descendants(of: element, named: "a")
             .reduce(0) { $0 + $1.textContent.count }
@@ -227,17 +227,17 @@ public struct HTMLExtractor: ArticleExtracting {
         return score
     }
 
-    // MARK: - 截断
+    // MARK: - truncate
 
     static func truncate(_ markdown: String, limit: Int) -> String {
         guard markdown.count > limit else { return markdown }
         let cut = markdown.prefix(limit)
         let boundary = cut.lastIndex(of: "\n") ?? cut.startIndex
-        return String(cut[..<boundary]) + "\n\n（正文过长，已截断）"
+        return String(cut[..<boundary]) + "\n\n(truncated; body too long)"
     }
 }
 
-// MARK: - 元数据
+// MARK: - Metadata
 
 private struct Metadata {
     let document: HTMLElement
@@ -301,7 +301,7 @@ private struct Metadata {
         return Self.cleanedTitle(raw ?? "", siteName: siteName)
     }
 
-    /// 去掉标题尾部的站点后缀（`标题 - 站点名` / `标题 | 站点名`）。
+    /// Remove the site suffix at the end of the title (`Title - Site Name` / `Title | Site Name`).
     static func cleanedTitle(_ raw: String, siteName: String?) -> String {
         let separators = [" | ", " - ", " – ", " — ", " · ", " _ "]
         for separator in separators {
@@ -312,7 +312,7 @@ private struct Metadata {
             if let siteName, tail.caseInsensitiveCompare(siteName) == .orderedSame {
                 return head
             }
-            // 后缀不长于主体且不超过 20 字时才认定为站点名，避免误砍含连字符的短标题。
+            // A suffix is only recognized as the site name if it is not longer than the main part and does not exceed 20 characters, to avoid mistakenly cutting short titles that contain hyphens.
             if tail.count <= 20, head.count >= 4, tail.count <= head.count {
                 return head
             }

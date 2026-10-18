@@ -1,10 +1,10 @@
 import NovPoolCore
 import SwiftUI
 
-/// 悬浮窗根视图：固定画布 + 中心图标 + 弹性展开扇区。
+/// Floating window root view: fixed canvas + central icon + elastic expanding sectors.
 ///
-/// 视图只消费 `PanelSnapshot`（纯值），不在 SwiftUI 闭包里访问 `@MainActor` 模型——
-/// 理由见 `PanelSnapshot` 的注释。
+/// The view only consumes `PanelSnapshot` (pure value) and does not access the `@MainActor` model inside SwiftUI closures—
+/// The reason is explained in the comments of `PanelSnapshot`.
 @MainActor
 public struct PanelRootView: View {
     private let viewModel: CaptureViewModel
@@ -23,7 +23,7 @@ public struct PanelRootView: View {
     }
 
     public var body: some View {
-        // 快照在 body 作用域内取值：这里是 main actor，取完就是纯数据。
+        // The snapshot takes values within the body scope: here is the main actor, and once taken, it is pure data.
         render(PanelSnapshot(viewModel: viewModel))
     }
 
@@ -48,17 +48,17 @@ public struct PanelRootView: View {
             }
         }
         .frame(width: canvasSize.width, height: canvasSize.height)
-        // 右键悬浮图标 = 快捷入口。菜单栏下拉那条路若被系统缓存住内容，
-        // 这里仍然能进设置，不至于被堵死。
+        // Right-clicking the floating icon = shortcut access. If the drop-down path under the menu bar is cached by the system,
+        // You can still access the settings here, it's not completely blocked.
         .contextMenu {
-            SettingsLink { Text("设置…") }
+            SettingsLink { Text("Settings…") }
             Divider()
-            Button("退出 NovPool") { NSApp.terminate(nil) }
+            Button("Quit NovPool") { NSApp.terminate(nil) }
         }
     }
 }
 
-/// 展开态的环形毛玻璃底衬。
+/// Expanded ring-shaped frosted glass backing.
 struct RingBackdrop: View {
     let radius: CGFloat
     let offset: CGSize
@@ -72,7 +72,7 @@ struct RingBackdrop: View {
     }
 }
 
-/// 四个投递槽位。
+/// Four delivery slots.
 struct ChipRing: View {
     let chips: [PanelSnapshot.Chip]
     let ringOffset: CGSize
@@ -95,7 +95,7 @@ struct ChipRing: View {
     }
 }
 
-/// 中心主图标。
+/// Central main icon.
 struct IconBadge: View {
     let isBusy: Bool
     let size: CGFloat
@@ -107,7 +107,7 @@ struct IconBadge: View {
                     .resizable()
                     .interpolation(.high)
             } else {
-                // 资源缺失时的兜底（例如从源码直接 swift run、没有 .app bundle）
+                // Fallback when resources are missing (for example, running `swift run` directly from the source code without a .app bundle)
                 Image(systemName: "tray.and.arrow.down.fill")
                     .font(.system(size: size * 0.42, weight: .medium))
                     .foregroundStyle(.primary)
@@ -122,13 +122,13 @@ struct IconBadge: View {
         .frame(width: size, height: size)
     }
 
-    /// 黑洞图案（透明背景 PNG，由 scripts/render-blackhole-icon.swift 原创绘制）。
+    /// Black hole pattern (transparent background PNG, originally created by scripts/render-blackhole-icon.swift).
     static func floatingIcon() -> NSImage? {
         Bundle.main.image(forResource: "blackhole")
     }
 }
 
-/// 底部状态提示。
+/// Bottom status messages.
 struct StatusPill: View {
     let text: String
     let isError: Bool
@@ -150,7 +150,7 @@ struct StatusPill: View {
     }
 }
 
-/// 单个扇区槽位。
+/// Single sector slot.
 struct ZoneChip: View {
     let title: String
     let systemImage: String

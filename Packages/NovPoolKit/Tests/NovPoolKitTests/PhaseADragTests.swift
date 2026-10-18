@@ -4,11 +4,11 @@ import Testing
 @testable import NovPoolSystemBridge
 @testable import NovPoolUI
 
-@Suite("Phase A：拖拽双通路与多文件")
+@Suite("Phase A: Drag dual channels and multiple files")
 struct PhaseADragTests {
-    // MARK: - 协调器
+    // MARK: - Coordinator
 
-    @Test("原生落库后短时抑制全局兜底")
+    @Test("Short-term global fallback suppression after native storage")
     @MainActor
     func coordinatorSuppressesAfterNativeDrop() {
         let coordinator = DragCaptureCoordinator()
@@ -24,7 +24,7 @@ struct PhaseADragTests {
         #expect(!coordinator.shouldSuppressFallback)
     }
 
-    @Test("原生拖出画布后允许兜底")
+    @Test("Allow fallback after native drag out of the canvas")
     @MainActor
     func coordinatorAllowsFallbackAfterCancel() {
         let coordinator = DragCaptureCoordinator()
@@ -33,9 +33,9 @@ struct PhaseADragTests {
         #expect(!coordinator.shouldSuppressFallback)
     }
 
-    // MARK: - 兜底优先级
+    // MARK: - Bottom-line priority
 
-    @Test("兜底优先使用拖拽粘贴板，而不是选中文字")
+    @Test("Fallback prioritizes using the Drag pasteboard rather than Selected text")
     func fallbackPrefersDragPasteboardOverSelection() {
         let drag = FakePasteboard(strings: [
             (PasteboardTypeID.url, "https://example.com/from-drag"),
@@ -43,50 +43,50 @@ struct PhaseADragTests {
         let decision = FallbackCaptureResolver.resolve(
             dragPasteboard: drag,
             generalPasteboard: nil,
-            browser: .init(pageURL: URL(string: "https://example.com/active-tab"), pageTitle: "标签"),
-            selectedText: "这段选中文字不该被收"
+            browser: .init(pageURL: URL(string: "https://example.com/active-tab"), pageTitle: "Label"),
+            selectedText: "This selected text should not be collected"
         )
-        #expect(decision?.source == "拖拽粘贴板")
+        #expect(decision?.source == "Drag pasteboard")
         #expect(decision?.content.pageURL?.absoluteString == "https://example.com/from-drag")
     }
 
-    @Test("无拖拽粘贴板时退到通用粘贴板，再才用浏览器标签")
+    @Test("When there is no Drag pasteboard, fall back to the General pasteboard, and then use the Browser tab")
     func fallbackOrderGeneralThenBrowser() {
         let general = FakePasteboard(strings: [
-            (PasteboardTypeID.plainText, "粘贴板正文"),
+            (PasteboardTypeID.plainText, "Clipboard Body"),
         ])
         let withGeneral = FallbackCaptureResolver.resolve(
             dragPasteboard: nil,
             generalPasteboard: general,
-            browser: .init(pageURL: URL(string: "https://example.com/tab"), pageTitle: "标签"),
-            selectedText: "选中"
+            browser: .init(pageURL: URL(string: "https://example.com/tab"), pageTitle: "Label"),
+            selectedText: "Selected"
         )
-        #expect(withGeneral?.source == "通用粘贴板")
-        #expect(withGeneral?.content.text == "粘贴板正文")
+        #expect(withGeneral?.source == "General pasteboard")
+        #expect(withGeneral?.content.text == "Clipboard Body")
 
         let browserOnly = FallbackCaptureResolver.resolve(
             dragPasteboard: nil,
             generalPasteboard: nil,
-            browser: .init(pageURL: URL(string: "https://example.com/tab"), pageTitle: "标签"),
-            selectedText: "选中"
+            browser: .init(pageURL: URL(string: "https://example.com/tab"), pageTitle: "Label"),
+            selectedText: "Selected"
         )
-        #expect(browserOnly?.source == "浏览器标签")
+        #expect(browserOnly?.source == "Browser tab")
         #expect(browserOnly?.content.pageURL?.absoluteString == "https://example.com/tab")
     }
 
-    @Test("选中文字排在最后")
+    @Test("Selected text is at the end")
     func fallbackSelectionIsLastResort() {
         let decision = FallbackCaptureResolver.resolve(
             dragPasteboard: nil,
             generalPasteboard: nil,
             browser: .init(pageURL: nil, pageTitle: nil),
-            selectedText: "最后才用选中文字"
+            selectedText: "Use Selected text last"
         )
-        #expect(decision?.source == "选中文字")
-        #expect(decision?.content.text == "最后才用选中文字")
+        #expect(decision?.source == "Selected text")
+        #expect(decision?.content.text == "Use Selected text last")
     }
 
-    @Test("拖拽粘贴板残留旧文件时，有浏览器标签则改用标签")
+    @Test("When the Drag pasteboard retains old files, if there is a Browser tab, switch to using the tab")
     func fallbackSkipsStaleFileWhenBrowserTabAvailable() {
         let drag = FakePasteboard(strings: [
             (PasteboardTypeID.fileURL, URL(fileURLWithPath: "/tmp/old-doc.pdf").absoluteString),
@@ -94,16 +94,16 @@ struct PhaseADragTests {
         let decision = FallbackCaptureResolver.resolve(
             dragPasteboard: drag,
             generalPasteboard: nil,
-            browser: .init(pageURL: URL(string: "https://example.com/tab"), pageTitle: "当前标签"),
+            browser: .init(pageURL: URL(string: "https://example.com/tab"), pageTitle: "Current Tag"),
             selectedText: nil,
             fileExists: { _ in true }
         )
-        #expect(decision?.source == "浏览器标签")
+        #expect(decision?.source == "Browser tab")
         #expect(decision?.content.contentType == .webLink)
         #expect(decision?.content.pageURL?.absoluteString == "https://example.com/tab")
     }
 
-    @Test("拖拽粘贴板同时有旧文件与新链接时，优先用链接")
+    @Test("When the drag pasteboard has both an old File and a new Link, give priority to the Link")
     func fallbackPrefersLinkOverStaleFileOnSamePasteboard() {
         let drag = FakePasteboard(strings: [
             (PasteboardTypeID.fileURL, URL(fileURLWithPath: "/tmp/old-doc.pdf").absoluteString),
@@ -112,15 +112,15 @@ struct PhaseADragTests {
         let decision = FallbackCaptureResolver.resolve(
             dragPasteboard: drag,
             generalPasteboard: nil,
-            browser: .init(pageURL: URL(string: "https://example.com/active-tab"), pageTitle: "标签"),
+            browser: .init(pageURL: URL(string: "https://example.com/active-tab"), pageTitle: "Label"),
             selectedText: nil,
             fileExists: { _ in true }
         )
-        #expect(decision?.source == "拖拽粘贴板")
+        #expect(decision?.source == "Drag pasteboard")
         #expect(decision?.content.pageURL?.absoluteString == "https://example.com/from-drag")
     }
 
-    @Test("无浏览器标签时仍接受拖拽粘贴板文件")
+    @Test("Accept drag pasteboard files even when there is no browser tab")
     func fallbackKeepsFileWhenNoBrowserTab() {
         let drag = FakePasteboard(strings: [
             (PasteboardTypeID.fileURL, URL(fileURLWithPath: "/tmp/report.pdf").absoluteString),
@@ -132,13 +132,13 @@ struct PhaseADragTests {
             selectedText: nil,
             fileExists: { _ in true }
         )
-        #expect(decision?.source == "拖拽粘贴板")
+        #expect(decision?.source == "Drag pasteboard")
         #expect(decision?.content.contentType == .documentPDF)
     }
 
-    // MARK: - 多文件展开
+    // MARK: - Expand multiple files
 
-    @Test("多文件拆成各自类型的独立条目")
+    @Test("Split multiple files into independent entries of each type")
     func expandMultipleFiles() {
         let png = URL(fileURLWithPath: "/tmp/a.png")
         let pdf = URL(fileURLWithPath: "/tmp/b.pdf")
@@ -154,7 +154,7 @@ struct PhaseADragTests {
         #expect(items.map { $0.fileURLs.map(\.lastPathComponent) } == [["a.png"], ["b.pdf"], ["c.mov"]])
     }
 
-    @Test("单文件与非文件内容不拆分")
+    @Test("Do not split single File and non-File content")
     func expandKeepsSinglePayload() {
         let single = ResolvedDragContent(
             contentType: .genericFile,
@@ -169,7 +169,7 @@ struct PhaseADragTests {
         #expect(link.expandedForIngest().count == 1)
     }
 
-    @Test("多文件投递状态文案汇总")
+    @Test("Summary of Multiple File Delivery Status Copy")
     @MainActor
     func multiFileStatusCopy() {
         let outcomes = [
@@ -177,11 +177,11 @@ struct PhaseADragTests {
             CaptureOutcome(title: "b", isDuplicate: false, routeTargets: []),
             CaptureOutcome(title: "c", isDuplicate: true, routeTargets: []),
         ]
-        #expect(CaptureViewModel.describe(outcomes) == "已收录 2 项，跳过 1 个重复")
+        #expect(CaptureViewModel.describe(outcomes) == "Saved 2, skipped 1 duplicates")
         #expect(
             CaptureViewModel.describe([
                 CaptureOutcome(title: "x", isDuplicate: false, routeTargets: ["notion"]),
-            ]) == "已收录 → notion：x"
+            ]) == "Saved → notion: x"
         )
     }
 }

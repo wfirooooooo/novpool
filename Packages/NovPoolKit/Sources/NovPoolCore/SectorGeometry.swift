@@ -1,16 +1,16 @@
 import CoreGraphics
 import Foundation
 
-/// 扇区几何计算：把拖拽悬停点换算成投递槽位索引。
+/// Sector geometry calculation: Convert the dragged hover point into the delivery slot index.
 ///
-/// 纯数学、无 AppKit 依赖，便于单元测试。坐标系为 AppKit 视图坐标（原点左下）。
+/// Pure mathematics, no AppKit dependency, convenient for unit testing. The coordinate system is the AppKit view coordinates (origin at the bottom left).
 public enum SectorGeometry {
-    /// 主图标半径（48x48 pt 图标的一半），在此半径内视为「未离开图标」。
+    /// Main icon radius (half of a 48x48 pt icon); within this radius, it is considered "not having left the icon".
     public static let deadZoneRadius: CGFloat = 24
-    /// 扇区环形可命中的最大半径（固定 260x260 画布内）。
+    /// The maximum radius that a sector ring can hit (within a fixed 260x260 canvas).
     public static let maxRadius: CGFloat = 110
 
-    /// 返回命中的槽位索引；`nil` 表示落在死区或画布之外，应保持静默态。
+    /// Returns the index of the slot hit; `nil` indicates that it fell in the dead zone or outside the canvas, and should remain in a silent state.
     public static func zoneIndex(
         for point: CGPoint,
         center: CGPoint,
@@ -22,21 +22,21 @@ public enum SectorGeometry {
         let distance = (dx * dx + dy * dy).squareRoot()
         guard distance > deadZoneRadius, distance <= maxRadius else { return nil }
 
-        // 第一个扇区位于正上方，顺时针均分。
-        let angleFromTop = atan2(dx, dy) // 0 = 正上，右正左负
+        // The first sector is located at the top, divided clockwise equally.
+        let angleFromTop = atan2(dx, dy) // 0 = straight up; right positive, left negative
         let normalized = (angleFromTop + 2 * .pi).truncatingRemainder(dividingBy: 2 * .pi)
         let sectorWidth = 2 * CGFloat.pi / CGFloat(zoneCount)
-        // 先偏移半个扇区再取整：让「扇区中心」精确落在整数索引上，
-        // 避免正上 / 正右等边界角度因浮点误差落到相邻扇区。
+        // First offset by half a sector and then round: this ensures the 'sector center' precisely lands on an integer index.
+        // Avoid having boundary angles such as exactly up/right fall into adjacent sectors due to floating-point errors.
         let index = Int((normalized / sectorWidth + 0.5).rounded(.down))
         return index % zoneCount
     }
 
-    /// 槽位中心相对画布中心的坐标，供 SwiftUI 布局使用。
+    /// The coordinates of the slot center relative to the canvas center, used for SwiftUI layout.
     public static func zoneCenter(index: Int, zoneCount: Int, radius: CGFloat) -> CGPoint {
         guard zoneCount > 0 else { return .zero }
         let step = 2 * CGFloat.pi / CGFloat(zoneCount)
-        let angle = CGFloat(index) * step // 0 = 正上，顺时针
+        let angle = CGFloat(index) * step // 0 = straight up, clockwise
         return CGPoint(x: radius * sin(angle), y: radius * cos(angle))
     }
 }

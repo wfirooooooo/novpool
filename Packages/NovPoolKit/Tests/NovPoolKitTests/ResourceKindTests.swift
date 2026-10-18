@@ -5,11 +5,11 @@ import Testing
 @testable import NovPoolUI
 @testable import NovPoolSystemBridge
 
-@Suite("拖拽资源类型判断")
+@Suite("Drag-and-drop resource type determination")
 struct ResourceKindTests {
     private let resolver = PasteboardResolver()
 
-    @Test("扩展名分类：图片 / 视频 / PDF / 普通文件")
+    @Test("File Extension Classification: Image / Video / PDF / Regular File")
     func fileKindClassification() {
         for ext in ["png", "JPG", "heic", "webp"] {
             #expect(FileKind.of(pathExtension: ext) == .image)
@@ -27,7 +27,7 @@ struct ResourceKindTests {
         #expect(FileKind.other.contentType == .genericFile)
     }
 
-    @Test("拖入图片文件：判为图片，但仍携带本地文件路径")
+    @Test("Dragged into ImageFile: recognized as Image, but still carries the local File path")
     func imageFile() throws {
         let pasteboard = FakePasteboard(strings: [
             (PasteboardTypeID.fileURL, "file:///tmp/%E7%A4%BA%E6%84%8F%E5%9B%BE.png"),
@@ -35,10 +35,10 @@ struct ResourceKindTests {
         let content = try #require(resolver.resolve(from: pasteboard))
         #expect(content.contentType == .image)
         #expect(content.fileURLs.count == 1)
-        #expect(content.imageData == nil)   // 图片文件走文件暂存，不走内存字节
+        #expect(content.imageData == nil)   // ImageFile goes through file temporary storage, not through memory bytes
     }
 
-    @Test("拖入视频文件：判为视频")
+    @Test("Drag into VideoFile: classified as Video")
     func videoFile() throws {
         let pasteboard = FakePasteboard(strings: [
             (PasteboardTypeID.fileURL, "file:///tmp/%E6%BC%94%E7%A4%BA.mov"),
@@ -48,7 +48,7 @@ struct ResourceKindTests {
         #expect(content.fileURLs.first?.pathExtension == "mov")
     }
 
-    @Test("拖入 PDF 与办公文档：分别判为 PDF 与普通文件")
+    @Test("Drag into PDF and Office Document: classify as PDF and regular File respectively")
     func documentFiles() throws {
         let pdf = try #require(resolver.resolve(from: FakePasteboard(strings: [
             (PasteboardTypeID.fileURL, "file:///tmp/report.pdf"),
@@ -61,7 +61,7 @@ struct ResourceKindTests {
         #expect(docx.contentType == .genericFile)
     }
 
-    @Test("网页内联视频字节：判为视频并记录媒体类型")
+    @Test("Web inline Video bytes: judged as Video and record media type")
     func inlineVideoData() throws {
         let pasteboard = FakePasteboard([
             (PasteboardTypeID.mpeg4Movie, Data(repeating: 0x00, count: 64)),
@@ -73,7 +73,7 @@ struct ResourceKindTests {
     }
 
     @MainActor
-    @Test("拖拽接收视图注册了图片、视频与浏览器标签的粘贴板类型")
+    @Test("The drag-and-drop receiving view has registered clipboard types for Image, Video, and Browser tab")
     func dragViewAcceptsEveryResourceType() {
         let types = Set(DragReceivingView.supportedTypes.map(\.rawValue))
         #expect(types.isSuperset(of: [
@@ -90,7 +90,7 @@ struct ResourceKindTests {
         ]))
     }
 
-    @Test("图片、视频与普通文件都从粘贴板解析后落库并暂存原件")
+    @Test("Images, videos, and regular files are all parsed from the clipboard, stored in the database, and temporarily save the originals.")
     func ingestionStagesAllKinds() async throws {
         let directory = try TestSupport.makeTemporaryDirectory("kinds")
         let database = try NovPoolDatabase(path: directory.appending(path: "db.sqlite").path(percentEncoded: false))
@@ -108,7 +108,7 @@ struct ResourceKindTests {
             ("notes.md", ContentType.genericFile),
         ].enumerated() {
             let source = directory.appending(path: name)
-            // 内容哈希不同，避免第二条被当成第一条的跨类型重复项。
+            // The content hash is different, preventing the second item from being treated as a cross-type duplicate of the first.
             try Data(repeating: UInt8(0x41 + index), count: 256).write(to: source)
             let content = try #require(resolver.resolve(from: FakePasteboard(strings: [
                 (PasteboardTypeID.fileURL, source.absoluteString),

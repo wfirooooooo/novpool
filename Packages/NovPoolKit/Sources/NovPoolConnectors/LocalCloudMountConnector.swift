@@ -2,19 +2,19 @@ import Foundation
 import NovPoolCore
 import NovPoolStorage
 
-/// 本地云盘挂载目录直通连接器（零鉴权极速模式）。
+/// Local cloud disk mount directory direct connector (zero-authentication high-speed mode).
 ///
-/// 目标目录可为 `~/Library/CloudStorage/GoogleDrive-…`、
-/// `~/Library/Mobile Documents/com~apple~CloudDocs`、`~/Library/CloudStorage/OneDrive-…`
-/// 或任意本地 Obsidian 库。生产环境通过安全作用域书签持久化访问权限。
-/// `FileManager` 本身不是 `Sendable`，但其文件系统操作是线程安全的，且本类型只在
-/// `push` 内部同步使用该实例，因此显式标注 `@unchecked Sendable`。
+/// The target directory can be `~/Library/CloudStorage/GoogleDrive-…`,
+/// `~/Library/Mobile Documents/com~apple~CloudDocs`,`~/Library/CloudStorage/OneDrive-…`
+/// Or any local Obsidian vault. In a production environment, access permissions are persisted through secure scope bookmarks.
+/// `FileManager` itself is not `Sendable`, but its file system operations are thread-safe, and this type is only used in
+/// `push` internally synchronizes using this instance, so it is explicitly marked with `@unchecked Sendable`.
 public struct LocalCloudMountConnector: DestinationConnector, @unchecked Sendable {
     public struct Config: Codable, Sendable, Equatable {
         public var namingTemplate: String
-        /// Security-Scoped Bookmark（Base64），生产环境使用。
+        /// Security-Scoped Bookmark (Base64), used in production environment.
         public var rootBookmarkBase64: String?
-        /// 直接路径，用于无沙盒环境与单元测试。
+        /// Direct path, used for non-sandbox environments and unit testing.
         public var rootPath: String?
 
         public init(
@@ -78,7 +78,7 @@ public struct LocalCloudMountConnector: DestinationConnector, @unchecked Sendabl
         )
     }
 
-    // MARK: - 内部
+    // MARK: - Internals
 
     static func fileExtension(for payload: NormalizedPayload, fallbackURL: URL?) -> String {
         switch payload.contentType {
@@ -94,7 +94,7 @@ public struct LocalCloudMountConnector: DestinationConnector, @unchecked Sendabl
         do {
             return try JSONDecoder().decode(Config.self, from: configJSON)
         } catch {
-            throw NovPoolError.connectorNotConfigured("local_mount 配置解析失败：\(error.localizedDescription)")
+            throw NovPoolError.connectorNotConfigured("local_mount config parse failed: \(error.localizedDescription)")
         }
     }
 
@@ -106,7 +106,7 @@ public struct LocalCloudMountConnector: DestinationConnector, @unchecked Sendabl
         if let bookmarkBase64 = config.rootBookmarkBase64, let data = Data(base64Encoded: bookmarkBase64) {
             return try SecurityScopedBookmark.resolve(data).url
         }
-        throw NovPoolError.connectorNotConfigured("local_mount 未配置目标目录")
+        throw NovPoolError.connectorNotConfigured("local_mount target directory not configured")
     }
 
     @discardableResult
@@ -128,12 +128,12 @@ public struct LocalCloudMountConnector: DestinationConnector, @unchecked Sendabl
                     .write(to: destination, options: .atomic)
             }
         } catch {
-            throw NovPoolError.stagingFailure("写入本地云盘失败：\(error.localizedDescription)")
+            throw NovPoolError.stagingFailure("Failed to write to local cloud mount: \(error.localizedDescription)")
         }
         return destination
     }
 
-    /// 无原始文件时落一份带 YAML Front Matter 的 Markdown 归档。
+    /// When there is no original file, generate a Markdown archive with YAML Front Matter.
     static func markdownDocument(for payload: NormalizedPayload) -> String {
         var lines = [
             "---",

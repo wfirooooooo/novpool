@@ -6,11 +6,11 @@ public struct ResolvedBookmark: Sendable, Equatable {
     public let isStale: Bool
 }
 
-/// Security-Scoped Bookmark 封装。
+/// Security-Scoped Bookmark encapsulation.
 ///
-/// 用户在设置页通过 `NSOpenPanel` 选定 `~/Library/CloudStorage/GoogleDrive-…`、
-/// `~/Library/Mobile Documents/com~apple~CloudDocs` 或 Obsidian 库之后，把生成的
-/// 书签数据落库；后台同步时恢复访问权限后直接写入。
+/// The user selects `~/Library/CloudStorage/GoogleDrive-…` on the settings page through `NSOpenPanel`,
+/// `~/Library/Mobile Documents/com~apple~CloudDocs` or after the Obsidian vault, the generated
+/// Bookmark data is saved to the database; after restoring access permissions during backend synchronization, it is written directly.
 public enum SecurityScopedBookmark {
     public static func make(for url: URL) throws -> Data {
         do {
@@ -20,7 +20,7 @@ public enum SecurityScopedBookmark {
                 relativeTo: nil
             )
         } catch {
-            throw NovPoolError.connectorNotConfigured("无法创建安全作用域书签：\(error.localizedDescription)")
+            throw NovPoolError.connectorNotConfigured("Could not create security-scoped bookmark: \(error.localizedDescription)")
         }
     }
 
@@ -35,11 +35,11 @@ public enum SecurityScopedBookmark {
             )
             return ResolvedBookmark(url: url, isStale: isStale)
         } catch {
-            throw NovPoolError.connectorNotConfigured("无法解析安全作用域书签：\(error.localizedDescription)")
+            throw NovPoolError.connectorNotConfigured("Could not resolve security-scoped bookmark: \(error.localizedDescription)")
         }
     }
 
-    /// 在安全作用域内执行闭包，结束后必定释放访问权限。
+    /// Execute the closure within a secure scope, and access rights will be released after completion.
     public static func withAccess<T>(_ data: Data, _ body: (URL) throws -> T) throws -> T {
         let resolved = try resolve(data)
         let started = resolved.url.startAccessingSecurityScopedResource()

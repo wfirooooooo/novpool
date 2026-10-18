@@ -7,14 +7,15 @@ import NovPoolConnectors
 import NovPoolStorage
 import NovPoolSystemBridge
 
-/// 无界面自检。
+/// Headless self-test.
 ///
-/// 用途：不开 GUI 就能验证「数据目录 → 建库 → 暂存 → 入库 → 补齐 → 检索」这条真实链路，
-/// 一条命令暴露的环境问题（目录不可写、SQLite 不可用、ANE 不可用）当场可见：
+/// Verifies the real path “data dir → DB → staging → ingest → enrich → search”
+/// without opening the GUI, so environment issues (unwritable dir, SQLite, ANE)
+/// show up in one command:
 ///
 ///     ./build/NovPool.app/Contents/MacOS/NovPool --selftest
 ///
-/// 自检会往正式知识库里写入一条标题为「NovPool 自检条目」的记录，方便随后在检索面板里找到它。
+/// Writes a library item titled “NovPool Self-Test Item” so you can find it in Search.
 enum SelfTest {
     static func run() -> Int32 {
         let box = ExitBox()
@@ -41,14 +42,14 @@ enum SelfTest {
 
         func report(_ label: String, _ passed: Bool, _ detail: String = "") {
             let mark = passed ? "✓" : "✗"
-            print("\(mark) \(label)\(detail.isEmpty ? "" : "：\(detail)")")
+            print("\(mark) \(label)\(detail.isEmpty ? "" : ": \(detail)")")
             if !passed { failures += 1 }
         }
 
-        print("NovPool 自检开始（macOS \(ProcessInfo.processInfo.operatingSystemVersionString)）")
-        print("日志文件：\(NovPoolLog.path)")
+        print("NovPool self-test starting (macOS \(ProcessInfo.processInfo.operatingSystemVersionString))")
+        print("Log file: \(NovPoolLog.path)")
 
-        // 1. 数据目录（首次启动最容易崩在这里）
+        // 1. Data directory (most common first-launch crash)
         let dataDirectory: URL
         do {
             dataDirectory = try NovPoolPaths.prepareApplicationSupport()
@@ -57,17 +58,17 @@ enum SelfTest {
                 atPath: dataDirectory.path(percentEncoded: false),
                 isDirectory: &isDirectory
             )
-            report("数据目录可写", exists && isDirectory.boolValue, dataDirectory.path(percentEncoded: false))
+            report("Data directory writable", exists && isDirectory.boolValue, dataDirectory.path(percentEncoded: false))
         } catch {
-            report("数据目录可写", false, "\(error)")
-            print("自检中止：数据目录不可用，后续步骤无意义。")
+            report("Data directory writable", false, "\(error)")
+            print("Self-test aborted: data directory unavailable; later steps are meaningless.")
             return 1
         }
 
-        // 2. 建库与迁移
+        // 2. Database + migration
         let databaseURL = try? NovPoolPaths.databaseURL()
         guard let databaseURL else {
-            report("数据库", false, "无法解析数据库路径")
+            report("Database", false, "Could not resolve database path")
             return 1
         }
         let database: NovPoolDatabase
@@ -75,34 +76,34 @@ enum SelfTest {
             database = try NovPoolDatabase(path: databaseURL.path(percentEncoded: false))
             try await SchemaMigrator.migrate(database)
             let itemCount = try await KnowledgeRepository(database: database).count()
-            report("数据库可写（现有 \(itemCount) 条）", true, databaseURL.path(percentEncoded: false))
+            report("Database writable (\(itemCount) existing items)", true, databaseURL.path(percentEncoded: false))
         } catch {
-            report("数据库可写", false, "\(error)")
+            report("Database writable", false, "\(error)")
             return 1
         }
 
-        // 3. 暂存
+        // 3. Staging
         let staging: StagingStore
         let imageData: Data
         do {
             staging = try StagingStore(root: NovPoolPaths.stagingRoot())
-            guard let png = makeSampleImage(text: "NovPool 自检 \(Date().formatted(date: .numeric, time: .standard))") else {
-                report("暂存目录", false, "无法生成测试图片")
+            guard let png = makeSampleImage(text: "NovPool Self-Test \(Date().formatted(date: .numeric, time: .standard))") else {
+                report("Staging directory", false, "Could not generate test image")
                 return 1
             }
             imageData = png
             let asset = try await staging.stage(data: png, preferredExtension: "png")
             let onDisk = FileManager.default.fileExists(atPath: asset.absoluteURL.path(percentEncoded: false))
-            report("暂存写入", onDisk && asset.sha256.count == 64, asset.relativePath)
+            report("Staging write", onDisk && asset.sha256.count == 64, asset.relativePath)
         } catch {
-            report("暂存写入", false, "\(error)")
+            report("Staging write", false, "\(error)")
             return 1
         }
 
-        // 4. 入库
+        // 4. Ingest
         let repository = KnowledgeRepository(database: database)
-        // 标题由溯源上下文决定：给一个确定性的 pageTitle，自检才好断言、用户也好搜索。
-        let selfTestTitle = "NovPool 自检条目"
+        // Title comes from provenance: use a fixed pageTitle so assertions and Search stay easy.
+        let selfTestTitle = "NovPool Self-Test Item"
         let orchestrator = IngestionOrchestrator(
             database: database,
             staging: staging,
@@ -135,39 +136,43 @@ enum SelfTest {
                 )
             )
             itemID = result.record.id
-            report("拖拽入库", result.record.title.isEmpty == false, "title=\(result.record.title) 暂存=\(result.record.localRelativePath ?? "无")")
+            report(
+                "Drag ingest",
+                result.record.title.isEmpty == false,
+                "title=\(result.record.title) staging=\(result.record.localRelativePath ?? "none")"
+            )
         } catch {
-            report("拖拽入库", false, "\(error)")
+            report("Drag ingest", false, "\(error)")
             return 1
         }
 
-        // 5. 补齐（OCR 依赖系统 ANE 服务，不可用时跳过而非判失败）
+        // 5. Enrichment (OCR needs system ANE; skip rather than fail when unavailable)
         let enrichment = await orchestrator.enrichAfterIngest(itemID: itemID)
         if let enrichment {
-            report("后台补齐", true, enrichment.summaryLine)
+            report("Background enrichment", true, enrichment.summaryLine)
         } else {
-            print("· 后台补齐：本次没有产出（OCR 需要系统 ANE 服务；纯文本/网页条目则取决于网络与 AI 配置）")
+            print("· Background enrichment: nothing produced this run (OCR needs ANE; text/web items depend on network and AI config)")
         }
 
-        // 6. 检索：全文 + 混合
+        // 6. Search: full-text + recent
         do {
             let search = KnowledgeSearchService(repository: repository, staging: staging, embedder: nil)
             let hits = try await search.search(selfTestTitle)
             let found = hits.contains { $0.title == selfTestTitle }
             report(
-                "全文检索命中",
+                "Full-text search hit",
                 found,
-                found ? "返回 \(hits.count) 条" : "返回 \(hits.count) 条：\(hits.map(\.title).joined(separator: " / "))"
+                found ? "returned \(hits.count)" : "returned \(hits.count): \(hits.map(\.title).joined(separator: " / "))"
             )
 
             let recent = try await search.recent(limit: 5)
-            report("最近条目列表", !recent.isEmpty, "\(recent.count) 条")
+            report("Recent items list", !recent.isEmpty, "\(recent.count) items")
         } catch {
-            report("全文检索命中", false, "\(error)")
+            report("Full-text search hit", false, "\(error)")
         }
 
-        // 7. 云同步链路：连接器中枢 + 发件箱工作器（本地挂载连接器可离线验证）
-        //    同时验证跨云级联：第二个任务依赖第一个，只有前者成功后才执行。
+        // 7. Cloud sync path: connector hub + outbox (local mount works offline).
+        //    Also verifies cascade: second job depends on the first and runs only after it succeeds.
         do {
             let connectorRepository = ConnectorRepository(database: database)
             let firstRoot = dataDirectory.appending(path: "SelfTestArchiveA", directoryHint: .isDirectory)
@@ -185,13 +190,13 @@ enum SelfTest {
 
             try await connectorRepository.upsert(ConnectorRecord(
                 id: "selftest-a",
-                name: "自检归档 A",
+                name: "Self-Test Archive A",
                 connectorType: "local_mount",
                 configJSON: try configJSON(root: firstRoot)
             ))
             try await connectorRepository.upsert(ConnectorRecord(
                 id: "selftest-b",
-                name: "自检归档 B",
+                name: "Self-Test Archive B",
                 connectorType: "local_mount",
                 configJSON: try configJSON(root: secondRoot)
             ))
@@ -201,7 +206,7 @@ enum SelfTest {
                 connectors: ConnectorHub(repository: connectorRepository),
                 staging: staging
             )
-            // 故意把 A 放在后面，检验「按类型排序」确实把文件型连接器排在前面并串成链
+            // Put A last on purpose to verify type-order places file connectors first and chains them.
             let jobs = try await worker.enqueue(itemID: itemID, connectorIDs: ["selftest-b", "selftest-a"])
             let outbox = OutboxRepository(database: database)
             let chained = try await outbox.fetch(id: jobs[1])?.dependsOnJobID == jobs[0]
@@ -215,25 +220,25 @@ enum SelfTest {
                 .count
 
             report(
-                "云同步 + 级联",
+                "Cloud sync + cascade",
                 chained && firstRun.succeeded == 1 && secondRun.succeeded == 1
                     && succeeded == 2 && landed == 2,
-                "级联=\(chained) 首轮成功=\(firstRun.succeeded) 次轮成功=\(secondRun.succeeded) 落盘=\(landed)"
+                "cascade=\(chained) first=\(firstRun.succeeded) second=\(secondRun.succeeded) on disk=\(landed)"
             )
         } catch {
-            report("云同步 + 级联", false, "\(error)")
+            report("Cloud sync + cascade", false, "\(error)")
         }
 
         print("")
         if failures == 0 {
-            print("自检通过。可用菜单栏「搜索知识库…」搜索「NovPool 自检条目」确认数据落库。")
+            print("Self-test passed. Use menu “Search Knowledge…” and look for “NovPool Self-Test Item”.")
             return 0
         }
-        print("自检失败 \(failures) 项，详见上方输出与 \(NovPoolLog.path)")
+        print("Self-test failed \(failures) check(s); see output above and \(NovPoolLog.path)")
         return 1
     }
 
-    /// 用 CoreText 画一张含文字的位图（不需要 WindowServer）。
+    /// Draw a bitmap with CoreText (no WindowServer required).
     private static func makeSampleImage(text: String) -> Data? {
         let width = 900
         let height = 220

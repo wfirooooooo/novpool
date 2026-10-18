@@ -1,7 +1,7 @@
 import Foundation
 import NovPoolCore
 
-/// AI 结构化增强的显式结果（成功或带可读原因的失败）。
+/// Explicit results of AI-structured enhancement (success or failure with readable reasons).
 public enum AIEnrichmentOutcome: Sendable, Equatable {
     case success(AIEnrichment)
     case failure(String)

@@ -1,18 +1,18 @@
 import Foundation
 
-/// 粘贴板读取抽象。
+/// Clipboard read abstraction.
 ///
-/// 真实实现包装 `NSPasteboard`；测试使用内存替身，避免依赖 WindowServer
-/// 与 `pboard` 守护进程（在无 GUI 会话的 CI / 沙盒环境中不可用）。
+/// Truly implement wrapping `NSPasteboard`; use in-memory substitutes for testing to avoid depending on WindowServer
+/// With the `pboard` daemon (not available in CI/sandbox environments without a GUI session).
 public protocol PasteboardReading: Sendable {
-    /// 粘贴板中当前存在的所有类型标识符（如 `public.utf8-plain-text`）。
+    /// All type identifiers currently present in the clipboard (such as `public.utf8-plain-text`).
     var availableTypeIdentifiers: [String] { get }
     func data(forTypeIdentifier typeIdentifier: String) -> Data?
     func string(forTypeIdentifier typeIdentifier: String) -> String?
-    /// 同一类型在多个 pasteboard item 上的全部字符串。
+    /// All strings of the same type on multiple pasteboard items.
     ///
-    /// Finder 多文件拖拽常为「每个文件一个 item」，此时 `string(forType:)` 只返回第一项；
-    /// 默认实现退化为单值数组，真实 `NSPasteboardReader` 会枚举全部 item。
+    /// Finder often treats multiple file drag-and-drop as 'one item per file', in which case `string(forType:)` only returns the first item;
+    /// The default implementation degenerates into a single-value array, while the real `NSPasteboardReader` enumerates all items.
     func allStrings(forTypeIdentifier typeIdentifier: String) -> [String]
 }
 
@@ -22,15 +22,15 @@ extension PasteboardReading {
     }
 }
 
-/// 粘贴板类型标识符常量（避免 `NovPoolCore` 依赖 AppKit）。
+/// Clipboard type identifier constant (to avoid `NovPoolCore` depending on AppKit).
 public enum PasteboardTypeID {
     public static let fileURL = "public.file-url"
     public static let url = "public.url"
-    /// Safari 用 `public.url-name` 携带链接/标签标题。
+    /// Safari uses `public.url-name` to carry Link/label titles.
     public static let urlName = "public.url-name"
-    /// URL 列表（Chrome/Edge/Firefox 拖标签时会带）。
+    /// URL list (will be included when dragging tabs in Chrome/Edge/Firefox).
     public static let uriList = "text/uri-list"
-    /// Firefox / Zen 的标签拖拽格式，内容为 UTF-16LE 的「URL\n标题」。
+    /// Firefox/Zen's tab drag format, content is UTF-16LE 'URL\nTitle'.
     public static let mozURL = "text/x-moz-url"
     public static let mozURLData = "text/x-moz-url-data"
     public static let html = "public.html"
@@ -45,24 +45,24 @@ public enum PasteboardTypeID {
     public static let rtf = "public.rtf"
 }
 
-/// 优先级 P0～P3 解析结果。所有字段均为值类型，可安全跨 Actor 传递。
+/// Analysis results for priority P0 to P3. All fields are value types and can be safely passed across Actors.
 public struct ResolvedDragContent: Sendable, Equatable {
     public var contentType: ContentType
-    /// P0：本地文件 / 离线文档。
+    /// P0: Local File / Offline Document.
     public var fileURLs: [URL]
-    /// P1：直接从粘贴板内存读取的位图字节流（绝不通过 URL 二次下载）。
+    /// P1: Directly read the bitmap byte stream from clipboard memory (never download it again via URL).
     public var imageData: Data?
-    /// P1：位图的原始 UTI（`public.png` / `public.jpeg` / `public.tiff`）。
+    /// P1: The original UTI of the bitmap (`public.png` / `public.jpeg` / `public.tiff`).
     public var imageTypeIdentifier: String?
-    /// P2：网页超链接目标。
+    /// P2: Web hyperlink target.
     public var pageURL: URL?
-    /// 拖拽内容自带的标题（浏览器标签标题 / 链接文字）。
+    /// The dragged content comes with a title (Browser tab title / Link text).
     public var linkTitle: String?
-    /// P3：纯文本正文。
+    /// P3: plain text body.
     public var text: String?
-    /// P3：富文本 HTML 片段。
+    /// P3: Rich Text HTML snippet.
     public var html: String?
-    /// 命中的粘贴板类型，便于诊断。
+    /// The clipboard type in use, convenient for diagnostics.
     public var matchedTypeIdentifiers: [String]
 
     public init(
@@ -87,7 +87,7 @@ public struct ResolvedDragContent: Sendable, Equatable {
         self.matchedTypeIdentifiers = matchedTypeIdentifiers
     }
 
-    /// 多文件拖拽时拆成「一文件一条」；其它类型原样返回单元素数组。
+    /// When dragging multiple files, split them into 'one file per item'; other types are returned as a single-element array as is.
     public func expandedForIngest() -> [ResolvedDragContent] {
         guard fileURLs.count > 1 else { return [self] }
         return fileURLs.map { url in

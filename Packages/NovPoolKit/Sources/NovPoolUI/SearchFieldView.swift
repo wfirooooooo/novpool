@@ -1,16 +1,16 @@
 import AppKit
 import SwiftUI
 
-/// 搜索输入框（包装 `NSTextField`）。
+/// Search input box (wraps `NSTextField`).
 ///
-/// 为什么不用 SwiftUI `TextField`：上下方向键、回车、esc 需要稳定落到我们的导航逻辑上，
-/// 而 `TextField` 会先消费掉一部分按键。走 AppKit 的 `doCommandBy` 是最可靠的路径。
+/// Why not use SwiftUI `TextField`: the up and down arrow keys, Enter, and Esc need to reliably map to our navigation logic.
+/// And `TextField` will first consume part of the key presses. Going through AppKit's `doCommandBy` is the most reliable path.
 struct SearchFieldView: NSViewRepresentable {
     var text: String
     var placeholder: String
     var focusToken: Int
-    // 回调声明为 @MainActor：闭包声明位置（面板视图）与调用位置（Coordinator）
-    // 都在主 actor 上，这样闭包体内访问视图模型不会插入运行时隔离检查。
+    // Callback declared as @MainActor: closure declaration location (panel view) and call location (Coordinator)
+    // All are on the main actor, so accessing the view model inside the closure will not insert runtime isolation checks.
     var onTextChange: @MainActor (String) -> Void
     var onMoveUp: @MainActor () -> Void
     var onMoveDown: @MainActor () -> Void

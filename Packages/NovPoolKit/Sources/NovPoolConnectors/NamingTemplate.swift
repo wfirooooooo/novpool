@@ -1,9 +1,9 @@
 import Foundation
 import NovPoolCore
 
-/// 命名模板渲染：`{Category}/{YYYY}-{MM}/{Title}.{ext}`。
+/// Naming template rendering: `{Category}/{YYYY}-{MM}/{Title}.{ext}`.
 ///
-/// 纯函数实现，便于单测；同时负责路径安全清洗（剥离 `/`、控制字符与前后空白）。
+/// Implemented as a pure function, making it easy to unit test; also responsible for path safety cleaning (removing `/`, control characters, and leading/trailing whitespace).
 public struct NamingTemplate: Sendable {
     public static let defaultTemplate = "{Category}/{YYYY}-{MM}/{Title}.{ext}"
 
@@ -21,7 +21,7 @@ public struct NamingTemplate: Sendable {
     ) -> String {
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         let values: [String: String] = [
-            "Category": Self.sanitize(payload.aiCategory ?? "未分类"),
+            "Category": Self.sanitize(payload.aiCategory ?? "Uncategorized"),
             "YYYY": String(format: "%04d", components.year ?? 0),
             "MM": String(format: "%02d", components.month ?? 0),
             "DD": String(format: "%02d", components.day ?? 0),
@@ -34,14 +34,14 @@ public struct NamingTemplate: Sendable {
             rendered = rendered.replacingOccurrences(of: "{\(key)}", with: value)
         }
 
-        // 模板未包含扩展名时补上，避免云端出现无后缀文件。
+        // Add the extension if the template does not include it, to avoid files without suffixes appearing in the cloud.
         if !rendered.lowercased().hasSuffix(".\(values["ext"]!.lowercased())") {
             rendered += ".\(values["ext"]!)"
         }
         return Self.sanitizePath(rendered)
     }
 
-    /// 单个路径分段的清洗。
+    /// Cleaning of individual path segments.
     static func sanitize(_ raw: String) -> String {
         let stripped = raw
             .replacingOccurrences(of: "/", with: "-")
@@ -51,15 +51,15 @@ public struct NamingTemplate: Sendable {
             !CharacterSet.controlCharacters.contains(scalar)
         })
         let collapsed = filtered.replacingOccurrences(of: "  ", with: " ")
-        return collapsed.isEmpty ? "未命名" : String(collapsed.prefix(120))
+        return collapsed.isEmpty ? "Untitled" : String(collapsed.prefix(120))
     }
 
-    /// 整体相对路径清洗：丢弃空段与 `..`，防止越权写出挂载目录。
+    /// Overall relative path cleaning: discard empty segments and `..` to prevent unauthorized writing to the mount directory.
     static func sanitizePath(_ raw: String) -> String {
         let segments = raw
             .split(separator: "/", omittingEmptySubsequences: true)
             .map { sanitize(String($0)) }
             .filter { $0 != "." && $0 != ".." }
-        return segments.isEmpty ? "未命名.dat" : segments.joined(separator: "/")
+        return segments.isEmpty ? "untitled.dat" : segments.joined(separator: "/")
     }
 }

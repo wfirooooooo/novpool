@@ -2,7 +2,7 @@ import Foundation
 import NovPoolStorage
 import Observation
 
-/// 面板可以执行的动作，注入实现以便单元测试（真实实现走 `NSWorkspace` / `NSPasteboard` / Quick Look）。
+/// Actions that the panel can perform, with injections of implementations for unit testing (real implementations use `NSWorkspace` / `NSPasteboard` / Quick Look).
 public struct SearchActions: Sendable {
     public var openURL: @MainActor @Sendable (URL) -> Void
     public var revealFile: @MainActor @Sendable (URL) -> Void
@@ -10,7 +10,7 @@ public struct SearchActions: Sendable {
     public var deleteItem: @MainActor @Sendable (UUID) async throws -> Bool
     public var quickLookFile: @MainActor @Sendable (URL) -> Void
     public var updateOrganization: @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void
-    /// 返回面向用户的状态文案（成功或失败原因）。
+    /// Return user-facing status text (reason for success or failure).
     public var resummarizeItem: @MainActor @Sendable (UUID) async -> String
 
     public init(
@@ -20,7 +20,7 @@ public struct SearchActions: Sendable {
         deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool = { _ in false },
         quickLookFile: @escaping @MainActor @Sendable (URL) -> Void = { _ in },
         updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in },
-        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> String = { _ in "未接线" }
+        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> String = { _ in "Not wired" }
     ) {
         self.openURL = openURL
         self.revealFile = revealFile
@@ -32,7 +32,7 @@ public struct SearchActions: Sendable {
     }
 }
 
-/// 检索面板状态模型。
+/// Retrieval panel status model.
 @MainActor
 @Observable
 public final class SearchViewModel {
@@ -48,7 +48,7 @@ public final class SearchViewModel {
     public private(set) var results: [KnowledgeSearchResult] = []
     public private(set) var phase: Phase = .idle
     public private(set) var selectedIndex: Int = 0
-    /// 每次面板出现自增，输入框据此重新取得焦点。
+    /// Each time the panel has an increment, the input box regains focus accordingly.
     public private(set) var focusToken: Int = 0
     public private(set) var isBusy = false
     public private(set) var filter = SearchFilterState()
@@ -81,9 +81,9 @@ public final class SearchViewModel {
         results.indices.contains(selectedIndex) ? results[selectedIndex] : nil
     }
 
-    // MARK: - 生命周期
+    // MARK: - Lifecycle
 
-    /// 面板出现：清空查询、聚焦输入框、先展示最近条目。
+    /// The panel displays: clear the query, focus on the input box, and first show Recent items.
     public func activate() {
         searchTask?.cancel()
         query = ""
@@ -109,7 +109,7 @@ public final class SearchViewModel {
         onDismiss()
     }
 
-    // MARK: - 过滤
+    // MARK: - Filtering
 
     public func setContentKindFilter(_ kind: SearchContentKindFilter) {
         guard filter.contentKind != kind else { return }
@@ -147,7 +147,7 @@ public final class SearchViewModel {
         applyFilter()
     }
 
-    // MARK: - 选择
+    // MARK: - Select
 
     public func moveSelection(by delta: Int) {
         guard !results.isEmpty else { return }
@@ -160,9 +160,9 @@ public final class SearchViewModel {
         selectedIndex = index
     }
 
-    // MARK: - 动作
+    // MARK: - Actions
 
-    /// 回车：打开选中条目（网页优先，其次本地文件）。
+    /// Enter: Open the selected item (Web first, then local File).
     public func confirmSelection() {
         guard let result = selectedResult else { return }
         switch result.defaultAction {
@@ -173,7 +173,7 @@ public final class SearchViewModel {
             actions.revealFile(url)
             dismiss()
         case .none:
-            // 纯文本条目没有可跳转目标，退化为复制，避免回车毫无反应。
+            // Plain Text entries have no jump targets, degrading to Copy, to avoid the Enter key doing nothing.
             copySelection()
         }
     }
@@ -181,7 +181,7 @@ public final class SearchViewModel {
     public func copySelection() {
         guard let result = selectedResult else { return }
         actions.copyText(result.clipboardText)
-        statusMessage = "已复制"
+        statusMessage = "Copied"
         clearStatusLater()
     }
 
@@ -210,10 +210,10 @@ public final class SearchViewModel {
                 }
                 applyFilter()
                 await refreshCategories()
-                statusMessage = "已保存整理"
+                statusMessage = "Organization saved"
                 clearStatusLater()
             } catch {
-                statusMessage = "保存失败：\(error.localizedDescription)"
+                statusMessage = "Save failed: \(error.localizedDescription)"
                 clearStatusLater()
             }
         }
@@ -223,14 +223,14 @@ public final class SearchViewModel {
         guard let result = selectedResult else { return }
         let id = result.id
         isBusy = true
-        statusMessage = "正在重新总结…"
+        statusMessage = "Re-summarizing…"
         Task { [weak self] in
             guard let self else { return }
             let message = await actions.resummarizeItem(id)
             isBusy = false
             statusMessage = message
-            // 成功时刷新当前查询，带上新摘要。
-            if message.hasPrefix("已") {
+            // On success, refresh the current query so the new summary appears.
+            if message.hasPrefix("Re-summarized") {
                 await runSearch(for: query)
             }
             clearStatusLater()
@@ -245,22 +245,22 @@ public final class SearchViewModel {
             do {
                 let removed = try await actions.deleteItem(id)
                 guard removed else {
-                    statusMessage = "删除失败"
+                    statusMessage = "Delete failed"
                     clearStatusLater()
                     return
                 }
                 unfilteredResults.removeAll { $0.id == id }
                 applyFilter()
-                statusMessage = "已删除「\(result.title)」"
+                statusMessage = "Deleted \"\(result.title)\""
                 clearStatusLater()
             } catch {
-                statusMessage = "删除失败：\(error.localizedDescription)"
+                statusMessage = "Delete failed: \(error.localizedDescription)"
                 clearStatusLater()
             }
         }
     }
 
-    // MARK: - 检索
+    // MARK: - Search
 
     private func scheduleSearch() {
         searchTask?.cancel()

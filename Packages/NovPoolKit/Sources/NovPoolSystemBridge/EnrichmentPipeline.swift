@@ -2,7 +2,7 @@ import Foundation
 import NovPoolCore
 import NovPoolStorage
 
-/// 图像 / PDF 文本识别抽象（`VisionOCRService` 的真实实现依赖 ANE，测试可注入替身）。
+/// Image / PDF Text Recognition Abstraction (the real implementation of `VisionOCRService` depends on ANE, a substitute can be injected for testing).
 public protocol ImageTextRecognizing: Sendable {
     func recognizeImageText(data: Data) async throws -> TextRecognitionResult
     func recognizePDFText(at url: URL) async throws -> TextRecognitionResult
@@ -18,14 +18,14 @@ extension VisionOCRService: ImageTextRecognizing {
     }
 }
 
-/// 网页抓取抽象。
+/// Web scraping abstraction.
 public protocol ArticleFetching: Sendable {
     func fetchArticle(from url: URL) async -> WebFetchResult
 }
 
 extension WebContentFetcher: ArticleFetching {}
 
-/// 结构化增强抽象（返回显式成功/失败，便于设置里展示原因）。
+/// Structured enhanced abstraction (returns explicit success/failure, making it easier to display the reason in settings).
 public protocol AIEnriching: Sendable {
     func enrichDetailed(_ request: AIEnrichmentRequest) async -> AIEnrichmentOutcome
 }
@@ -38,9 +38,9 @@ extension AIEnriching {
 
 extension AIEnhancementService: AIEnriching {}
 
-/// Phase 2 的多模态补齐流水线：
-/// 图片 → ANE OCR；PDF → 文字层优先、扫描件 OCR；网页链接 → 正文抓取 + Markdown；
-/// 最后统一走 AI 结构化增强与向量化。
+/// Multimodal Completion Pipeline of Phase 2:
+/// Image → ANE OCR; PDF → text layer preferred, scanned copies OCR; WebLink → Body capture + Markdown;
+/// Finally, unify with AI structured enhancement and embedding.
 public actor EnrichmentPipeline: ContentEnriching {
     public struct Configuration: Sendable {
         public var runOCR: Bool
@@ -102,7 +102,7 @@ public actor EnrichmentPipeline: ContentEnriching {
             await enrichPDF(record: record, result: &result, analysisText: &analysisText)
 
         case .video:
-            // 视频不做 OCR；若将来有字幕/AI 描述，在这里接入。
+            // Video does not perform OCR; if there are subtitles/AI descriptions in the future, connect them here.
             break
 
         case .webLink:
@@ -125,8 +125,8 @@ public actor EnrichmentPipeline: ContentEnriching {
             break
         }
 
-        // 图片 OCR 关闭/失败、PDF 不可读、视频与二进制文件都不会产生正文。
-        // 至少写入文件信息，保证检索详情有内容，也避免空条目出现在 FTS 之外。
+        // Image OCR Close/Failed, PDF unreadable, Video and binary files will not generate a Body.
+        // At least write the file information to ensure that the retrieval details contain content, and also prevent empty entries from appearing outside FTS.
         if result.markdownBody == nil, result.ocrText == nil,
            let url = await stagedURL(for: record) {
             result.markdownBody = LocalFileContent.summary(for: url)
@@ -140,7 +140,7 @@ public actor EnrichmentPipeline: ContentEnriching {
 
         if configuration.runAI {
             if analysisText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                result.aiFailureReason = "没有可用于总结的正文"
+                result.aiFailureReason = "No body text available for summarizing"
             } else {
                 let request = AIEnrichmentRequest(
                     title: result.title ?? record.title,
@@ -178,7 +178,7 @@ public actor EnrichmentPipeline: ContentEnriching {
         guard let url = await stagedURL(for: record) else { return }
         switch PDFTextSource.decide(textLayer: PDFContentExtractor.textLayer(at: url)) {
         case .textLayer(let text):
-            // 数字版 PDF 直接使用自带文字层：毫秒级、零算力，且比 OCR 更准。
+            // The digital PDF directly uses its built-in text layer: millisecond-level, zero computing power, and more accurate than OCR.
             result.markdownBody = text
             analysisText = text
         case .needsOCR:

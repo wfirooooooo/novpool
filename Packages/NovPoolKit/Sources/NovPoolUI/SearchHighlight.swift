@@ -1,9 +1,9 @@
 import Foundation
 import SwiftUI
 
-/// 检索关键词高亮：在标题 / 预览里标出与查询串匹配的片段。
+/// Keyword Highlight in Search: Highlight the segments that match the query string in the title/preview.
 public enum SearchHighlight {
-    /// 不区分大小写地找出 `query` 在 `text` 中的所有出现区间（按字符边界前进，不重叠）。
+    /// Find all occurrences of `query` in `text` case-insensitively (advance by character boundaries, non-overlapping).
     public static func ranges(in text: String, query: String) -> [Range<String.Index>] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty, !text.isEmpty else { return [] }
@@ -19,7 +19,7 @@ public enum SearchHighlight {
         return ranges
     }
 
-    /// 生成带高亮的 `AttributedString`；无查询或无命中时返回纯文本。
+    /// Generate an `AttributedString` with highlights; return Plain Text when there is no query or no hit.
     public static func attributed(
         _ text: String,
         query: String,

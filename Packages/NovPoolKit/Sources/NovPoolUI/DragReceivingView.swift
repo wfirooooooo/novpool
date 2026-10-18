@@ -3,31 +3,31 @@ import Foundation
 import NovPoolCore
 import NovPoolSystemBridge
 
-/// 拖拽捕获回调桥。视图只负责「什么时候发生了什么」，业务由 `CaptureViewModel` 决定。
+/// Drag-and-drop capture callback bridge. The view is only responsible for 'when something happened,' and the business logic is determined by `CaptureViewModel`.
 @MainActor
 public final class DragCaptureBridge {
-    /// 悬停展开扇区的稳定延时。
+    /// Stable delay for expanding the sector on hover.
     public var hoverDelay: Duration = .milliseconds(150)
     public var zoneCount: Int = DropZone.defaultZones.count
-    /// 环心相对画布中心的偏移，与 SwiftUI 布局共用（面板在拖拽会话中不会移动，可安全缓存）。
+    /// The offset of the ring center relative to the canvas center is shared with SwiftUI layout (the panel will not move during the Drag session and can be safely cached).
     public var ringOffset: CGSize = .zero
-    // 回调一律声明为 @MainActor：调用点（NSDraggingDestination 回调）本来就在主线程，
-    // 这样闭包体内访问视图模型不会插入运行时隔离检查。
+    // All callbacks are declared as @MainActor: the calling point (NSDraggingDestination callback) is originally on the main thread,
+    // Accessing the view model inside the closure like this will not insert runtime isolation checks.
     public var onHoverBegan: (@MainActor () -> Void)?
     public var onHoverEnded: (@MainActor () -> Void)?
     public var onZoneChanged: (@MainActor (Int?) -> Void)?
-    /// 参数为解析出的内容与命中的扇区索引（`nil` 表示仍在图标死区，走智能路由）。
+    /// The parameter is the parsed content and the index of the hit sector (`nil` indicates it is still in the icon dead zone and will use intelligent routing).
     public var onDrop: (@MainActor (ResolvedDragContent, Int?) -> Void)?
     public var resolver = PasteboardResolver()
-    /// 与全局鼠标兜底共享，避免同一次松手双触发。
+    /// Share with the global mouse fallback to avoid double triggering from the same release.
     public var coordinator: DragCaptureCoordinator?
-    /// 拖拽事件日志，便于排查「某个浏览器拖过来没反应」。
+    /// Drag event logs, making it easier to troubleshoot 'a certain browser dragging over doesn’t respond'.
     public var logger: (@MainActor (String) -> Void)?
 
     public init() {}
 }
 
-/// 注册 UTI 监听并拦截拖拽的 NSView，覆盖整个固定画布。
+/// Register a UTI listener and intercept dragged NSViews, covering the entire fixed canvas.
 @MainActor
 public final class DragReceivingView: NSView {
     public weak var bridge: DragCaptureBridge?
@@ -35,7 +35,7 @@ public final class DragReceivingView: NSView {
     private var hoverTask: Task<Void, Never>?
     private var hoverExpanded = false
     private var currentZone: Int?
-    /// 本轮 `performDragOperation` 是否已成功投递（避免 `draggingEnded` 误清抑制窗口）。
+    /// Whether the current round of `performDragOperation` has been successfully delivered (to avoid `draggingEnded` mistakenly clearing the suppression window).
     private var dropHandled = false
 
     public override init(frame frameRect: NSRect) {
@@ -43,11 +43,11 @@ public final class DragReceivingView: NSView {
         registerForDraggedTypes(Self.supportedTypes)
     }
 
-    /// 注册的拖拽类型。
+    /// Registered drag type.
     ///
-    /// 关键：浏览器拖标签的载荷格式各不相同（Firefox 只给 `text/x-moz-url`、
-    /// Chrome 给 `text/uri-list`）。这些类型不在注册列表里时，系统根本不会把拖拽事件
-    /// 递给我们，表现为「拖到图标上完全没反应」。
+    /// Key: The load format when dragging tabs in browsers varies (Firefox only provides `text/x-moz-url`,
+    /// Chrome gives `text/uri-list`). When these types are not in the registered list, the system simply does not trigger the drag event
+    /// Hand it to us, it appears as 'no response at all when dragged onto the icon'.
     static var supportedTypes: [NSPasteboard.PasteboardType] {
         [
             .fileURL, .URL, .tiff, .png, .html, .string, .pdf,
@@ -63,16 +63,16 @@ public final class DragReceivingView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
-        fatalError("init(coder:) 未实现")
+        fatalError("init(coder:) has not been implemented")
     }
 
     public override var isOpaque: Bool { false }
 
-    /// 按住面板拖拽：把鼠标按下显式交给窗口做移动。
+    /// Hold the panel and drag: Press the mouse to explicitly hand over the movement to the window.
     ///
-    /// 不用依赖 `isMovableByWindowBackground` 的启发式判断（视图层级、响应链稍有变化就可能失效），
-    /// `NSWindow.performDrag(with:)` 是 AppKit 为「窗口内任意位置拖动」提供的正式入口。
-    /// 面板是 `.nonactivatingPanel`，因此拖动过程同样不会抢走当前应用焦点。
+    /// Do not rely on the heuristic judgment of `isMovableByWindowBackground` (it may fail if the view hierarchy or responder chain changes slightly),
+    /// `NSWindow.performDrag(with:)` is the official entry point provided by AppKit for 'dragging from any position within the window'.
+    /// The panel is `.nonactivatingPanel`, so the dragging process will also not take away the current application focus.
     public override func mouseDown(with event: NSEvent) {
         window?.performDrag(with: event)
     }
@@ -81,7 +81,7 @@ public final class DragReceivingView: NSView {
 
     public override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
         let types = pasteboardTypes(sender)
-        bridge?.logger?("拖拽进入：types=[\(types.joined(separator: ", "))]")
+        bridge?.logger?("Drag entered: types=[\(types.joined(separator: ", "))]")
         guard !types.isEmpty else { return [] }
         dropHandled = false
         bridge?.coordinator?.markNativeDragEntered()
@@ -107,7 +107,7 @@ public final class DragReceivingView: NSView {
     }
 
     public override func draggingEnded(_ sender: any NSDraggingInfo) {
-        // perform 成功时已 markNativeDropHandled 并打开短时抑制；其余情况清掉会话。
+        // perform markNativeDropHandled and open short-term suppression when successful; in other cases, clear the session.
         if !dropHandled {
             bridge?.coordinator?.markNativeDragCancelled()
         }
@@ -124,19 +124,19 @@ public final class DragReceivingView: NSView {
         guard let bridge else { return false }
         let reader = NSPasteboardReader(pasteboard: sender.draggingPasteboard)
         guard let content = bridge.resolver.resolve(from: reader) else {
-            bridge.logger?("拖拽落库失败：无法解析，types=[\(pasteboardTypes(sender).joined(separator: ", "))]")
+            bridge.logger?("Drag capture failed: could not resolve, types=[\(pasteboardTypes(sender).joined(separator: ", "))]")
             bridge.coordinator?.markNativeDragCancelled()
             dropHandled = false
             return false
         }
-        bridge.logger?("拖拽落库：type=\(content.contentType.rawValue) url=\(content.pageURL?.absoluteString ?? "无")")
+        bridge.logger?("Drag captured: type=\(content.contentType.rawValue) url=\(content.pageURL?.absoluteString ?? "none")")
         dropHandled = true
         bridge.coordinator?.markNativeDropHandled()
         bridge.onDrop?(content, currentZone)
         return true
     }
 
-    // MARK: - 内部
+    // MARK: - Internals
 
     private func pasteboardTypes(_ sender: any NSDraggingInfo) -> [String] {
         (sender.draggingPasteboard.types ?? []).map(\.rawValue)

@@ -2,32 +2,32 @@ import Foundation
 import NovPoolCore
 import NovPoolStorage
 
-/// 溯源上下文提供者抽象。
+/// Provenance context provides abstraction.
 public protocol BrowserContextProviding: Sendable {
     func captureContext() async -> SourceContext
 }
 
 extension BrowserContextExtractor: BrowserContextProviding {}
 
-/// 一次入库的结果。
+/// The result of a single storage entry.
 public struct IngestedItem: Sendable {
     public let payload: NormalizedPayload
     public let record: KnowledgeItemRecord
     public let stagedAsset: StagedAsset?
     public let routeDecision: RouteDecision
-    /// 内容哈希命中已存在条目时为 `true`（不重复写入）。
+    /// When a content hash hits an existing entry, it is `true` (no duplicate write).
     public let isDuplicate: Bool
 }
 
-/// 一次「落库 + 补齐」的完整结果。
+/// A complete result of 'storage + completion.'
 public struct EnrichedIngest: Sendable {
     public let item: IngestedItem
     public let enrichment: ContentEnrichment?
-    /// 补齐后的最新行（未启用补齐时等于入库时那一行）。
+    /// The latest row after completion (when completion is not enabled, it is the same as the row at the time of entry into the database).
     public let record: KnowledgeItemRecord
 }
 
-/// 单条重新总结结果。
+/// Single Re-summarize result.
 public enum ResummarizeItemResult: Sendable, Equatable {
     case updated(ContentEnrichment)
     case failed(id: UUID, title: String?, reason: String)
@@ -36,17 +36,17 @@ public enum ResummarizeItemResult: Sendable, Equatable {
     public var statusMessage: String {
         switch self {
         case .updated(let enrichment):
-            return "已重新总结（\(enrichment.summaryLine)）"
+            return "Re-summarized (\(enrichment.summaryLine))"
         case .failed(_, let title, let reason):
-            if let title { return "总结失败「\(title)」：\(reason)" }
-            return "总结失败：\(reason)"
+            if let title { return "Summarize failed \"\(title)\": \(reason)" }
+            return "Summarize failed: \(reason)"
         case .notFound:
-            return "总结失败：找不到条目"
+            return "Summarize failed: item not found"
         }
     }
 }
 
-/// 批量重新总结报告。
+/// Batch Re-summarize report.
 public struct ResummarizeBatchReport: Sendable, Equatable {
     public var attempted: Int
     public var succeeded: Int
@@ -60,21 +60,21 @@ public struct ResummarizeBatchReport: Sendable, Equatable {
 
     public var statusMessage: String {
         if attempted == 0 {
-            return failures.first ?? "没有需要重新总结的条目"
+            return failures.first ?? "No items need re-summarizing"
         }
-        var parts = ["已处理 \(attempted) 条，成功 \(succeeded) 条"]
+        var parts = ["Processed \(attempted), succeeded \(succeeded)"]
         if !failures.isEmpty {
-            let preview = failures.prefix(3).joined(separator: "；")
-            parts.append("失败 \(failures.count) 条：\(preview)")
+            let preview = failures.prefix(3).joined(separator: "; ")
+            parts.append("failed \(failures.count): \(preview)")
         }
-        return parts.joined(separator: "。")
+        return parts.joined(separator: ". ")
     }
 }
 
-/// 捕获 → 暂存 → 溯源 → 落库 的主流水线。
+/// The main pipeline of capture → staging → tracing → storage.
 ///
-/// `ingest` 只做毫秒级工作并立即返回，保证拖拽松手后主线程与用户感知都不被阻塞；
-/// OCR / 正文提取 / AI 增强由 `enrichAfterIngest` 在后台补齐并回填。
+/// `ingest` only performs millisecond-level tasks and returns immediately, ensuring that after dragging and releasing, neither the main thread nor the user's perception is blocked.
+/// OCR / Body extraction / AI enhancement is supplemented and backfilled in the background by `enrichAfterIngest`.
 public actor IngestionOrchestrator {
     private let repository: KnowledgeRepository
     private let staging: StagingStore
@@ -115,11 +115,11 @@ public actor IngestionOrchestrator {
     ) async throws -> IngestedItem {
         let staged = try await stage(content)
 
-        // 拖入的是「链接」本身时，若浏览器溯源没给出当前页面地址（例如从非浏览器应用
-        // 拖拽，或前台应用不可溯源），就用链接目标自身作为来源 URL，
-        // 否则后续正文抓取会因为 sourceURL 为空而无法进行。
-        // 拖拽浏览器标签时同理：标签自身的 URL 才是这条记录的来源主体，
-        // 溯源到的活跃标签页地址只表示「从哪拖来的」。
+        // When what is dragged in is the "Link" itself, if the browser's referrer does not provide the current page address (for example, from a non-browser application
+        // Drag-and-drop, or non-traceable frontend applications), then use the Link target itself as the source URL,
+        // Otherwise, subsequent Body fetching will fail because sourceURL is empty.
+        // The same applies when dragging a browser tab: the URL of the tab itself is the main source of this record.
+        // The traced active tab address only indicates 'where it was dragged from'.
         let resolvedPageURL: URL? = content.contentType == .webLink
             ? (content.pageURL ?? sourceContext.pageURL)
             : sourceContext.pageURL
@@ -140,7 +140,7 @@ public actor IngestionOrchestrator {
             contentType: content.contentType,
             pageURL: resolvedPageURL
         ) {
-            // 重复拖拽：丢掉本次多余的 Staging 副本，避免磁盘堆积。
+            // Repeated dragging: discard this excess Staging copy to avoid disk accumulation.
             if let staged, staged.relativePath != existing.localRelativePath {
                 try? await staging.remove(relativePath: staged.relativePath)
             }
@@ -179,7 +179,7 @@ public actor IngestionOrchestrator {
         )
     }
 
-    /// 先按内容指纹，再对网页链接兼容按 sourceURL 查找历史条目。
+    /// First search by content fingerprint, then for WebLink compatibility, search historical entries by sourceURL.
     private func findDuplicate(
         fingerprint: String?,
         contentType: ContentType,
@@ -203,11 +203,11 @@ public actor IngestionOrchestrator {
     }
 
     private func stage(_ content: ResolvedDragContent) async throws -> StagedAsset? {
-        // 本地文件（含图片 / 视频 / PDF）优先按原文件暂存，保留文件名与扩展名。
+        // Local files (including images, videos, and PDFs) should preferably be temporarily stored as the original files, retaining the file name and extension.
         if let first = content.fileURLs.first {
             return try await staging.stage(fileURL: first)
         }
-        // 没有文件时（网页图片 / 内联媒体字节），把内存数据落盘。
+        // When there is no File (WebImage / inline media bytes), write the in-memory data to disk.
         if let data = content.imageData {
             let typeIdentifier = content.imageTypeIdentifier ?? PasteboardTypeID.png
             return try await staging.stage(
@@ -218,9 +218,9 @@ public actor IngestionOrchestrator {
         return nil
     }
 
-    // MARK: - 后台补齐
+    // MARK: - Backend completion
 
-    /// 后台补齐一条已落库条目的正文 / OCR / AI 元数据。返回本次实际写入的字段。
+    /// Supplement the Body / OCR / AI metadata of an entry that has already been stored in the backend. Return the fields actually written this time.
     @discardableResult
     public func enrichAfterIngest(itemID: UUID) async -> ContentEnrichment? {
         guard let enricher, let record = try? await repository.fetch(id: itemID) else { return nil }
@@ -234,25 +234,25 @@ public actor IngestionOrchestrator {
         return enrichment
     }
 
-    /// 对单条条目重新跑补齐（含 AI 总结），失败时带可读原因。
+    /// Re-run completion for individual entries (including AI summary), with a readable reason if it fails.
     public func resummarize(itemID: UUID) async -> ResummarizeItemResult {
         guard let enricher else {
-            return .failed(id: itemID, title: nil, reason: "补齐流水线未启用")
+            return .failed(id: itemID, title: nil, reason: "Enrichment pipeline is not enabled")
         }
         guard let record = try? await repository.fetch(id: itemID) else {
             return .notFound(itemID)
         }
         let enrichment = await enricher.enrich(record: record)
         if enrichment.isEmpty {
-            let reason = enrichment.aiFailureReason ?? "没有可写入的补齐结果"
+            let reason = enrichment.aiFailureReason ?? "No enrichment result to write"
             return .failed(id: itemID, title: record.title, reason: reason)
         }
         do {
             try await persist(enrichment: enrichment, itemID: itemID)
         } catch {
-            return .failed(id: itemID, title: record.title, reason: "写入失败：\(error.localizedDescription)")
+            return .failed(id: itemID, title: record.title, reason: "Write failed: \(error.localizedDescription)")
         }
-        // 重新总结以 AI 字段为准；仅有 OCR/正文时也算部分成功，但仍提示 AI 原因。
+        // Re-summarize based on the AI field; when only OCR/Body is available, it is also considered partially successful, but it still indicates an AI-related reason.
         if enrichment.hasAIFields {
             return .updated(enrichment)
         }
@@ -275,7 +275,7 @@ public actor IngestionOrchestrator {
         )
     }
 
-    /// 批量重新总结：默认处理尚无 AI 摘要、但已有正文/OCR 的条目。
+    /// Batch Re-summarize: By default, it processes entries that do not yet have an AI summary, but already have Body/OCR.
     public func resummarizeMissingSummaries(limit: Int = 20) async -> ResummarizeBatchReport {
         let records: [KnowledgeItemRecord]
         do {
@@ -284,11 +284,11 @@ public actor IngestionOrchestrator {
             return ResummarizeBatchReport(
                 attempted: 0,
                 succeeded: 0,
-                failures: ["读取待总结条目失败：\(error.localizedDescription)"]
+                failures: ["Failed to load items to summarize: \(error.localizedDescription)"]
             )
         }
         guard !records.isEmpty else {
-            return ResummarizeBatchReport(attempted: 0, succeeded: 0, failures: ["没有需要重新总结的条目"])
+            return ResummarizeBatchReport(attempted: 0, succeeded: 0, failures: ["No items need re-summarizing"])
         }
 
         var succeeded = 0
@@ -298,9 +298,9 @@ public actor IngestionOrchestrator {
             case .updated:
                 succeeded += 1
             case .failed(_, let title, let reason):
-                failures.append("「\(title ?? record.title)」：\(reason)")
+                failures.append("\"\(title ?? record.title)\": \(reason)")
             case .notFound:
-                failures.append("「\(record.title)」：条目已不存在")
+                failures.append("\"\(record.title)\": item no longer exists")
             }
         }
         return ResummarizeBatchReport(
@@ -310,7 +310,7 @@ public actor IngestionOrchestrator {
         )
     }
 
-    /// 同步等待补齐完成（单元测试与无界面自检使用；App 走 `enrichAfterIngest`）。
+    /// Wait synchronously for completion of filling in (used for unit tests and headless self-check; App uses `enrichAfterIngest`).
     public func ingestAndEnrich(
         _ content: ResolvedDragContent,
         sourceContext: SourceContext? = nil,
@@ -329,7 +329,7 @@ public actor IngestionOrchestrator {
     }
 }
 
-/// 标题拟定策略（纯函数，便于单测）。
+/// Title Drafting Strategy (Pure Function, Easy for Unit Testing).
 public enum TitleBuilder {
     public static let maxTitleLength = 80
 
@@ -347,7 +347,7 @@ public enum TitleBuilder {
                 return clamp(pageTitle)
             }
         case .webLink, .image:
-            // 拖拽内容自带的标题（浏览器标签标题 / 链接文字）最贴切。
+            // The title that comes with the dragged content (Browser tab title / Link text) is the most appropriate.
             if let linkTitle = content.linkTitle, linkTitle.count >= 2 {
                 return clamp(linkTitle)
             }
@@ -365,7 +365,7 @@ public enum TitleBuilder {
                 return clamp(pageTitle)
             }
         }
-        return "未命名条目 \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))"
+        return "Untitled item \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))"
     }
 
     static func firstMeaningfulLine(of text: String?) -> String? {
@@ -383,10 +383,10 @@ public enum TitleBuilder {
     }
 }
 
-/// 正文构造策略。
+/// Body construction strategy.
 public enum BodyBuilder {
-    /// Phase 1：纯文本直接入库；HTML 片段暂以纯文本兜底。
-    /// Phase 2 接入 JavaScriptCore（Readability.js + Turndown.js）后，HTML 会先转成洁净 Markdown。
+    /// Phase 1: Plain text is directly stored in the database; HTML fragments are temporarily handled as plain text.
+    /// After Phase 2 integrates JavaScriptCore (Readability.js + Turndown.js), HTML will first be converted into clean Markdown.
     public static func body(for content: ResolvedDragContent) -> String? {
         switch content.contentType {
         case .plainText, .richHTML:

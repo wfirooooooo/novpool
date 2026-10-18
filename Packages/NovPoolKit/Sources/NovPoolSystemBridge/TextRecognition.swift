@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// 一个已识别文本块。坐标沿用 Vision 约定：归一化、原点在左下。
+/// A recognized text block. Coordinates follow the Vision convention: normalized, origin at the bottom left.
 public struct TextBlock: Sendable, Equatable {
     public let text: String
     public let boundingBox: CGRect
@@ -16,11 +16,11 @@ public struct TextBlock: Sendable, Equatable {
     }
 }
 
-/// 识别结果。
+/// Recognition result.
 public struct TextRecognitionResult: Sendable, Equatable {
     public let text: String
     public let blocks: [TextBlock]
-    /// 数据来源：PDF 自带文字层、或端侧 OCR。
+    /// Data source: PDF with built-in text layer, or edge-side OCR.
     public let origin: Origin
 
     public enum Origin: String, Sendable, Equatable {
@@ -44,14 +44,14 @@ public struct TextRecognitionResult: Sendable, Equatable {
     public static let empty = TextRecognitionResult(text: "", blocks: [], origin: .visionOCR)
 }
 
-/// 阅读顺序重排。
+/// Rearrange the reading order.
 ///
-/// Vision 返回的文本块顺序不保证符合人眼阅读顺序（尤其是中英混排、多列排版）。
-/// 这里按「页 → 行（上到下）→ 行内（左到右）」重排，并对行内相邻块决定是否补空格。
+/// The order of text blocks returned by Vision is not guaranteed to match the order in which the human eye reads them (especially in mixed Chinese and English text or multi-column layouts).
+/// Here, reorder according to 'Page → Line (top to bottom) → Inline (left to right)', and decide whether to add a space between adjacent blocks within a line.
 public enum TextBlockOrdering {
-    /// 行归并容差（归一化高度）。同一行的块中心 y 差异小于该值即视为同一行。
+    /// Row merging tolerance (normalized height). Blocks in the same row are considered the same row if the difference in their center y values is less than this value.
     public static let lineTolerance: CGFloat = 0.02
-    /// 低于该置信度的识别结果直接丢弃。
+    /// Recognition results below this confidence level are directly discarded.
     public static let minimumConfidence: Float = 0.3
 
     public static func orderedText(
@@ -69,7 +69,7 @@ public enum TextBlockOrdering {
         let pages = Dictionary(grouping: usable, by: \.pageIndex)
         for pageIndex in pages.keys.sorted() {
             guard let pageBlocks = pages[pageIndex] else { continue }
-            // 自上而下：Vision 的 y 轴原点在下方，因此 midY 越大越靠上。
+            // Top-down: In Vision, the origin of the y-axis is at the bottom, so the larger the midY, the higher it is.
             let sorted = pageBlocks.sorted { lhs, rhs in
                 if abs(lhs.boundingBox.midY - rhs.boundingBox.midY) > lineTolerance {
                     return lhs.boundingBox.midY > rhs.boundingBox.midY
@@ -100,7 +100,7 @@ public enum TextBlockOrdering {
         return lines.joined(separator: "\n")
     }
 
-    /// 行内拼接：按 x 排序，中英之间按需补空格。
+    /// Inline concatenation: sort by x, and add spaces between Chinese and English as needed.
     static func join(_ line: [TextBlock]) -> String {
         let ordered = line.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
         return ordered.reduce(into: "") { partial, block in
@@ -116,7 +116,7 @@ public enum TextBlockOrdering {
         }
     }
 
-    /// CJK 与 CJK 相邻时不补空格；其余情况补空格以免英文单词粘连。
+    /// No spaces are added when CJK characters are next to each other; in other cases, spaces are added to prevent English words from sticking together.
     static func needsSpace(between left: String, and right: String) -> Bool {
         guard let last = left.unicodeScalars.last, let first = right.unicodeScalars.first else {
             return false
@@ -126,13 +126,13 @@ public enum TextBlockOrdering {
 
     static func isCJK(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
-        case 0x3000...0x303F,   // CJK 标点
-             0x3040...0x30FF,   // 平假名 / 片假名
-             0x3400...0x4DBF,   // 扩展 A
-             0x4E00...0x9FFF,   // 基本汉字
-             0xAC00...0xD7AF,   // 谚文
-             0xF900...0xFAFF,   // 兼容汉字
-             0xFF00...0xFFEF:   // 全角字符
+        case 0x3000...0x303F,   // CJK punctuation
+             0x3040...0x30FF,   // Hiragana / Katakana
+             0x3400...0x4DBF,   // Extension A
+             0x4E00...0x9FFF,   // CJK Unified Ideographs
+             0xAC00...0xD7AF,   // Hangul
+             0xF900...0xFAFF,   // CJK Compatibility Ideographs
+             0xFF00...0xFFEF:   // Fullwidth forms
             true
         default:
             false

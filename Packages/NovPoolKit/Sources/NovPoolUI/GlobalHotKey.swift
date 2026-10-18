@@ -1,14 +1,14 @@
 import Carbon.HIToolbox
 import Foundation
 
-/// 全局快捷键注册（Carbon `RegisterEventHotKey`）。
+/// Global hotkey registration (Carbon `RegisterEventHotKey`).
 ///
-/// 与 `NSEvent.addGlobalMonitorForEvents` 的区别：本方式只登记热键、不监听全局键盘输入，
-/// **不需要辅助功能授权**，也不会看到用户在别的应用里敲了什么。
+/// Difference from `NSEvent.addGlobalMonitorForEvents`: This method only registers hotkeys and does not monitor global keyboard input.
+/// **No accessibility permission required**, and it also won't see what the user types in other apps.
 @MainActor
 public final class GlobalHotKey {
-    /// 用普通类持有 Carbon 句柄：`deinit` 需要能安全释放它们，
-    /// 而 @MainActor 类的 deinit 是 nonisolated，不能碰隔离状态里的非 Sendable 指针。
+    /// Holding Carbon handles with ordinary classes: `deinit` needs to be able to safely release them,
+    /// And the deinit of the @MainActor class is nonisolated, so it cannot touch non-Sendable pointers in the isolated state.
     private final class Registration {
         var hotKeyRef: EventHotKeyRef?
         var handlerRef: EventHandlerRef?
@@ -50,25 +50,25 @@ public final class GlobalHotKey {
             &registration.hotKeyRef
         )
         guard registerStatus == noErr, registration.hotKeyRef != nil else {
-            // 例如组合已被其他应用占用；此时不注册，但不要把整个应用拖垮。
+            // For example, if a combination has already been taken by another application; in this case, do not register it, but do not let it bring down the entire application.
             if let handlerRef = registration.handlerRef { RemoveEventHandler(handlerRef) }
             registration.handlerRef = nil
             return nil
         }
     }
 
-    /// Carbon 事件回调在主线程的主 RunLoop 上派发。
+    /// Carbon event callbacks are dispatched on the main thread's main RunLoop.
     ///
-    /// 这里用 `Task { @MainActor }` 跳一次而不是 `MainActor.assumeIsolated`：
-    /// 后者（以及所有隐式隔离检查）会在运行时调用 `swift_task_isCurrentExecutor…`，
-    /// 而该函数在真实 app 环境中出现过 `EXC_BAD_ACCESS`。跳一次代价是一次 RunLoop 派发，
-    /// 对快捷键响应无可感知影响。
+    /// Here we use `Task { @MainActor }` to jump once instead of `MainActor.assumeIsolated`:
+    /// The latter (as well as all implicit isolation checks) will call `swift_task_isCurrentExecutor…` at runtime,
+    /// And this function has triggered `EXC_BAD_ACCESS` in a real app environment. The cost of one occurrence is one RunLoop dispatch,
+    /// No perceptible impact on the response of shortcut keys.
     nonisolated fileprivate func fire() {
         Task { @MainActor in onPress() }
     }
 }
 
-/// 必须是全局函数（不能捕获上下文）才能作为 Carbon 的 C 回调。
+/// It must be a global function (cannot capture context) in order to be used as a C callback for Carbon.
 private func globalHotKeyCallback(
     _ nextHandler: EventHandlerCallRef?,
     _ event: EventRef?,

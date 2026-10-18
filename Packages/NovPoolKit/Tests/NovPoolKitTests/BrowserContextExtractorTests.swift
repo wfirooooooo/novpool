@@ -3,11 +3,11 @@ import NovPoolCore
 import Testing
 @testable import NovPoolSystemBridge
 
-@Suite("浏览器上下文静默溯源")
+@Suite("Silent tracing of browser context")
 struct BrowserContextExtractorTests {
-    @Test("Chromium 系浏览器使用 active tab 脚本")
+    @Test("Chromium-based browsers use active tab scripts")
     func chromiumScript() async throws {
-        let runner = FakeScriptRunner(output: ["https://example.com/post", "示例文章"])
+        let runner = FakeScriptRunner(output: ["https://example.com/post", "Sample Article"])
         let extractor = BrowserContextExtractor(
             frontmostApp: FakeFrontmostApp(bundleID: "com.google.Chrome"),
             scripting: runner,
@@ -16,13 +16,13 @@ struct BrowserContextExtractorTests {
 
         let context = await extractor.captureContext()
         #expect(context.pageURL?.absoluteString == "https://example.com/post")
-        #expect(context.pageTitle == "示例文章")
+        #expect(context.pageTitle == "Sample Article")
         #expect(context.appBundleID == "com.google.Chrome")
         #expect(runner.scripts.count == 1)
         #expect(runner.scripts[0].contains("active tab of front window"))
     }
 
-    @Test("Safari 使用 current tab / name 脚本")
+    @Test("Safari uses current tab / name script")
     func safariScript() async throws {
         let runner = FakeScriptRunner(output: ["https://apple.com", "Apple"])
         let extractor = BrowserContextExtractor(
@@ -37,7 +37,7 @@ struct BrowserContextExtractorTests {
         #expect(runner.scripts[0].contains("com.apple.Safari"))
     }
 
-    @Test("Firefox 走 AXUIElement 降级路径")
+    @Test("Firefox takes the AXUIElement downgrade path")
     func firefoxUsesAccessibility() async throws {
         let runner = FakeScriptRunner(output: ["https://should-not-be-used.example"])
         let extractor = BrowserContextExtractor(
@@ -45,17 +45,17 @@ struct BrowserContextExtractorTests {
             scripting: runner,
             axReader: FakeAXReader(snapshot: AXBrowserSnapshot(
                 url: URL(string: "https://news.example.com/tech"),
-                title: "科技新闻"
+                title: "Technology News"
             ))
         )
 
         let context = await extractor.captureContext()
         #expect(context.pageURL?.absoluteString == "https://news.example.com/tech")
-        #expect(context.pageTitle == "科技新闻")
+        #expect(context.pageTitle == "Technology News")
         #expect(runner.scripts.isEmpty)
     }
 
-    @Test("非浏览器应用只记录来源 Bundle ID，不执行脚本")
+    @Test("Non-browser applications only record the source Bundle ID and do not execute scripts")
     func nonBrowserApp() async throws {
         let runner = FakeScriptRunner(output: ["https://example.com"])
         let extractor = BrowserContextExtractor(
@@ -70,7 +70,7 @@ struct BrowserContextExtractorTests {
         #expect(runner.scripts.isEmpty)
     }
 
-    @Test("脚本失败 / 超时 / 非法返回值一律静默降级")
+    @Test("Scripts that fail / timeout / return illegal values will all be silently degraded")
     func silentDegradation() async throws {
         let failing = BrowserContextExtractor(
             frontmostApp: FakeFrontmostApp(bundleID: "com.google.Chrome"),
@@ -87,31 +87,31 @@ struct BrowserContextExtractorTests {
         #expect(await garbage.captureContext().pageURL == nil)
     }
 
-    @Test("真实 AppleScript 执行器在超时预算内返回 nil 而不阻塞")
+    @Test("The real AppleScript executor returns nil within the timeout budget without blocking")
     func realRunnerHonorsTimeout() async throws {
         let runner = NSAppleScriptRunner()
         let start = ContinuousClock.now
-        // 脚本内部先 delay：无论系统是否允许 AppleEvents，
-        // 调用方都必须在 150ms 预算内拿到 nil，而不是等脚本跑完。
+        // Inside the script, first delay: regardless of whether the system allows AppleEvents,
+        // The caller must get nil within a 150ms budget, rather than waiting for the script to finish running.
         let output = await runner.run("delay 5\nreturn {1}", timeout: .milliseconds(150))
         #expect(output == nil)
         #expect(ContinuousClock.now - start < .seconds(3))
     }
 
-    @Test("URL 与标题归一化严格校验")
+    @Test("Strict verification of URL and title normalization")
     func normalization() {
         #expect(BrowserContextExtractor.normalizeURL("  https://a.com/x  ")?.absoluteString == "https://a.com/x")
         #expect(BrowserContextExtractor.normalizeURL("about:blank") == nil)
         #expect(BrowserContextExtractor.normalizeURL("javascript:alert(1)") == nil)
         #expect(BrowserContextExtractor.normalizeURL("https://a.com/b c") == nil)
         #expect(BrowserContextExtractor.normalizeURL("") == nil)
-        // 浏览器标签指向本机 HTML 文件时同样要接受（否则整条标签会被静默丢弃）
+        // When a browser tab points to a local HTML file, it must also be accepted (otherwise the entire tag will be silently discarded)
         #expect(BrowserContextExtractor.normalizeURL("file:///tmp/novpool-fixtures/manual.html")?.isFileURL == true)
         #expect(BrowserContextExtractor.normalizeTitle("  ") == nil)
-        #expect(BrowserContextExtractor.normalizeTitle("标题") == "标题")
+        #expect(BrowserContextExtractor.normalizeTitle("Title") == "Title")
     }
 
-    @Test("浏览器家族判定覆盖主流 Bundle ID")
+    @Test("Browser family determination covers mainstream Bundle IDs")
     func familyMapping() {
         #expect(BrowserFamily.family(forBundleID: "com.google.Chrome") == .chromium)
         #expect(BrowserFamily.family(forBundleID: "company.thebrowser.Browser") == .chromium)
@@ -121,7 +121,7 @@ struct BrowserContextExtractorTests {
     }
 }
 
-/// AX 读取替身。
+/// AX read stand-in.
 struct FakeAXReader: AXBrowserReading {
     var snapshot: AXBrowserSnapshot?
 

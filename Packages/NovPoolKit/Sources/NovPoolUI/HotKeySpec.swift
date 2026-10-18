@@ -1,14 +1,14 @@
 import Carbon.HIToolbox
 import Foundation
 
-/// 全局快捷键规格：`cmd+shift+space` 这类字符串 ↔ Carbon 虚拟键码。
+/// Global hotkey specification: `cmd+shift+space` this kind of string ↔ Carbon virtual key codes.
 ///
-/// 用系统 Carbon 的 `RegisterEventHotKey` 而不是第三方库：不需要辅助功能授权，
-/// 也不依赖 Keychain / 网络，符合「零外部依赖」的工程约束。
+/// Use the system Carbon `RegisterEventHotKey` instead of third-party libraries: no accessibility authorization is required,
+/// It also does not rely on Keychain/network, meeting the project's 'zero external dependencies' constraint.
 public struct HotKeySpec: Sendable, Equatable {
     public var keyCode: UInt32
     public var carbonModifiers: UInt32
-    /// 用于界面展示，例如 `⌘⇧Space`。
+    /// Used for interface display, for example `⌘⇧Space`.
     public var displayName: String
 
     public init(keyCode: UInt32, carbonModifiers: UInt32, displayName: String) {
@@ -17,14 +17,14 @@ public struct HotKeySpec: Sendable, Equatable {
         self.displayName = displayName
     }
 
-    /// 默认呼出组合：⌘⇧Space。
+    /// Default shortcut for invoking: ⌘⇧Space.
     public static let `default` = HotKeySpec(
         keyCode: UInt32(kVK_Space),
         carbonModifiers: UInt32(cmdKey | shiftKey),
         displayName: "⇧⌘Space"
     )
 
-    /// 解析 `cmd+shift+space` / `⌥+space` 这类写法；无法识别时返回 `nil`。
+    /// Parse notations like `cmd+shift+space` / `⌥+space`; return `nil` if unable to recognize.
     public init?(named raw: String) {
         let pieces = raw
             .lowercased()
@@ -57,8 +57,8 @@ public struct HotKeySpec: Sendable, Equatable {
         )
     }
 
-    /// 按 macOS 约定顺序（⌃⌥⇧⌘）输出修饰键符号，
-    /// 这样 `shift+cmd+k` 与 `cmd+shift+k` 得到同一个展示名与同一个规格。
+    /// Output modifier key symbols in the macOS conventional order (⌃⌥⇧⌘),
+    /// In this way, `shift+cmd+k` and `cmd+shift+k` get the same display name and the same specification.
     static func symbols(for modifiers: UInt32) -> String {
         var symbols = ""
         if modifiers & UInt32(controlKey) != 0 { symbols += "⌃" }
@@ -68,7 +68,7 @@ public struct HotKeySpec: Sendable, Equatable {
         return symbols
     }
 
-    /// ANSI 虚拟键码（与 `kVK_*` 常量一致）。
+    /// ANSI virtual key codes (consistent with `kVK_*` constants).
     static let keyCodes: [String: UInt32] = [
         "a": UInt32(kVK_ANSI_A), "b": UInt32(kVK_ANSI_B), "c": UInt32(kVK_ANSI_C),
         "d": UInt32(kVK_ANSI_D), "e": UInt32(kVK_ANSI_E), "f": UInt32(kVK_ANSI_F),

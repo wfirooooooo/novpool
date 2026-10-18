@@ -1,8 +1,8 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-/// 工作区根 Manifest：只承载 App 可执行目标，核心逻辑全部在 `Packages/NovPoolKit`。
-/// 这样既能用 `swift build` / `swift test` 快速迭代，也能让 Xcode 工程直接引用本地包。
+/// Workspace root manifest: app executable only; core logic lives in `Packages/NovPoolKit`.
+/// Supports fast `swift build` / `swift test` iteration and an Xcode project that references the local package.
 let package = Package(
     name: "NovPool",
     platforms: [.macOS(.v14)],

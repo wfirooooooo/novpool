@@ -6,7 +6,7 @@ import Testing
 import Vision
 @testable import NovPoolSystemBridge
 
-/// Vision OCR 需要系统 ANE 服务；在无 GUI / 受限沙盒环境中不可用，此时相关用例自动跳过。
+/// Vision OCR requires the system ANE service; it is not available in environments without a GUI / with restricted sandbox, and in such cases, the relevant use cases are automatically skipped.
 enum VisionEnvironment {
     static let isAvailable: Bool = {
         guard let image = TestSupport.makeTextImage("NovPool") else { return false }
@@ -21,11 +21,11 @@ enum VisionEnvironment {
     }()
 }
 
-@Suite("端侧 OCR 与 PDF 内容提取")
+@Suite("Edge-side OCR and PDF content extraction")
 struct OCRTests {
-    // MARK: - 阅读顺序（纯逻辑）
+    // MARK: - Reading Order (Pure Logic)
 
-    @Test("按页 → 行（上到下）→ 行内（左到右）重排")
+    @Test("Reorder by page → line (top to bottom) → within line (left to right)")
     func readingOrder() {
         let blocks = [
             TextBlock(text: "第二行", boundingBox: CGRect(x: 0.1, y: 0.20, width: 0.3, height: 0.05), confidence: 0.9),
@@ -37,70 +37,70 @@ struct OCRTests {
         #expect(text == "第一行\n左右\n第二行")
     }
 
-    @Test("中英混排：中文之间不补空格，英文之间补空格")
+    @Test("Mixed Chinese and English: no spaces between CJK characters, spaces between English words")
     func joinRules() {
         #expect(TextBlockOrdering.needsSpace(between: "多云", and: "路由") == false)
         #expect(TextBlockOrdering.needsSpace(between: "Hello", and: "world"))
         #expect(TextBlockOrdering.needsSpace(between: "多云", and: "Architecture") == true)
     }
 
-    @Test("低置信度结果被丢弃")
+    @Test("Low-confidence results are discarded")
     func confidenceFiltering() {
         let blocks = [
-            TextBlock(text: "可信内容", boundingBox: CGRect(x: 0, y: 0.8, width: 0.4, height: 0.05), confidence: 0.95),
-            TextBlock(text: "噪声乱码", boundingBox: CGRect(x: 0, y: 0.5, width: 0.4, height: 0.05), confidence: 0.05),
+            TextBlock(text: "Reliable content", boundingBox: CGRect(x: 0, y: 0.8, width: 0.4, height: 0.05), confidence: 0.95),
+            TextBlock(text: "Noise garbled text", boundingBox: CGRect(x: 0, y: 0.5, width: 0.4, height: 0.05), confidence: 0.05),
         ]
         let text = TextBlockOrdering.orderedText(from: blocks)
-        #expect(text == "可信内容")
+        #expect(text == "Reliable content")
     }
 
-    @Test("多页结果按页序拼接")
+    @Test("Multi-page results concatenated in page order")
     func multiPageOrdering() {
         let blocks = [
-            TextBlock(text: "第二页", boundingBox: CGRect(x: 0, y: 0.5, width: 0.3, height: 0.05), confidence: 0.9, pageIndex: 1),
-            TextBlock(text: "第一页", boundingBox: CGRect(x: 0, y: 0.5, width: 0.3, height: 0.05), confidence: 0.9, pageIndex: 0),
+            TextBlock(text: "Page 2", boundingBox: CGRect(x: 0, y: 0.5, width: 0.3, height: 0.05), confidence: 0.9, pageIndex: 1),
+            TextBlock(text: "First page", boundingBox: CGRect(x: 0, y: 0.5, width: 0.3, height: 0.05), confidence: 0.9, pageIndex: 0),
         ]
-        #expect(TextBlockOrdering.orderedText(from: blocks) == "第一页\n第二页")
+        #expect(TextBlockOrdering.orderedText(from: blocks) == "First page\nPage 2")
     }
 
     // MARK: - PDF
 
-    @Test("数字版 PDF 直接读文字层，无需 OCR")
+    @Test("Digital PDF directly reads the text layer, no OCR required")
     func textLayerExtraction() throws {
         let directory = try TestSupport.makeTemporaryDirectory("pdf")
         let url = directory.appending(path: "report.pdf")
         let body = """
-        多云知识路由中枢实践记录：本文说明本地暂存、SHA256 去重、端侧 OCR、\
-        网页正文提取与多云归档流水线的整体设计，并给出跨云级联同步的验收标准。
+        Multi-cloud Cloud Knowledge Routing Hub practice notes: local staging, SHA256 dedupe, on-device OCR, \
+        web body extraction and the multi-cloud archive pipeline, plus cascade sync acceptance criteria.
         """
         #expect(TestSupport.makePDF(text: body, at: url, pageCount: 3))
 
         let layer = try #require(PDFContentExtractor.textLayer(at: url))
         #expect(layer.isUsable)
         #expect(layer.pageCount == 3)
-        #expect(layer.text.contains("多云知识路由中枢"))
+        #expect(layer.text.contains("Cloud Knowledge Routing Hub"))
         #expect(layer.characterCount > PDFContentExtractor.minimumTextLayerCharacters)
 
         #expect(PDFTextSource.decide(textLayer: layer) == .textLayer(layer.text))
     }
 
-    @Test("文字层碎片换行收敛为段落，断词连字符拼接")
+    @Test("Text layer fragments wrap into paragraphs, word breaks and hyphens are joined")
     func textLayerNormalization() {
-        let raw = "第一行文字\n第二行文字\n\n\n第三段\n\nmulti-\nline word\n"
+        let raw = "First line of text\nSecond line of text\n\n\nThird paragraph\n\nmulti-\nline word\n"
         let normalized = PDFContentExtractor.normalize(raw)
-        #expect(normalized.contains("第一行文字 第二行文字"))
+        #expect(normalized.contains("First line of text Second line of text"))
         #expect(normalized.contains("multiline word"))
         #expect(normalized.components(separatedBy: "\n\n").count == 3)
     }
 
-    @Test("缺失文字层的 PDF 判定为需要 OCR")
+    @Test("PDFs missing a text layer are deemed to require OCR")
     func scannedPDFRequiresOCR() {
         #expect(PDFTextSource.decide(textLayer: nil) == .unreadable)
-        let thin = PDFContentExtractor.TextLayer(text: "页眉", pageCount: 12, characterCount: 2)
+        let thin = PDFContentExtractor.TextLayer(text: "Header", pageCount: 12, characterCount: 2)
         #expect(PDFTextSource.decide(textLayer: thin) == .needsOCR(pageCount: 12))
     }
 
-    @Test("逐页栅格化：尺寸为 2x 页面尺寸且页面内容非空白")
+    @Test("Paginated Rasterization: Size is 2x page size and page content is not blank")
     func rasterization() throws {
         let directory = try TestSupport.makeTemporaryDirectory("raster")
         let url = directory.appending(path: "scan.pdf")
@@ -115,7 +115,7 @@ struct OCRTests {
         #expect(Self.hasDarkPixels(pages[0].image))
     }
 
-    @Test("栅格化页数受 maxPages 限制")
+    @Test("The number of rasterized pages is limited by maxPages")
     func rasterizationPageLimit() throws {
         let directory = try TestSupport.makeTemporaryDirectory("raster-limit")
         let url = directory.appending(path: "many.pdf")
@@ -123,7 +123,7 @@ struct OCRTests {
         #expect(PDFPageRasterizer.rasterize(pagesAt: url, maxPages: 2).count == 2)
     }
 
-    /// 页面渲染后应存在深色像素（证明确实把页面画进了位图）。
+    /// After the page is rendered, there should be dark pixels (to prove that the page was indeed drawn into the bitmap).
     static func hasDarkPixels(_ image: CGImage) -> Bool {
         guard let data = image.dataProvider?.data,
               let pointer = CFDataGetBytePtr(data) else { return false }
@@ -138,20 +138,20 @@ struct OCRTests {
         return false
     }
 
-    // MARK: - 真实 OCR（依赖系统 ANE，环境不支持时自动跳过）
+    // MARK: - Real OCR (relies on system ANE, automatically skipped if the environment is not supported)
 
-    @Test("端侧 OCR 识别中英混排图片", .enabled(if: VisionEnvironment.isAvailable))
+    @Test("Edge-side OCR Recognition of Mixed Chinese and English Image", .enabled(if: VisionEnvironment.isAvailable))
     func recognizesMixedTextImage() async throws {
-        let data = try #require(TestSupport.pngData("NovPool 多云路由 2026"))
+        let data = try #require(TestSupport.pngData("NovPool Cloud Router 2026"))
         let service = VisionOCRService()
         let result = try await service.recognize(imageData: data)
         #expect(result.text.contains("NovPool"))
-        #expect(result.text.contains("多云") || result.text.contains("路由"))
+        #expect(result.text.contains("Cloudy") || result.text.contains("Router"))
         #expect(result.origin == .visionOCR)
         #expect(result.averageConfidence > 0.3)
     }
 
-    @Test("扫描版 PDF 走 OCR 分支", .enabled(if: VisionEnvironment.isAvailable))
+    @Test("Scanned PDF goes through the OCR branch", .enabled(if: VisionEnvironment.isAvailable))
     func recognizesScannedPDF() async throws {
         let directory = try TestSupport.makeTemporaryDirectory("scan-ocr")
         let url = directory.appending(path: "scan.pdf")
@@ -162,7 +162,7 @@ struct OCRTests {
         #expect(result.text.contains("NovPool"))
     }
 
-    @Test("损坏的图片数据抛出 unsupportedContent 而非崩溃")
+    @Test("Damaged Image data throws unsupportedContent instead of crashing")
     func rejectsInvalidImageData() async {
         let service = VisionOCRService()
         await #expect(throws: NovPoolError.self) {

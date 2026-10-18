@@ -2,7 +2,7 @@ import Foundation
 import NovPoolCore
 import NovPoolStorage
 
-/// 浏览器授权流程的提供方定义（端点、scope、回调方式）。
+/// Definition of browser authorization process provider (endpoints, scope, callback method).
 public struct OAuthProviderDefinition: Sendable, Equatable {
     public enum Kind: String, Sendable {
         case googleDrive
@@ -14,9 +14,9 @@ public struct OAuthProviderDefinition: Sendable, Equatable {
     public var authorizationEndpoint: URL
     public var tokenEndpoint: URL
     public var scope: String
-    /// Notion 的 token 交换要求 Basic 认证（client_id:client_secret）。
+    /// Notion's token exchange requires Basic authentication (client_id:client_secret).
     public var usesBasicAuthForTokenExchange: Bool
-    /// 授权响应里是否含 refresh token（Notion 返回的是长期 token）。
+    /// Whether the authorization response contains a refresh token (Notion returns a long-term token).
     public var returnsRefreshToken: Bool
     public var extraAuthorizationParameters: [String: String]
 
@@ -68,7 +68,7 @@ public struct OAuthProviderDefinition: Sendable, Equatable {
         )
     }
 
-    /// 拼出浏览器要打开的授权地址。
+    /// Assemble the authorization address that the browser needs to open.
     public func authorizationURL(
         clientID: String,
         codeChallenge: String,
@@ -97,7 +97,7 @@ public struct OAuthProviderDefinition: Sendable, Equatable {
     }
 }
 
-/// 授权回调解析（`novpool://oauth?code=…&state=…`）。
+/// Authorization callback parsing (`novpool://oauth?code=…&state=…`).
 public enum OAuthCallbackParser {
     public enum Failure: Error, Equatable, LocalizedError {
         case providerError(String)
@@ -106,9 +106,9 @@ public enum OAuthCallbackParser {
 
         public var errorDescription: String? {
             switch self {
-            case .providerError(let detail): "授权被拒绝：\(detail)"
-            case .stateMismatch: "授权回调的 state 不匹配，已拒绝（可能是伪造回调）"
-            case .missingCode: "授权回调里没有 code"
+            case .providerError(let detail): "Authorization denied: \(detail)"
+            case .stateMismatch: "OAuth callback state mismatch; rejected (possible forged callback)"
+            case .missingCode: "Authorization callback has no code"
             }
         }
     }
@@ -132,12 +132,12 @@ public enum OAuthCallbackParser {
     }
 }
 
-/// 打开浏览器完成授权、并拿回回调地址。
+/// Open the browser to complete the authorization and retrieve the callback address.
 public protocol BrowserAuthorizationSession: Sendable {
     func authorize(url: URL, callbackURLScheme: String) async throws -> URL
 }
 
-/// 凭据存储抽象（生产用 `KeychainStore`，测试用内存替身）。
+/// Credential storage abstraction (use `KeychainStore` for production, in-memory substitute for testing).
 public protocol CredentialStoring: Sendable {
     func store(_ secret: Data, account: String) throws
     func load(account: String) throws -> Data?
@@ -146,9 +146,9 @@ public protocol CredentialStoring: Sendable {
 
 extension KeychainStore: CredentialStoring {}
 
-/// 授权编排：浏览器登录 → 换取令牌 → 写入钥匙串 → 登记连接器。
+/// Authorized orchestration: browser login → exchange token → writeKeychain → register connector.
 ///
-/// 用户只需要点一次「用浏览器授权」；client ID 属于应用配置，填一次即可。
+/// The user only needs to click "Authorize with Browser" once; the client ID belongs to the application configuration and only needs to be filled in once.
 public struct ConnectorAuthorizationCoordinator: Sendable {
     public struct Outcome: Sendable, Equatable {
         public var connectorID: String
@@ -178,7 +178,7 @@ public struct ConnectorAuthorizationCoordinator: Sendable {
         self.makeState = makeState
     }
 
-    /// Google Drive / OneDrive：标准 PKCE 授权码流程，拿 refresh token。
+    /// Google Drive / OneDrive: Standard PKCE authorization code flow to get a refresh token.
     public func authorizeOAuthConnector(
         connectorID: String,
         name: String,
@@ -191,7 +191,7 @@ public struct ConnectorAuthorizationCoordinator: Sendable {
         targetPath: String?
     ) async throws -> Outcome {
         guard !clientID.isEmpty else {
-            throw NovPoolError.connectorNotConfigured("缺少 OAuth Client ID（属于应用配置，填一次即可）")
+            throw NovPoolError.connectorNotConfigured("Missing OAuth Client ID (app config; fill in once)")
         }
         let verifier = PKCE.codeVerifier()
         let state = makeState()
@@ -221,7 +221,7 @@ public struct ConnectorAuthorizationCoordinator: Sendable {
             redirectURI: OAuthProviderDefinition.redirectURI
         )
         guard !authorized.refreshToken.isEmpty else {
-            throw NovPoolError.authenticationRequired("授权已完成，但服务端没有返回 refresh token")
+            throw NovPoolError.authenticationRequired("Authorization completed but the server did not return a refresh token")
         }
 
         let account = "\(connectorID).oauth"
@@ -234,10 +234,10 @@ public struct ConnectorAuthorizationCoordinator: Sendable {
             account: account,
             configJSON: try config.encodedJSON()
         )
-        return Outcome(connectorID: connectorID, account: account, detail: "已授权并登记 \(name)")
+        return Outcome(connectorID: connectorID, account: account, detail: "Authorized and registered \(name)")
     }
 
-    /// Notion：授权码换长期 token（交换时用 Basic 认证）。
+    /// Notion: Use authorization code to exchange for a long-term token (use Basic authentication during the exchange).
     public func authorizeNotionConnector(
         connectorID: String,
         name: String,
@@ -247,7 +247,7 @@ public struct ConnectorAuthorizationCoordinator: Sendable {
         config: NotionConnector.Config
     ) async throws -> Outcome {
         guard !clientID.isEmpty, !clientSecret.isEmpty else {
-            throw NovPoolError.connectorNotConfigured("Notion 授权需要 Integration 的 Client ID 与 Secret（应用配置）")
+            throw NovPoolError.connectorNotConfigured("Notion authorization needs the Integration Client ID and Secret (app config)")
         }
         let state = makeState()
         let authorizationURL = definition.authorizationURL(
@@ -277,7 +277,7 @@ public struct ConnectorAuthorizationCoordinator: Sendable {
               let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
               let token = object["access_token"] as? String, !token.isEmpty else {
             let detail = SecretRedactor.redact(String(decoding: response.body.prefix(200), as: UTF8.self))
-            throw NovPoolError.authenticationRequired("Notion 换取令牌失败（HTTP \(response.statusCode)）：\(detail)")
+            throw NovPoolError.authenticationRequired("Notion token exchange failed (HTTP\(response.statusCode)): \(detail)")
         }
 
         let account = "\(connectorID).token"
@@ -293,7 +293,7 @@ public struct ConnectorAuthorizationCoordinator: Sendable {
         return Outcome(
             connectorID: connectorID,
             account: account,
-            detail: workspace.map { "已授权 Notion 工作区：\($0)" } ?? "已授权并登记 Notion"
+            detail: workspace.map { "Authorized Notion workspace: \($0)" } ?? "Authorized and registered Notion"
         )
     }
 

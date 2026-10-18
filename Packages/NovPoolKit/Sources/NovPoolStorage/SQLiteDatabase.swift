@@ -2,7 +2,7 @@ import Foundation
 import NovPoolCore
 import SQLite3
 
-/// SQLite 绑定值。
+/// SQLite bind value.
 public enum SQLValue: Sendable, Equatable {
     case null
     case integer(Int64)
@@ -15,7 +15,7 @@ extension SQLValue {
     public static func date(_ value: Date) -> SQLValue { .text(SQLiteDate.string(from: value)) }
 }
 
-/// 一行查询结果。列名到值的有序映射。
+/// A row of query results. An ordered mapping from column names to values.
 public struct SQLRow: Sendable {
     private let values: [String: SQLValue]
 
@@ -57,16 +57,16 @@ public struct SQLRow: Sendable {
     }
 }
 
-/// 单连接 SQLite 封装（actor 串行化访问）。
+/// Single-connection SQLite wrapper (actor-serialized access).
 ///
-/// 说明：产品白皮书规划使用 `GRDB.swift` 的 `DatabasePool`；当前开发环境离线，
-/// 无法拉取 SPM 依赖，因此这里直接封装系统 `libsqlite3`（WAL + FTS5 已在内核层验证），
-/// 保持与白皮书 §4.2 完全一致的 Schema，后续可在不改动上层调用点的前提下替换为 GRDB。
+/// Note: The product white paper plans to use `DatabasePool` from `GRDB.swift`; the current development environment is offline,
+/// Unable to fetch SPM dependencies, so here we directly encapsulate the system `libsqlite3` (WAL + FTS5 has been verified at the kernel level),
+/// Maintain a schema that is fully consistent with White Paper §4.2, so that it can later be replaced with GRDB without modifying the upper-level call points.
 public actor NovPoolDatabase {
-    /// sqlite3 连接句柄的持有者。
+    /// Holder of the sqlite3 connection handle.
     ///
-    /// 用一个普通类包一层，是为了让 `deinit` 能在 actor 之外安全关闭连接
-    /// （Swift 6 的 `nonisolated deinit` 不允许触碰 actor 状态里的非 Sendable 指针）。
+    /// Wrapping with a regular class is to allow `deinit` to safely close the connection outside the actor
+    ///  Swift 6's `nonisolated deinit` does not allow touching non-Sendable pointers in the actor's state.
     private final class Connection: @unchecked Sendable {
         var handle: OpaquePointer?
 
@@ -80,8 +80,8 @@ public actor NovPoolDatabase {
 
     private var handle: OpaquePointer? { connection.handle }
 
-    /// - Parameter createParentDirectory: 是否自动创建数据库文件的父目录（默认开启）。
-    ///   SQLite 自己不会创建父目录，缺失时直接报 CANTOPEN；首次启动最容易踩这个坑。
+    /// - Parameter createParentDirectory: Whether to automatically create the parent directory of the database file (enabled by default).
+    ///   SQLite does not create parent directories by itself; if they are missing, it will directly report CANTOPEN. This is the pitfall most likely encountered on the first startup.
     public init(path: String, createParentDirectory: Bool = true) throws {
         self.path = path
         self.connection = Connection()
@@ -95,7 +95,7 @@ public actor NovPoolDatabase {
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
         let code = sqlite3_open_v2(path, &handle, flags, nil)
         guard code == SQLITE_OK, let handle else {
-            let message = handle.map { String(cString: sqlite3_errmsg($0)) } ?? "无法打开数据库"
+            let message = handle.map { String(cString: sqlite3_errmsg($0)) } ?? "Could not open database"
             sqlite3_close(handle)
             throw NovPoolError.database("open failed (\(code)): \(message)")
         }
@@ -106,7 +106,7 @@ public actor NovPoolDatabase {
         try Self.executeRaw(handle, "PRAGMA synchronous = NORMAL")
     }
 
-    /// 内存库，仅用于单元测试。
+    /// Memory library, for unit testing only.
     public init(inMemory: Bool) throws {
         try self.init(path: inMemory ? ":memory:" : ":memory:?cache=private")
     }
@@ -118,7 +118,7 @@ public actor NovPoolDatabase {
         }
     }
 
-    // MARK: - 执行
+    // MARK: - Execution
 
     @discardableResult
     public func execute(_ sql: String, _ arguments: [SQLValue] = []) throws -> Int {
@@ -177,10 +177,10 @@ public actor NovPoolDatabase {
         return rows
     }
 
-    /// 在一个事务里批量执行语句（任一步失败即整体回滚）。
+    /// Execute statements in bulk within a transaction (if any step fails, the whole transaction is rolled back).
     ///
-    /// actor 隔离保证事务期间不会有其他任务插入执行；因此这里用批量语句而不是
-    /// 闭包式事务——闭包在 `nonisolated` 上下文里无法安全访问数据库连接。
+    /// actor isolation ensures that no other tasks are inserted during the transaction; therefore, batch statements are used here instead of
+    /// Closure-style transactions — Closures cannot safely access the database connection in a `nonisolated` context.
     public func executeBatch(
         _ statements: [String],
         _ parameterized: [(String, [SQLValue])] = []
@@ -207,10 +207,10 @@ public actor NovPoolDatabase {
         try query(sql, arguments).first?.int("value")
     }
 
-    // MARK: - 内部
+    // MARK: - Internals
 
     private func requireConnection() throws -> OpaquePointer {
-        guard let handle else { throw NovPoolError.database("数据库连接已关闭") }
+        guard let handle else { throw NovPoolError.database("Database connection is closed") }
         return handle
     }
 
@@ -274,10 +274,10 @@ public actor NovPoolDatabase {
     }
 }
 
-/// SQLite 没有 `SQLITE_TRANSIENT` 的 Swift 常量，需自行还原（-1 指针）。
+/// SQLite does not have a Swift constant for `SQLITE_TRANSIENT`, you need to restore it yourself (pointer -1).
 private nonisolated(unsafe) let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-/// 日期以 ISO8601 文本存储，与白皮书 `.datetime` 列语义一致且跨语言可读。
+/// Dates are stored as ISO8601 text, consistent with the `.datetime` column semantics in the white paper and readable across languages.
 public enum SQLiteDate {
     private nonisolated(unsafe) static let formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()

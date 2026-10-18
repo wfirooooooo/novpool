@@ -1,12 +1,12 @@
 import Foundation
 import NovPoolCore
 
-/// 极简启动日志：写入 `~/Library/Logs/NovPool.log`，同时镜像到 stderr。
+/// Minimal startup log: writes `~/Library/Logs/NovPool.log` and mirrors to stderr.
 ///
-/// 存在的理由：用 `open` 启动 app 时 stderr 会被丢弃，启动期故障（数据目录不可写、
-/// 建库失败等）会表现为「什么都没发生」，排查成本极高。启动链路上每个关键节点都记一行。
+/// Why it exists: launching via `open` discards stderr, so early failures (unwritable
+/// data dir, DB setup, etc.) look like “nothing happened”. Log every critical bootstrap step.
 enum NovPoolLog {
-    /// 超过该体积就截断重来，避免长期运行把日志撑爆。
+    /// Truncate and start fresh past this size so long runs do not balloon the log.
     private static let maximumBytes = 512 * 1024
     private static let lock = NSLock()
 
@@ -24,7 +24,7 @@ enum NovPoolLog {
 
     static var path: String { fileURL.path(percentEncoded: false) }
 
-    /// 每次启动写会话分隔线；旧日志过大时先截断。
+    /// Write a session separator on each launch; truncate first if the old log is too large.
     static func startSession() {
         lock.lock()
         defer { lock.unlock() }
@@ -37,7 +37,7 @@ enum NovPoolLog {
         if let size = attributes?[.size] as? Int, size > maximumBytes {
             try? FileManager.default.removeItem(at: url)
         }
-        append("──────── NovPool 启动 ────────", to: url)
+        append("──────── NovPool start ────────", to: url)
     }
 
     static func write(_ message: String) {
@@ -64,6 +64,6 @@ enum NovPoolLog {
 
 extension Bundle {
     var shortVersion: String {
-        object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
+        object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
     }
 }

@@ -1,15 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// 像素级点击穿透宿主视图。
+/// Pixel-level click-through of the host view.
 ///
-/// 静默态下，只有当鼠标落在 `interactiveRect`（默认是中心 48x48 图标区）内时才接受
-/// 鼠标事件，其余区域 `hitTest` 返回 `nil`，事件原生穿透到下层桌面与浏览器窗口。
+/// In silent mode, it only responds when the mouse is over the `interactiveRect` (default is the central 48x48 icon area)
+/// For mouse events, the remaining areas return `nil` for `hitTest`, allowing events to naturally pass through to the underlying desktop and browser windows.
 @MainActor
 public final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
-    /// 响应用户事件的区域（视图坐标）。
+    /// The area that responds to user events (view coordinates).
     public var interactiveRect: NSRect = .zero
-    /// 拖拽会话进行中置为 `true`，让扇区在展开后可以接收 `draggingUpdated`。
+    /// Set the drag session to `true` to allow the sector to receive `draggingUpdated` after it expands.
     public var forcesInteraction = false
 
     public required init(rootView: Content) {
@@ -20,7 +20,7 @@ public final class PassthroughHostingView<Content: View>: NSHostingView<Content>
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
-        fatalError("init(coder:) 未实现")
+        fatalError("init(coder:) has not been implemented")
     }
 
     public override func hitTest(_ point: NSPoint) -> NSView? {
@@ -29,14 +29,14 @@ public final class PassthroughHostingView<Content: View>: NSHostingView<Content>
         return super.hitTest(point)
     }
 
-    /// 由控制器按展开状态推送命中区域（视图本身不回调，避免非隔离闭包里访问主 actor 状态）。
+    /// The hit area is pushed by the controller according to the expanded state (the view itself does not callback, to avoid accessing the main actor state in a non-isolated closure).
     public func updateInteractiveRect(isExpanded: Bool) {
         interactiveRect = isExpanded
             ? NSRect(origin: .zero, size: bounds.size)
             : Self.iconRect()
     }
 
-    /// 中心图标区。
+    /// Central icon area.
     public static func iconRect(
         canvasSize: CGSize = NovPoolLayout.canvasSize,
         iconSize: CGFloat = NovPoolLayout.iconSize

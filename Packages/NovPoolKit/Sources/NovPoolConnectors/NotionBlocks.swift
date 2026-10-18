@@ -1,13 +1,13 @@
 import Foundation
 
-/// Markdown → Notion Block 转换。
+/// Markdown → Notion Block conversion.
 ///
-/// 纯函数、无网络依赖，因此可以逐条断言生成的 JSON 结构。
-/// 支持：标题、段落、项目符号、编号列表、待办、引用、代码块、分割线、图片、行内加粗/斜体/代码/链接。
+/// Pure functions, with no network dependency, so the generated JSON structure can be asserted item by item.
+/// Supports: titles, paragraphs, bullet lists, numbered lists, to-dos, blockquotes, code blocks, dividers, images, inline bold/italic/code/links.
 public enum NotionBlocks {
-    /// Notion 单个 rich_text 内容的字符上限。
+    /// Character limit for a single rich_text content in Notion.
     public static let maxRichTextCharacters = 2000
-    /// 单次请求可提交的 block 上限。
+    /// The maximum number of blocks that can be submitted in a single request.
     public static let maxBlocksPerRequest = 100
 
     public static func blocks(fromMarkdown markdown: String, upstreamURL: URL? = nil) -> [[String: Any]] {
@@ -94,16 +94,16 @@ public enum NotionBlocks {
         flushParagraph()
 
         if let upstreamURL {
-            // 跨云级联：把前置网盘返回的直达链接写成正文里的一条可点击段落。
+            // Cross-cloud cascading: Write the direct link returned by the front-end cloud drive as a clickable paragraph in the Body.
             blocks.append(paragraphBlock(
-                "云端文件：\(upstreamURL.absoluteString)",
+                "Cloud file: \(upstreamURL.absoluteString)",
                 link: upstreamURL
             ))
         }
         return blocks
     }
 
-    // MARK: - 块级
+    // MARK: - Block level
 
     static func paragraphBlock(_ text: String, link: URL? = nil) -> [String: Any] {
         [
@@ -207,7 +207,7 @@ public enum NotionBlocks {
         ]
     }
 
-    /// Notion 只接受它支持的语言标识，未知的一律落到 `plain text`。
+    /// Notion only accepts language identifiers that it supports; any unknown ones fall back to `plain text`.
     static func notionLanguage(_ raw: String) -> String {
         let known: Set<String> = [
             "abap", "arduino", "bash", "basic", "c", "clojure", "coffeescript", "c++", "c#",
@@ -230,9 +230,9 @@ public enum NotionBlocks {
         return "plain text"
     }
 
-    // MARK: - 行内
+    // MARK: - Inline
 
-    /// 行内 Markdown → rich_text 数组，并做 2000 字符切分。
+    /// Convert inline Markdown to a rich_text array and split it into 2000-character segments.
     public static func richText(
         _ text: String,
         link: URL? = nil,
@@ -273,8 +273,8 @@ public enum NotionBlocks {
         var code = false
     }
 
-    /// 极简行内解析：识别 `**粗体**`、`*斜体*`、`` `代码` ``、`[文本](链接)`。
-    /// 不支持嵌套（够用且行为可预期）。
+    /// Minimal inline parsing: recognize `**bold**`, `*italic*`, `` `code` ``, `[Text](Link)`.
+    /// Nested structures are not supported (sufficient and behavior is predictable).
     static func inlineSegments(
         _ text: String,
         inherited: (link: URL?, bold: Bool, italic: Bool, code: Bool)

@@ -1,6 +1,6 @@
 import Foundation
 
-/// 人工整理字段（分类 / 标签 / 置顶 / 收藏）。
+/// Manually organize fields (Category / Tag / Pinned / Favorite).
 public struct KnowledgeOrganization: Sendable, Equatable {
     public var category: String?
     public var tags: [String]
@@ -19,7 +19,7 @@ public struct KnowledgeOrganization: Sendable, Equatable {
         self.isFavorite = isFavorite
     }
 
-    /// 从自由文本标签串构造（逗号 / 顿号 / 分号分隔）。
+    /// Construct from free text tags (separated by commas / Chinese commas / semicolons).
     public static func fromRaw(
         category: String?,
         tagsText: String,
@@ -35,7 +35,7 @@ public struct KnowledgeOrganization: Sendable, Equatable {
     }
 
     public static func parseTags(_ raw: String) -> [String] {
-        let separators = CharacterSet(charactersIn: ",，、;；\n\t")
+        let separators = CharacterSet(charactersIn: ",，,;；\n\t")
         var seen = Set<String>()
         var result: [String] = []
         for part in raw.components(separatedBy: separators) {

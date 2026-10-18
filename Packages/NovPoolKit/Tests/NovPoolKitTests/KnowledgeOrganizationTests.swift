@@ -3,15 +3,15 @@ import NovPoolCore
 import NovPoolStorage
 import Testing
 
-@Suite("人工整理")
+@Suite("Manual Organize")
 struct KnowledgeOrganizationTests {
-    @Test("标签解析：逗号顿号去重保序")
+    @Test("Tag parsing: remove duplicates while keeping order with commas and enumeration commas")
     func parseTags() {
-        #expect(KnowledgeOrganization.parseTags("a, b，a、c; d") == ["a", "b", "c", "d"])
+        #expect(KnowledgeOrganization.parseTags("a, b，a,c; d") == ["a", "b", "c", "d"])
         #expect(KnowledgeOrganization.parseTags("  ").isEmpty)
     }
 
-    @Test("空分类归一为 nil")
+    @Test("Empty categories are unified as nil")
     func normalizedCategory() {
         let org = KnowledgeOrganization.fromRaw(
             category: "  ",
@@ -25,7 +25,7 @@ struct KnowledgeOrganizationTests {
         #expect(!org.isFavorite)
     }
 
-    @Test("updateOrganization 写入并可清空分类")
+    @Test("updateOrganization write and can clear categories")
     func repositoryUpdate() async throws {
         let directory = try TestSupport.makeTemporaryDirectory("org")
         let database = try NovPoolDatabase(path: directory.appending(path: "org.sqlite").path(percentEncoded: false))
@@ -36,24 +36,24 @@ struct KnowledgeOrganizationTests {
             KnowledgeItemRecord(
                 id: id,
                 contentType: .plainText,
-                title: "笔记",
-                aiCategory: "旧分类",
-                aiTags: ["旧"]
+                title: "Notes",
+                aiCategory: "Old category",
+                aiTags: ["old"]
             )
         )
 
         try await repository.updateOrganization(
             id: id,
             organization: KnowledgeOrganization(
-                category: "技术",
-                tags: ["swift", "本地"],
+                category: "Technology",
+                tags: ["swift", "Local"],
                 isPinned: true,
                 isFavorite: true
             )
         )
         var record = try #require(await repository.fetch(id: id))
-        #expect(record.aiCategory == "技术")
-        #expect(record.aiTags == ["swift", "本地"])
+        #expect(record.aiCategory == "Technology")
+        #expect(record.aiTags == ["swift", "Local"])
         #expect(record.isPinned)
         #expect(record.isFavorite)
 
@@ -68,7 +68,7 @@ struct KnowledgeOrganizationTests {
         #expect(record.isFavorite)
     }
 
-    @Test("最近列表置顶优先")
+    @Test("Recent list pinned priority")
     func recentPinnedFirst() async throws {
         let directory = try TestSupport.makeTemporaryDirectory("org-pin")
         let database = try NovPoolDatabase(path: directory.appending(path: "org.sqlite").path(percentEncoded: false))
@@ -82,7 +82,7 @@ struct KnowledgeOrganizationTests {
             KnowledgeItemRecord(
                 id: older,
                 contentType: .plainText,
-                title: "旧",
+                title: "old",
                 createdAt: now.addingTimeInterval(-100)
             )
         )
@@ -90,7 +90,7 @@ struct KnowledgeOrganizationTests {
             KnowledgeItemRecord(
                 id: newer,
                 contentType: .plainText,
-                title: "新",
+                title: "New",
                 createdAt: now
             )
         )
@@ -98,7 +98,7 @@ struct KnowledgeOrganizationTests {
             KnowledgeItemRecord(
                 id: pinned,
                 contentType: .plainText,
-                title: "置顶项",
+                title: "Pinned item",
                 isPinned: true,
                 createdAt: now.addingTimeInterval(-50)
             )

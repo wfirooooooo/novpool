@@ -1,7 +1,7 @@
 import Foundation
 import NovPoolCore
 
-/// `knowledge_items` + FTS5 的读写入口。
+/// The read/write interface of `knowledge_items` + FTS5.
 public struct KnowledgeRepository: Sendable {
     private let database: NovPoolDatabase
 
@@ -15,7 +15,7 @@ public struct KnowledgeRepository: Sendable {
         isPinned, isFavorite, createdAt, updatedAt
         """
 
-    // MARK: - 写入
+    // MARK: - write
 
     public func insert(_ record: KnowledgeItemRecord) async throws {
         try await database.execute(
@@ -27,7 +27,7 @@ public struct KnowledgeRepository: Sendable {
         )
     }
 
-    /// OCR / 网页正文 / AI 增强结果的回填。FTS5 索引由触发器自动同步。
+    /// Backfilling of OCR / WebBody / AI enhanced results. FTS5 index is automatically synchronized by triggers.
     public func updateEnrichment(
         id: UUID,
         markdownBody: String? = nil,
@@ -69,7 +69,7 @@ public struct KnowledgeRepository: Sendable {
         )
     }
 
-    /// 人工整理：分类 / 标签 / 置顶 / 收藏。分类传空会写成 SQL NULL。
+    /// Manual Organize: Category / Tag / Pinned / Favorite. If the category is left empty, it will be written as SQL NULL.
     public func updateOrganization(id: UUID, organization: KnowledgeOrganization) async throws {
         let tagsJSON = (try? JSONEncoder().encode(organization.tags))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
@@ -103,7 +103,7 @@ public struct KnowledgeRepository: Sendable {
         return changed > 0
     }
 
-    // MARK: - 读取
+    // MARK: - read
 
     public func fetch(id: UUID) async throws -> KnowledgeItemRecord? {
         let rows = try await database.query(
@@ -113,7 +113,7 @@ public struct KnowledgeRepository: Sendable {
         return try rows.first.map(Self.decode)
     }
 
-    /// 按内容哈希去重（文件字节 / 链接 / 文本指纹均写入此列）。
+    /// Deduplicate by content hash (File bytes / Link / Text fingerprints all write to this column).
     public func fetchByHash(_ sha256: String) async throws -> KnowledgeItemRecord? {
         let rows = try await database.query(
             "SELECT \(Self.columns) FROM knowledge_items WHERE fileHashSHA256 = ? ORDER BY createdAt DESC LIMIT 1",
@@ -122,7 +122,7 @@ public struct KnowledgeRepository: Sendable {
         return try rows.first.map(Self.decode)
     }
 
-    /// 按来源 URL 查找（兼容尚未写入内容指纹的历史网页链接条目）。
+    /// Find by source URL (compatible with historical WebLink entries that have not yet written content fingerprints).
     public func fetchBySourceURL(_ sourceURL: String) async throws -> KnowledgeItemRecord? {
         let rows = try await database.query(
             "SELECT \(Self.columns) FROM knowledge_items WHERE sourceURL = ? ORDER BY createdAt DESC LIMIT 1",
@@ -148,7 +148,7 @@ public struct KnowledgeRepository: Sendable {
         Int(try await database.scalarInt("SELECT COUNT(*) AS value FROM knowledge_items") ?? 0)
     }
 
-    /// 库中出现过的 AI 分类（去空、按出现次数降序），供检索面板筛选。
+    /// AI categories that have appeared in the database (remove empty, sorted by frequency of appearance), for filtering in the search panel.
     public func distinctCategories(limit: Int = 40) async throws -> [String] {
         let rows = try await database.query(
             """
@@ -164,10 +164,10 @@ public struct KnowledgeRepository: Sendable {
         return rows.compactMap { $0.text("value") }
     }
 
-    /// 全文检索。
+    /// Full-text search.
     ///
-    /// 使用 FTS5 trigram 分词器；由于 trigram 索引的最小匹配单元是 3 个字符，
-    /// 长度 < 3 的查询（例如「AI」「笔记」这类两字中文词）自动降级为 `LIKE` 子串扫描。
+    /// Use the FTS5 trigram tokenizer; since the minimum matching unit of the trigram index is 3 characters,
+    /// Queries with length < 3 (for example, two-character Chinese words like "AI" or "note") are automatically downgraded to `LIKE` substring scans.
     public func searchFullText(_ rawQuery: String, limit: Int = 20) async throws -> [KnowledgeSearchHit] {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return try await recent(limit: limit) }
@@ -194,7 +194,7 @@ public struct KnowledgeRepository: Sendable {
         return try await searchSubstring(query, limit: limit)
     }
 
-    /// LIKE 兜底检索（短查询 / FTS 无命中 / trigram 索引无法覆盖的场景）。
+    /// LIKE fallback search (short queries / FTS no hits / scenarios not covered by trigram index).
     public func searchSubstring(_ query: String, limit: Int = 20) async throws -> [KnowledgeSearchHit] {
         let escaped = query
             .replacingOccurrences(of: "\\", with: "\\\\")
@@ -221,7 +221,7 @@ public struct KnowledgeRepository: Sendable {
         return rows.map(Self.decodeHit)
     }
 
-    /// 读取全部向量矩阵（Phase 4 混合检索使用）。
+    /// readAllEmbedding matrix (used in Phase 4 hybrid retrieval).
     public func embeddingRows() async throws -> [(id: UUID, vector: [Float])] {
         let rows = try await database.query(
             "SELECT id, embeddingBlob FROM knowledge_items WHERE embeddingBlob IS NOT NULL"
@@ -244,7 +244,7 @@ public struct KnowledgeRepository: Sendable {
         return try rows.map(Self.decode)
     }
 
-    /// 尚无 AI 摘要的条目（有正文或 OCR 可总结），供设置里「重新总结」批量处理。
+    /// There are no entries summarized by AI yet (with Body or OCR available for summarization) for batch processing with the 'Re-summarize' setting.
     public func recordsNeedingAISummary(limit: Int = 40) async throws -> [KnowledgeItemRecord] {
         let rows = try await database.query(
             """
@@ -262,7 +262,7 @@ public struct KnowledgeRepository: Sendable {
         return try rows.map(Self.decode)
     }
 
-    /// 早期版本只暂存了本机文件，没有提取正文。启动时用这批记录做一次补齐。
+    /// Early versions only temporarily stored the local File and did not extract the Body. During startup, use this batch of records to perform a completion.
     public func recordsNeedingLocalFileContent(limit: Int = 100) async throws -> [KnowledgeItemRecord] {
         let rows = try await database.query(
             """
@@ -277,7 +277,7 @@ public struct KnowledgeRepository: Sendable {
         return try rows.map(Self.decode)
     }
 
-    // MARK: - 映射
+    // MARK: - Mapping
 
     private static func bindings(for record: KnowledgeItemRecord) -> [SQLValue] {
         [
@@ -304,11 +304,11 @@ public struct KnowledgeRepository: Sendable {
 
     private static func decode(_ row: SQLRow) throws -> KnowledgeItemRecord {
         guard let idText = row.text("id"), let id = UUID(uuidString: idText) else {
-            throw NovPoolError.database("knowledge_items.id 非法：\(row.text("id") ?? "nil")")
+            throw NovPoolError.database("Illegal knowledge_items.id: \(row.text("id") ?? "nil")")
         }
         guard let contentTypeRaw = row.text("contentType"),
               let contentType = ContentType(rawValue: contentTypeRaw) else {
-            throw NovPoolError.database("knowledge_items.contentType 非法")
+            throw NovPoolError.database("Illegal knowledge_items.contentType")
         }
         let tags = row.text("aiTagsJSON")
             .flatMap { Data($0.utf8) }

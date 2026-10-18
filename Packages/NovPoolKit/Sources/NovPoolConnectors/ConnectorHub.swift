@@ -2,7 +2,7 @@ import Foundation
 import NovPoolCore
 import NovPoolStorage
 
-/// 已解析出的连接器实例：配置 + 可用实现。
+/// Parsed connector instance: configuration + available implementation.
 public struct ResolvedConnector: Sendable {
     public let id: String
     public let type: String
@@ -17,15 +17,15 @@ public struct ResolvedConnector: Sendable {
     }
 }
 
-/// 连接器解析抽象（便于给发件箱工作器注入替身）。
+/// Connector parsing abstraction (facilitates injecting substitutes into the outbox worker).
 public protocol ConnectorProviding: Sendable {
     func resolve(connectorID: String) async -> ResolvedConnector?
 }
 
-/// 连接器中枢：按 `connectors` 表里的类型装配具体实现，敏感凭据从 Keychain 取。
-/// `FileManager` 不是 `Sendable`，但它只在同步路径上被使用，因此显式标注。
+/// Connector hub: Assemble specific implementations according to the types in the `connectors` table, and retrieve sensitive credentials from the Keychain.
+/// `FileManager` is not `Sendable`, but it is only used on a synchronous path, so it is explicitly marked.
 public struct ConnectorHub: ConnectorProviding, @unchecked Sendable {
-    /// 需要原始文件的连接器类型。跨云级联时它们先跑，外链再注入下游。
+    /// The connector type of the original file is required. When cascading across clouds, they run first, and the external link is then injected downstream.
     public static let fileFirstTypes: Set<String> = ["gdrive_api", "onedrive_api", "local_mount"]
 
     private let repository: ConnectorRepository
@@ -58,7 +58,7 @@ public struct ConnectorHub: ConnectorProviding, @unchecked Sendable {
         )
     }
 
-    /// 探测云连接器授权是否仍可用（不要求启用状态，供设置面板展示）。
+    /// Detect whether the cloud connector authorization is still available (enabled status is not required, for display on the settings panel).
     public func probeAuthentication(connectorID: String) async -> ConnectorAuthStatus {
         guard let record = try? await repository.fetch(id: connectorID) else {
             return .unchecked
@@ -79,14 +79,14 @@ public struct ConnectorHub: ConnectorProviding, @unchecked Sendable {
         }
         do {
             let ok = try await connector.validateAuthentication(configJSON: record.configData)
-            return ok ? .ok : .needsReauth("校验未通过，请重新授权")
+            return ok ? .ok : .needsReauth("Validation failed; please re-authorize")
         } catch {
             let reason = (error as? NovPoolError)?.errorDescription ?? error.localizedDescription
             return .needsReauth(SecretRedactor.redact(reason))
         }
     }
 
-    /// 连接器实例装配。凭据来自 Keychain，绝不落库。
+    /// Connector instance assembly. Credentials come from the Keychain and are never stored in the database.
     func makeConnector(for record: ConnectorRecord) -> (any DestinationConnector)? {
         switch record.connectorType {
         case "local_mount":
@@ -123,7 +123,7 @@ public struct ConnectorHub: ConnectorProviding, @unchecked Sendable {
         guard let account = record.keychainAccountRef,
               let secret = try? keychain.load(account: account),
               var credentials = OAuthCredentials.decoded(secret) else {
-            // 没凭据也让连接器存在：push 时明确报「需要先授权」，用户能在设置面板看到原因。
+            // Even without credentials, let the connector exist: explicitly report "Authorization required" when pushing, and the user can see the reason in the settings panel.
             return nil
         }
         credentials.provider = provider
@@ -133,11 +133,11 @@ public struct ConnectorHub: ConnectorProviding, @unchecked Sendable {
     }
 }
 
-/// OAuth 连接器在 `configJSON` 里的非敏感配置（凭据在 Keychain）。
+/// The non-sensitive configuration of the OAuth connector in `configJSON` (credentials are in the Keychain).
 public struct OAuthConnectorConfig: Codable, Sendable, Equatable {
-    /// 目标目录：Drive 用 folderID，OneDrive 用路径；为空表示根目录。
+    /// Target directory: use folderID for Drive, use path for OneDrive; leaving it empty indicates the root directory.
     public var folderPath: String?
-    /// Microsoft 租户（默认 common）。
+    /// Microsoft tenant (default common).
     public var tenant: String?
 
     public init(
@@ -148,7 +148,7 @@ public struct OAuthConnectorConfig: Codable, Sendable, Equatable {
         self.tenant = tenant
     }
 
-    /// 编码成 configJSON。不转义斜杠，方便直接用 sqlite3 / defaults 查看配置。
+    /// Encode into configJSON. Do not escape slashes, so that the configuration can be directly viewed with sqlite3 / defaults.
     public func encodedJSON() throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]

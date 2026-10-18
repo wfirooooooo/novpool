@@ -3,164 +3,170 @@ import NovPoolCore
 import Testing
 @testable import NovPoolSystemBridge
 
-@Suite("AI 结构化增强")
+@Suite("AI Structured Enhancement")
 struct AIEnrichmentTests {
-    private let categories = ["技术", "产品", "阅读"]
+    private let categories = ["Technology", "Product", "Reading"]
 
     // MARK: - Prompt
 
-    @Test("System Prompt 带上主题分类树、标签上限与 JSON 形状")
+    @Test("System Prompt include Topic category tree, tag limit, and JSON structure")
     func systemPromptContent() {
         let prompt = AIEnrichmentPrompt.systemPrompt(categories: categories, maxTags: 4, maxSummaryCharacters: 80)
-        #expect(prompt.contains("技术、产品、阅读"))
-        #expect(prompt.contains("内容主题"))
-        #expect(prompt.contains("不超过 80 字"))
-        #expect(prompt.contains("1～4 个精炼标签"))
+        #expect(prompt.contains("Technology, Product, Reading"))
+        #expect(prompt.contains("content topic"))
+        #expect(prompt.contains("at most 80 characters"))
+        #expect(prompt.contains("1–4 refined labels"))
         #expect(prompt.contains("\"summary\""))
-        #expect(prompt.contains("绝不能把资源形态当作 category"))
+        #expect(prompt.contains("never use the resource kind as category"))
     }
 
-    @Test("未配置分类树时要求按主题归类并禁止格式名")
+    @Test("When the category tree is not configured, it is required to classify by subject and prohibit format names")
     func systemPromptWithoutCategories() {
         let prompt = AIEnrichmentPrompt.systemPrompt(categories: [], maxTags: 5, maxSummaryCharacters: 100)
-        #expect(prompt.contains("主题"))
-        #expect(prompt.contains("禁止用网页、图片"))
+        #expect(prompt.contains("topic/domain label"))
+        #expect(prompt.contains("do not use format names like Web, Image"))
+        #expect(prompt.contains("File, Link, or Text"))
     }
 
-    @Test("User Prompt 截断正文并带上来源")
+    @Test("User Prompt Truncate Body and Include Source")
     func userPromptTruncation() {
         let request = AIEnrichmentRequest(
-            title: "标题",
-            text: String(repeating: "甲", count: 500),
+            title: "Title",
+            text: String(repeating: "A", count: 500),
             contentType: .webLink,
             sourceURL: URL(string: "https://example.com/a"),
-            sourceTitle: "来源标题"
+            sourceTitle: "Source Title"
         )
         let prompt = AIEnrichmentPrompt.userPrompt(request, maxInputCharacters: 100)
-        #expect(prompt.contains("来源：https://example.com/a"))
-        let bodyOccurrences = prompt.components(separatedBy: "甲").count - 1
+        #expect(prompt.contains("Source: https://example.com/a"))
+        let bodyOccurrences = prompt.components(separatedBy: "A").count - 1
         #expect(bodyOccurrences == 100)
     }
 
-    // MARK: - 解析与归一化
+    // MARK: - Parse & normalize
 
-    @Test("解析标准 JSON 输出")
+    @Test("Parse standard JSON output")
     func parsesPlainJSON() throws {
-        let raw = #"{"title":"新标题","summary":"一句话摘要","category":"技术","tags":["swift","actor"]}"#
+        let raw = #"{"title":"New title","summary":"One-line summary","category":"Technology","tags":["swift","actor"]}"#
         let enrichment = try #require(AIEnrichmentParser.parse(raw, categories: categories))
-        #expect(enrichment.title == "新标题")
-        #expect(enrichment.summary == "一句话摘要")
-        #expect(enrichment.category == "技术")
+        #expect(enrichment.title == "New title")
+        #expect(enrichment.summary == "One-line summary")
+        #expect(enrichment.category == "Technology")
         #expect(enrichment.tags == ["swift", "actor"])
     }
 
-    @Test("解析带代码块围栏与前后解释的输出")
+    @Test("Analyze the output with code block fences and explanations before and after")
     func parsesFencedJSON() {
         let raw = """
-        好的，这是结果：
+        Sure, here is the result:
         ```json
-        {"summary": "摘要内容", "tags": ["a", "b"]}
+        {"summary": "Abstract content", "tags": ["a", "b"]}
         ```
-        希望有帮助。
+        Hope this helps.
         """
         let enrichment = AIEnrichmentParser.parse(raw, categories: categories)
-        #expect(enrichment?.summary == "摘要内容")
+        #expect(enrichment?.summary == "Abstract content")
         #expect(enrichment?.tags == ["a", "b"])
     }
 
-    @Test("分类必须落在预设主题树内，自由发挥的分类被丢弃")
+    @Test("Categories must fall within the preset topic tree; freely created categories will be discarded.")
     func categoryValidation() {
-        let raw = #"{"summary":"摘要","category":"玄学"}"#
+        let raw = #"{"summary":"Summary","category":"Astrology"}"#
         let enrichment = AIEnrichmentParser.parse(raw, categories: categories)
         #expect(enrichment?.category == nil)
-        // 多选输出取第一个命中项
-        let multi = #"{"summary":"摘要","category":"技术 / 编程"}"#
-        #expect(AIEnrichmentParser.parse(multi, categories: categories)?.category == "技术")
-        // 未配置分类树时保留主题名
-        #expect(AIEnrichmentParser.parse(raw, categories: [])?.category == "玄学")
+        // For multiple selections, take the first matched preset topic
+        let multi = #"{"summary":"Summary","category":"Technology / Programming"}"#
+        #expect(AIEnrichmentParser.parse(multi, categories: categories)?.category == "Technology")
+        // Retain subject name when category tree is not configured
+        #expect(AIEnrichmentParser.parse(raw, categories: [])?.category == "Astrology")
     }
 
-    @Test("自由分类时拒绝把资源形态当成主题")
+    @Test("Refuse to regard the resource Kind as a subject when classifying freely")
     func rejectsFormatAsCategory() {
-        let asImage = #"{"summary":"摘要","category":"图片"}"#
+        let asImage = #"{"summary":"Summary","category":"Image"}"#
         #expect(AIEnrichmentParser.parse(asImage, categories: [])?.category == nil)
-        let asPDF = #"{"summary":"摘要","category":"PDF"}"#
+        let asPDF = #"{"summary":"Summary","category":"PDF"}"#
         #expect(AIEnrichmentParser.parse(asPDF, categories: [])?.category == nil)
-        let asWeb = #"{"summary":"摘要","category":"网页"}"#
+        let asWeb = #"{"summary":"Summary","category":"Web"}"#
         #expect(AIEnrichmentParser.parse(asWeb, categories: [])?.category == nil)
-        let topic = #"{"summary":"摘要","category":"设计"}"#
-        #expect(AIEnrichmentParser.parse(topic, categories: [])?.category == "设计")
+        // Legacy Chinese format words remain rejected when still present in the denylist.
+        let asImageZH = #"{"summary":"Summary","category":"图片"}"#
+        #expect(AIEnrichmentParser.parse(asImageZH, categories: [])?.category == nil)
+        let asWebZH = #"{"summary":"Summary","category":"网页"}"#
+        #expect(AIEnrichmentParser.parse(asWebZH, categories: [])?.category == nil)
+        let topic = #"{"summary":"Summary","category":"Design"}"#
+        #expect(AIEnrichmentParser.parse(topic, categories: [])?.category == "Design")
     }
 
-    @Test("标签去重、去 # 号、限长限量，也接受逗号分隔字符串")
+    @Test("Remove duplicate tags, remove # symbols, limit length and quantity, also accepts comma-separated strings")
     func tagNormalization() {
-        // 注意：#swift 这类带引号的标签不能写进 #"..."# 原始字符串（"# 会提前终止它）。
-        let raw = "{\"summary\":\"摘要\",\"tags\":[\"#swift\",\"Swift\",\" swift \",\"actor\",\"\",\"a\",\"b\",\"c\"]}"
+        // Note: #swift tags with quotes cannot be written inside #"..."# raw strings (# will terminate it early).
+        let raw = "{\"summary\":\"Summary\",\"tags\":[\"#swift\",\"Swift\",\" swift \",\"actor\",\"\",\"a\",\"b\",\"c\"]}"
         let tags = AIEnrichmentParser.parse(raw, categories: categories, maxTags: 4)?.tags
         #expect(tags == ["swift", "actor", "a", "b"])
 
-        let asString = #"{"summary":"摘要","tags":"alpha, beta、gamma"}"#
+        let asString = #"{"summary":"Summary","tags":"alpha, beta,gamma"}"#
         #expect(AIEnrichmentParser.parse(asString, categories: categories)?.tags == ["alpha", "beta", "gamma"])
     }
 
-    @Test("摘要超长按上限截断并加省略号")
+    @Test("The abstract is truncated at the maximum length and an ellipsis is added")
     func summaryClamping() {
-        let long = String(repeating: "字", count: 300)
+        let long = String(repeating: "x", count: 300)
         let raw = #"{"summary":"\#(long)"}"#
         let summary = AIEnrichmentParser.parse(raw, categories: categories, maxSummaryCharacters: 50)?.summary
         #expect(summary?.count == 50)
         #expect(summary?.hasSuffix("…") == true)
     }
 
-    @Test("无有效字段或非法 JSON 返回 nil")
+    @Test("No valid fields or illegal JSON returns nil")
     func invalidOutputs() {
-        #expect(AIEnrichmentParser.parse("完全不是 JSON", categories: categories) == nil)
+        #expect(AIEnrichmentParser.parse("Completely not JSON", categories: categories) == nil)
         #expect(AIEnrichmentParser.parse("{}", categories: categories) == nil)
         #expect(AIEnrichmentParser.parse(#"{"summary":""}"#, categories: categories) == nil)
         #expect(AIEnrichmentParser.parse(#"{"summary":{"nested":1}}"#, categories: categories) == nil)
     }
 
-    @Test("JSON 里包含花括号字符串时不会误判结束位置")
+    @Test("When JSON contains curly brace strings, the end position will not be misjudged")
     func braceInsideString() {
-        let raw = #"{"summary":"函数写成 { key: value } 也不错","tags":["json"]}"#
+        let raw = #"{"summary":"Writing the function as { key: value } is fine too","tags":["json"]}"#
         let summary = AIEnrichmentParser.parse(raw, categories: categories)?.summary
         #expect(summary?.contains("{ key: value }") == true)
     }
 
-    // MARK: - 服务
+    // MARK: - Service
 
-    @Test("服务串起补全、解析与向量化")
+    @Test("Service connects completion, parsing, and embedding")
     func servicePipeline() async throws {
-        let completer = FakeCompleter(output: #"{"summary":"端侧 OCR 摘要","category":"技术","tags":["OCR"]}"#)
+        let completer = FakeCompleter(output: #"{"summary":"On-device OCR summary","category":"Technology","tags":["OCR"]}"#)
         let embedder = FakeEmbedder(vector: [0.1, 0.2, 0.3])
         let service = AIEnhancementService(completer: completer, embedder: embedder)
 
         let enrichment = try #require(await service.enrich(Self.request(categories: categories)))
-        #expect(enrichment.summary == "端侧 OCR 摘要")
+        #expect(enrichment.summary == "On-device OCR summary")
         #expect(enrichment.tags == ["OCR"])
         #expect(enrichment.embedding == [0.1, 0.2, 0.3])
         #expect(await completer.calls == 1)
-        #expect(await embedder.lastInput?.contains("端侧 OCR 摘要") == true)
+        #expect(await embedder.lastInput?.contains("On-device OCR summary") == true)
     }
 
-    @Test("未配置模型时服务直接跳过")
+    @Test("Service is directly skipped when the model is not configured")
     func serviceDisabledWithoutCompleter() async {
         let service = AIEnhancementService(completer: nil, embedder: FakeEmbedder(vector: [1]))
         #expect(await service.isEnabled == false)
         #expect(await service.enrich(Self.request(categories: [])) == nil)
         if case .failure(let reason) = await service.enrichDetailed(Self.request(categories: [])) {
-            #expect(reason.contains("未配置"))
+            #expect(reason.contains("No usable chat model configured"))
         } else {
-            Issue.record("应返回未配置模型的失败原因")
+            Issue.record("Expected failure reason when no model is configured")
         }
     }
 
-    @Test("热切换 completer 后可立即总结，无需重建服务")
+    @Test("After hot-swapping the completer, it can immediately summarize without rebuilding the service")
     func updateProvidersHotSwap() async throws {
         let service = AIEnhancementService(completer: nil, embedder: FakeEmbedder(vector: [1]))
         #expect(await service.isEnabled == false)
 
-        let completer = FakeCompleter(output: #"{"summary":"热切换摘要","category":"技术","tags":["hot"]}"#)
+        let completer = FakeCompleter(output: #"{"summary":"Hot-swap summary","category":"Technology","tags":["hot"]}"#)
         await service.updateProviders(
             completer: completer,
             embedder: FakeEmbedder(vector: [0.5]),
@@ -168,35 +174,35 @@ struct AIEnrichmentTests {
         )
         #expect(await service.isEnabled == true)
         let enrichment = try #require(await service.enrich(Self.request(categories: categories)))
-        #expect(enrichment.summary == "热切换摘要")
+        #expect(enrichment.summary == "Hot-swap summary")
         #expect(await completer.calls == 1)
     }
 
-    @Test("模型报错时返回 nil，并给出可读失败原因")
+    @Test("Return nil when the model reports an error, and provide a readable reason for the failure")
     func serviceSurvivesFailure() async {
         let completer = FakeCompleter(output: "", shouldFail: true)
         let service = AIEnhancementService(completer: completer, embedder: FakeEmbedder(vector: [1]))
         #expect(await service.enrich(Self.request(categories: categories)) == nil)
         if case .failure(let reason) = await service.enrichDetailed(Self.request(categories: categories)) {
-            #expect(reason.contains("模型请求失败"))
+            #expect(reason.contains("Model request failed"))
         } else {
-            Issue.record("应返回模型请求失败原因")
+            Issue.record("Expected failure reason when the model request fails")
         }
     }
 
-    @Test("向量化失败不影响摘要与标签")
+    @Test("Embedding failure does not affect summaries and tags")
     func embeddingFailureIsolated() async throws {
-        let completer = FakeCompleter(output: #"{"summary":"摘要","tags":["t"]}"#)
+        let completer = FakeCompleter(output: #"{"summary":"Summary","tags":["t"]}"#)
         let embedder = FakeEmbedder(vector: nil, shouldFail: true)
         let service = AIEnhancementService(completer: completer, embedder: embedder)
         let enrichment = try #require(await service.enrich(Self.request(categories: categories)))
-        #expect(enrichment.summary == "摘要")
+        #expect(enrichment.summary == "Summary")
         #expect(enrichment.embedding == nil)
     }
 
-    @Test("关闭增强开关后不再调用模型")
+    @Test("After closing the enhancement switch, the model is no longer called")
     func configurationSwitch() async {
-        let completer = FakeCompleter(output: #"{"summary":"摘要"}"#)
+        let completer = FakeCompleter(output: #"{"summary":"Summary"}"#)
         let service = AIEnhancementService(
             completer: completer,
             embedder: nil,
@@ -208,20 +214,20 @@ struct AIEnrichmentTests {
 
     static func request(categories: [String]) -> AIEnrichmentRequest {
         AIEnrichmentRequest(
-            title: "截图条目",
-            text: "Apple Neural Engine 神经网络加速 OCR 文本",
+            title: "Screenshot entry",
+            text: "Apple Neural Engine Neural Network Accelerated OCR Text",
             contentType: .image,
             sourceURL: URL(string: "https://example.com/a"),
-            sourceTitle: "示例页",
+            sourceTitle: "Sample Page",
             categories: categories
         )
     }
 
-    // MARK: - Provider 线格式
+    // MARK: - Provider line format
 
-    @Test("Ollama 客户端：受限解码请求体 + 响应解析")
+    @Test("Ollama Client: Restricted Decoding Request Body + Response Parsing")
     func ollamaWireFormat() async throws {
-        let response = #"{"message":{"role":"assistant","content":"{\"summary\":\"摘要\"}"}}"#
+        let response = #"{"message":{"role":"assistant","content":"{\"summary\":\"Summary\"}"}}"#
         let transport = StubTransport(responses: [
             HTTPPayload(statusCode: 200, headers: [:], body: Data(response.utf8)),
         ])
@@ -231,7 +237,7 @@ struct AIEnrichmentTests {
         )
 
         let content = try await client.completeJSON(systemPrompt: "sys", userPrompt: "usr")
-        #expect(content == #"{"summary":"摘要"}"#)
+        #expect(content == #"{"summary":"Summary"}"#)
 
         let request = try #require(transport.requests.first)
         #expect(request.url?.absoluteString == "http://127.0.0.1:11434/api/chat")
@@ -243,7 +249,7 @@ struct AIEnrichmentTests {
         #expect((json["messages"] as? [[String: Any]])?.count == 2)
     }
 
-    @Test("OpenAI 兼容客户端：携带鉴权头并解析 choices")
+    @Test("OpenAI compatible client: carry the authentication header and parse choices")
     func openAIWireFormat() async throws {
         let response = #"{"choices":[{"message":{"role":"assistant","content":"{\"summary\":\"S\"}"}}]}"#
         let transport = StubTransport(responses: [
@@ -269,7 +275,7 @@ struct AIEnrichmentTests {
         #expect((json["response_format"] as? [String: Any])?["type"] as? String == "json_object")
     }
 
-    @Test("OpenAI 向量接口解析 data[0].embedding")
+    @Test("OpenAI Embedding API Analysis data[0].embedding")
     func openAIEmbedding() async throws {
         let response = #"{"data":[{"embedding":[0.5,0.25,-0.125]}]}"#
         let transport = StubTransport(responses: [
@@ -279,11 +285,11 @@ struct AIEnrichmentTests {
             configuration: .init(apiKey: "sk", embeddingModel: "text-embedding-3-small"),
             transport: transport
         )
-        #expect(try await client.embed("文本") == [0.5, 0.25, -0.125])
+        #expect(try await client.embed("Text") == [0.5, 0.25, -0.125])
         #expect(transport.requests.first?.url?.absoluteString == "https://api.openai.com/v1/embeddings")
     }
 
-    @Test("接口返回非 2xx 时抛错，由上层 best-effort 兜住")
+    @Test("Throw an error when the interface returns a non-2xx status, and let the upper layer catch it on a best-effort basis")
     func providerHTTPError() async {
         let transport = StubTransport(responses: [
             HTTPPayload(statusCode: 429, headers: [:], body: Data()),
@@ -294,20 +300,20 @@ struct AIEnrichmentTests {
         }
     }
 
-    @Test("向量回退链：主通道失败时自动用兜底通道")
+    @Test("Embedding fallback chain: automatically use the backup channel when the main channel fails")
     func embeddingChain() async throws {
         let failing = FakeEmbeddingProvider(vector: nil, shouldFail: true)
         let fallback = FakeEmbeddingProvider(vector: [1, 2, 3])
         let chain = ChainedEmbeddingProvider(providers: [failing, fallback])
-        #expect(try await chain.embed("文本") == [1, 2, 3])
+        #expect(try await chain.embed("Text") == [1, 2, 3])
 
         let allFailing = ChainedEmbeddingProvider(providers: [failing])
-        #expect(try await allFailing.embed("文本") == nil)
-        #expect(try await ChainedEmbeddingProvider(providers: []).embed("文本") == nil)
+        #expect(try await allFailing.embed("Text") == nil)
+        #expect(try await ChainedEmbeddingProvider(providers: []).embed("Text") == nil)
     }
 }
 
-/// 简单向量替身，供回退链测试使用。
+/// Simple embedding substitute, for rollback chain testing use.
 struct FakeEmbeddingProvider: EmbeddingProviding {
     struct Failure: Error {}
     var vector: [Float]?
@@ -319,7 +325,7 @@ struct FakeEmbeddingProvider: EmbeddingProviding {
     }
 }
 
-/// LLM 补全替身。
+/// LLM completes the stand-in.
 final class FakeCompleter: LLMCompleting, @unchecked Sendable {
     private let lock = NSLock()
     private var recorded = 0
@@ -339,11 +345,11 @@ final class FakeCompleter: LLMCompleting, @unchecked Sendable {
 
     func completeJSON(systemPrompt: String, userPrompt: String) async throws -> String {
         bumpCount()
-        if shouldFail { throw NovPoolError.notImplemented("模型不可用") }
+        if shouldFail { throw NovPoolError.notImplemented("Model not available") }
         return output
     }
 
-    /// 同步加锁助手：`NSLock.lock()` 在 async 上下文中被标记为不可用。
+    /// Synchronous locking helper: `NSLock.lock()` is marked as unavailable in async contexts.
     private func bumpCount() {
         lock.lock()
         recorded += 1
@@ -351,7 +357,7 @@ final class FakeCompleter: LLMCompleting, @unchecked Sendable {
     }
 }
 
-/// 向量化替身。
+/// Embedding-based substitute.
 actor FakeEmbedder: EmbeddingProviding {
     private(set) var lastInput: String?
     private let vector: [Float]?
@@ -364,7 +370,7 @@ actor FakeEmbedder: EmbeddingProviding {
 
     func embed(_ text: String) async throws -> [Float]? {
         lastInput = text
-        if shouldFail { throw NovPoolError.notImplemented("向量服务不可用") }
+        if shouldFail { throw NovPoolError.notImplemented("EmbeddingService Unavailable") }
         return vector
     }
 }

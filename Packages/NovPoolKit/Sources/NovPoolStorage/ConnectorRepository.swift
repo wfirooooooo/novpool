@@ -1,6 +1,6 @@
 import Foundation
 
-/// `connectors` 表读写。敏感凭据不落库，仅保存 `keychainAccountRef` 与安全作用域书签。
+/// `connectors` represent read and write operations. Sensitive credentials are not stored in the database, only the `keychainAccountRef` and security scope bookmarks are saved.
 public struct ConnectorRepository: Sendable {
     private let database: NovPoolDatabase
 

@@ -1,6 +1,6 @@
 import Foundation
 
-/// 设置面板展示的云连接器授权健康状态。
+/// Displays the authorization health status of cloud connectors on the settings panel.
 public enum ConnectorAuthStatus: Sendable, Equatable {
     case missingCredentials
     case ok
@@ -9,10 +9,10 @@ public enum ConnectorAuthStatus: Sendable, Equatable {
 
     public var title: String {
         switch self {
-        case .missingCredentials: "未授权"
-        case .ok: "凭据有效"
-        case .needsReauth: "需重新授权"
-        case .unchecked: "未检查"
+        case .missingCredentials: "Unauthorized"
+        case .ok: "Credentials valid"
+        case .needsReauth: "Re-authorization required"
+        case .unchecked: "Not checked"
         }
     }
 

@@ -2,10 +2,10 @@ import AppKit
 import Foundation
 import NovPoolCore
 
-/// `NSPasteboard` 真实实现。
+/// The actual implementation of `NSPasteboard`.
 ///
-/// `NSPasteboard` 不是 `Sendable`，这里显式声明为 `@unchecked Sendable`，
-/// 并约定只在主线程（拖拽回调所在的 `@MainActor` 上下文）构造与使用。
+/// `NSPasteboard` is not `Sendable`, so it is explicitly declared here as `@unchecked Sendable`,
+/// And it is agreed to only construct and use on the main thread (the `@MainActor` context where the drag callback is located).
 public final class NSPasteboardReader: PasteboardReading, @unchecked Sendable {
     private let pasteboard: NSPasteboard
 
@@ -40,13 +40,13 @@ public final class NSPasteboardReader: PasteboardReading, @unchecked Sendable {
     }
 }
 
-/// 类型标识符到文件扩展名的映射（P1 图片落盘时使用）。
+/// Mapping of type identifiers to file extensions (used when saving P1 images).
 enum ImageTypeMapping {
     static let preferences: [(typeIdentifier: String, fileExtension: String)] = [
         (PasteboardTypeID.png, "png"),
         (PasteboardTypeID.jpeg, "jpg"),
         (PasteboardTypeID.tiff, "tiff"),
-        // 直接拖拽网页视频元素时，个别浏览器会把媒体字节放进粘贴板
+        // When directly dragging the WebVideo element, some browsers will put the media bytes into the clipboard
         (PasteboardTypeID.mpeg4Movie, "mp4"),
         (PasteboardTypeID.movie, "mov"),
         (PasteboardTypeID.quickTimeMovie, "mov"),

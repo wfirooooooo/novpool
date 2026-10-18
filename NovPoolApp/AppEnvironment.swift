@@ -6,7 +6,7 @@ import NovPoolStorage
 import NovPoolSystemBridge
 import NovPoolUI
 
-/// 应用装配根：数据库、Staging、溯源、路由与悬浮窗都在这里接线。
+/// App assembly root: database, staging, provenance, routing, and drop zone are wired here.
 @MainActor
 final class AppEnvironment {
     let database: NovPoolDatabase
@@ -23,7 +23,7 @@ final class AppEnvironment {
     let enrichmentPipeline: EnrichmentPipeline
     let searchService: KnowledgeSearchService
 
-    private(set) var statusSummary: String = "就绪"
+    private(set) var statusSummary: String = "Ready"
 
     private init(
         database: NovPoolDatabase,
@@ -57,21 +57,21 @@ final class AppEnvironment {
 
     static func bootstrap() async throws -> AppEnvironment {
         let settings = NovPoolSettings.load()
-        // 首次启动必须先把数据目录建出来：SQLite 不会替数据库文件创建父目录。
+        // First launch must create the data directory: SQLite will not create parent dirs for the DB file.
         let dataDirectory = try NovPoolPaths.prepareApplicationSupport()
-        NovPoolLog.write("数据目录：\(dataDirectory.path(percentEncoded: false))")
+        NovPoolLog.write("Data directory: \(dataDirectory.path(percentEncoded: false))")
 
         let database = try NovPoolDatabase(
             path: NovPoolPaths.databaseURL().path(percentEncoded: false)
         )
         try await SchemaMigrator.migrate(database)
-        NovPoolLog.write("数据库就绪：\(try NovPoolPaths.databaseURL().path(percentEncoded: false))")
+        NovPoolLog.write("Database ready: \(try NovPoolPaths.databaseURL().path(percentEncoded: false))")
 
         let staging = try StagingStore(root: NovPoolPaths.stagingRoot())
-        NovPoolLog.write("暂存目录就绪：\(staging.root.path(percentEncoded: false))")
+        NovPoolLog.write("Staging ready: \(staging.root.path(percentEncoded: false))")
         let connectorRepository = ConnectorRepository(database: database)
 
-        // Phase 3：连接器中枢 + 事务性发件箱工作器（多云推送与跨云级联）。
+        // Phase 3: connector hub + transactional outbox worker (multi-cloud push and cascade).
         let connectorHub = ConnectorHub(repository: connectorRepository)
         let outboxWorker = OutboxSyncWorker(
             database: database,
@@ -80,11 +80,11 @@ final class AppEnvironment {
             configuration: .init(isEnabled: settings.isSyncEnabled)
         )
         await outboxWorker.addObserver { event in
-            let detail = event.message.map { "（\($0)）" } ?? ""
-            NovPoolLog.write("同步 \(event.outcome.rawValue)：\(event.connectorID)\(detail)")
+            let detail = event.message.map { " (\($0))" } ?? ""
+            NovPoolLog.write("Sync \(event.outcome.rawValue): \(event.connectorID)\(detail)")
         }
 
-        // Phase 2 补齐流水线：端侧 OCR + 网页正文提取 + AI 结构化增强与向量化。
+        // Phase 2 enrichment: on-device OCR + web extract + AI structure / embeddings.
         let aiService = AIEnhancementService(
             completer: settings.makeCompleter(),
             embedder: settings.makeEmbedder(),
@@ -105,15 +105,15 @@ final class AppEnvironment {
             enricher: enrichmentPipeline
         )
 
-        // 用一个小容器解决「回调要引用自身」的问题：handler 在 viewModel 之前构造，
-        // 通过容器在稍后拿到它，从而把后台补齐结果回写到悬浮窗。
+        // Small box so the capture handler (built before the view model) can later
+        // push background enrichment status back into the drop zone.
         let feedback = CaptureFeedbackBox()
-        NovPoolLog.write("开始构造悬浮窗视图…")
-        // 槽位来自设置面板（最多四个），用户没配置过时用内置默认值。
+        NovPoolLog.write("Building drop-zone view…")
+        // Sectors come from Settings (up to four); fall back to built-in defaults.
         let viewModel = CaptureViewModel(zones: settings.zones) { content, zone in
             let result = try await orchestrator.ingest(content, forcedZone: zone)
             let itemTitle = result.record.title
-            // 重复资源：不二次入队、不后台补齐，只提示「已存在」。
+            // Duplicates: no second enqueue, no enrichment — just “already exists”.
             guard !result.isDuplicate else {
                 return CaptureOutcome(
                     title: itemTitle,
@@ -121,20 +121,20 @@ final class AppEnvironment {
                     routeTargets: result.routeDecision.connectorIDs
                 )
             }
-            // 按路由决策写入发件箱；真正的推送与跨云级联由工作器在后台完成。
+            // Enqueue from the route decision; real push / cascade runs in the worker.
             if !result.routeDecision.connectorIDs.isEmpty {
                 _ = try? await outboxWorker.enqueue(
                     itemID: result.record.id,
                     connectorIDs: result.routeDecision.connectorIDs
                 )
             }
-            // 补齐在后台跑：先让悬浮窗立刻给出「已收录」反馈，OCR / 正文 / AI 完成后
-            // 再回写第二条状态提示，拖拽主流程全程不被阻塞。
+            // Enrichment runs in the background: show “saved” immediately, then a second
+            // status line when OCR / body / AI finish, without blocking the drop path.
             let itemID = result.record.id
             Task { [orchestrator, feedback] in
                 guard let enrichment = await orchestrator.enrichAfterIngest(itemID: itemID) else { return }
                 await MainActor.run {
-                    feedback.viewModel?.showTransientStatus("已补齐 \(enrichment.summaryLine)：\(itemTitle)")
+                    feedback.viewModel?.showTransientStatus("Enriched \(enrichment.summaryLine): \(itemTitle)")
                 }
             }
             return CaptureOutcome(
@@ -144,28 +144,28 @@ final class AppEnvironment {
             )
         }
         feedback.viewModel = viewModel
-        NovPoolLog.write("悬浮窗视图模型构造完成")
+        NovPoolLog.write("Drop-zone view model ready")
         let panelController = PanelController(viewModel: viewModel)
-        // 全局拖拽兜底：部分浏览器不把拖拽事件递给我们的窗口，靠全局鼠标事件兜住。
+        // Global drag fallback: some browsers never deliver drag events to our window.
         let globalDragMonitor = GlobalDragMonitor()
         globalDragMonitor.target = panelController
         globalDragMonitor.logger = { NovPoolDiagnostics.log($0) }
-        NovPoolLog.write("悬浮窗控制器构造完成")
+        NovPoolLog.write("Drop-zone controller ready")
 
-        // 检索面板：FTS5 全文 + vDSP 向量相似度，RRF 融合。向量通道复用同一套 embedding 配置。
+        // Search panel: FTS5 + vDSP similarity, RRF fusion. Embeddings reuse the same config.
         let repository = KnowledgeRepository(database: database)
         let searchService = KnowledgeSearchService(
             repository: repository,
             staging: staging,
             embedder: settings.makeEmbedder()
         )
-        NovPoolLog.write("检索服务构造完成")
+        NovPoolLog.write("Search service ready")
         let searchPanelController = SearchPanelController(
             search: { query in
                 try await searchService.search(query, limit: 40)
             },
             loadCategories: {
-                // 设置里的主题树 + 库里已出现过的主题，合并去重（树优先）。
+                // Settings topic tree + categories already used in the library (tree first).
                 let tree = NovPoolSettings.load().categories
                 let used = (try? await searchService.distinctCategories()) ?? []
                 var ordered: [String] = []
@@ -187,10 +187,12 @@ final class AppEnvironment {
                 }
             )
         )
-        NovPoolLog.write("检索面板构造完成（快捷键注册=\(searchPanelController.isHotKeyRegistered)）")
+        NovPoolLog.write(
+            "Search panel ready (hotkey registered=\(searchPanelController.isHotKeyRegistered))"
+        )
 
         let itemCount = try await repository.count()
-        NovPoolLog.write("启动收尾：已收录 \(itemCount) 条")
+        NovPoolLog.write("Startup complete: \(itemCount) items")
         let settingsStore = AppSettingsStore(
             connectorRepository: connectorRepository,
             database: database
@@ -214,18 +216,18 @@ final class AppEnvironment {
             searchService: searchService
         )
         settingsStore.applyRuntimeHandler = { [weak environment] in
-            guard let environment else { return "环境未就绪" }
+            guard let environment else { return "Environment not ready" }
             return await environment.applyRuntimeSettings()
         }
         let hotKeyLabel = settings.searchHotKey.displayName
         environment.statusSummary = searchPanelController.isHotKeyRegistered
-            ? "已收录 \(itemCount) 条 · 拖到悬浮图标入库 · \(hotKeyLabel) 搜索"
-            : "已收录 \(itemCount) 条 · 快捷键被占用，请从菜单打开搜索"
+            ? "\(itemCount) items · drop on icon to save · \(hotKeyLabel) to search"
+            : "\(itemCount) items · hotkey in use; open search from the menu"
         environment.wireGlobalDragCapture(viewModel: viewModel)
         return environment
     }
 
-    /// 设置保存后热生效：快捷键、扇区、路由、同步开关、AI 模型。
+    /// Hot-apply after Settings save: hotkey, sectors, routes, sync toggle, AI models.
     @discardableResult
     func applyRuntimeSettings() async -> String {
         let settings = NovPoolSettings.load()
@@ -248,12 +250,12 @@ final class AppEnvironment {
         let itemCount = (try? await KnowledgeRepository(database: database).count()) ?? 0
         let hotKeyLabel = settings.searchHotKey.displayName
         statusSummary = hotKeyOK
-            ? "已收录 \(itemCount) 条 · 拖到悬浮图标入库 · \(hotKeyLabel) 搜索"
-            : "已收录 \(itemCount) 条 · 快捷键被占用，请从菜单打开搜索"
+            ? "\(itemCount) items · drop on icon to save · \(hotKeyLabel) to search"
+            : "\(itemCount) items · hotkey in use; open search from the menu"
         if hotKeyOK {
-            return "已保存并立即生效"
+            return "Saved and applied"
         }
-        return "已保存；快捷键未被系统接受，请换一组或从菜单打开搜索"
+        return "Saved; hotkey was not accepted — pick another or open search from the menu"
     }
 
     func start() {
@@ -263,12 +265,12 @@ final class AppEnvironment {
         Task { await backfillMissingFileContent() }
         let frame = panelController.panel.frame
         NovPoolLog.write(
-            "悬浮窗已显示：visible=\(panelController.panel.isVisible) "
+            "Drop zone shown: visible=\(panelController.panel.isVisible) "
                 + "frame=(\(Int(frame.minX)),\(Int(frame.minY)),\(Int(frame.width))x\(Int(frame.height))) "
-                + "屏幕数=\(NSScreen.screens.count)"
+                + "screens=\(NSScreen.screens.count)"
         )
         for (index, screen) in NSScreen.screens.enumerated() {
-            NovPoolLog.write("屏幕 \(index) visibleFrame=\(screen.visibleFrame)")
+            NovPoolLog.write("Screen \(index) visibleFrame=\(screen.visibleFrame)")
         }
     }
 
@@ -284,24 +286,24 @@ final class AppEnvironment {
                 filled += 1
             }
         }
-        NovPoolLog.write("本机文件正文回填：完成 \(filled)/\(records.count) 条")
+        NovPoolLog.write("Local file body backfill: \(filled)/\(records.count) items")
     }
 
     func toggleSearchPanel() {
         searchPanelController.toggle()
     }
 
-    /// 设置面板里的「立即同步一轮」。
+    /// Settings “Sync now” action.
     func runSyncNow() async -> String {
         let result = await outboxWorker.runOnce()
-        return "本轮处理 \(result.processed) 条：成功 \(result.succeeded)、失败 \(result.failed)、"
-            + "等待前置 \(result.waiting)、解锁下游 \(result.released)"
+        return "Processed \(result.processed): succeeded \(result.succeeded), failed \(result.failed), "
+            + "waiting \(result.waiting), unlocked downstream \(result.released)"
     }
 
-    // MARK: - 全局拖拽兜底
+    // MARK: - Global drag fallback
 
-    /// 松手落在悬浮图标上时的兜底通路。
-    /// 优先读拖拽粘贴板；原生 `NSDraggingDestination` 已处理时由协调器抑制，避免双触发。
+    /// Fallback path when the user releases over the floating icon.
+    /// Prefer the drag pasteboard; suppress when native `NSDraggingDestination` already handled the drop.
     func wireGlobalDragCapture(viewModel: CaptureViewModel) {
         let coordinator = panelController.dragCoordinator
         globalDragMonitor.shouldAcceptDrop = {
@@ -316,8 +318,8 @@ final class AppEnvironment {
     }
 
     private func captureFromFallback(into viewModel: CaptureViewModel) async {
-        // 兜底路径是用户手动触发，放宽溯源超时：首次调用会弹「自动化」授权框，
-        // 150ms 根本来不及授权，所以这里给 2 秒。
+        // User-triggered fallback: allow a longer provenance timeout. The first call may
+        // show the Automation prompt; 150ms is not enough, so use 2 seconds here.
         let extractor = BrowserContextExtractor()
         let context = await extractor.captureContext(now: Date(), timeout: .seconds(2))
         let pageURL = context.pageURL
@@ -338,15 +340,15 @@ final class AppEnvironment {
 
         guard let decision else {
             NovPoolDiagnostics.log(
-                "全局兜底：没有可抓取的内容（前台=\(context.appBundleID)；"
-                    + "若这是浏览器，请在「系统设置 → 隐私与安全性 → 自动化」里允许 NovPool 控制它）"
+                "Global fallback: nothing to capture (frontmost=\(context.appBundleID); "
+                    + "if this is a browser, allow NovPool under System Settings → Privacy & Security → Automation)"
             )
-            viewModel.showTransientStatus("没有识别到可保存的内容", isError: true)
+            viewModel.showTransientStatus("Nothing recognizable to save", isError: true)
             return
         }
 
         NovPoolDiagnostics.log(
-            "全局兜底：来源=\(decision.source) type=\(decision.content.contentType.rawValue)"
+            "Global fallback: source=\(decision.source) type=\(decision.content.contentType.rawValue)"
         )
         viewModel.handleDrop(decision.content, zoneIndex: nil)
     }
@@ -359,7 +361,7 @@ final class AppEnvironment {
         panelController.hide()
     }
 
-    /// 把悬浮图标送回默认右下角（并清除记住的位置）。
+    /// Move the floating icon back to the default bottom-right (and clear the remembered position).
     func resetPanelPosition() {
         panelController.resetPosition()
     }
@@ -368,15 +370,15 @@ final class AppEnvironment {
         NSWorkspace.shared.activateFileViewerSelecting([dataDirectory])
     }
 
-    /// Phase 3 会把路由目标换成真实连接器配置；当前先指向 Staging 归档目录。
+    /// Phase 3 will point this at real connector roots; for now reveal the staging archive.
     func revealArchiveDirectory() {
         NSWorkspace.shared.activateFileViewerSelecting([staging.root])
     }
 }
 
-/// 仅在主线程上传递悬浮窗状态模型的容器。
+/// Main-actor box that hands the drop-zone view model to late callbacks.
 @MainActor
 final class CaptureFeedbackBox {
-    /// 弱引用：避免 box → viewModel → handler → box 的强引用环。
+    /// Weak to avoid box → viewModel → handler → box retain cycles.
     weak var viewModel: CaptureViewModel?
 }

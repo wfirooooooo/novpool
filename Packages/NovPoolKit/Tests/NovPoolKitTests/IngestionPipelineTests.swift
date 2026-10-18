@@ -4,7 +4,7 @@ import NovPoolStorage
 import Testing
 @testable import NovPoolSystemBridge
 
-@Suite("捕获 → 暂存 → 溯源 → 落库 主流水线")
+@Suite("Capture → Staging → Traceability → Storage Main Pipeline")
 struct IngestionPipelineTests {
     private struct Harness {
         let database: NovPoolDatabase
@@ -27,7 +27,7 @@ struct IngestionPipelineTests {
         return Harness(database: database, repository: repository, staging: staging, orchestrator: orchestrator)
     }
 
-    @Test("多文件拖拽：每条路径各自入库")
+    @Test("Multiple file drag-and-drop: each path is stored separately")
     func ingestMultipleFilesSeparately() async throws {
         let harness = try await makeHarness(context: SourceContext(appBundleID: "com.apple.finder"))
         let directory = try TestSupport.makeTemporaryDirectory("multifile")
@@ -50,39 +50,39 @@ struct IngestionPipelineTests {
         #expect(try await harness.repository.count() == 2)
     }
 
-    @Test("拖拽选中文字：写入标题、正文与浏览器溯源")
+    @Test("Drag Selected text: write Title, Body and browser tracing")
     func ingestPlainText() async throws {
         let context = SourceContext(
             appBundleID: "com.google.Chrome",
             pageURL: URL(string: "https://example.com/arch"),
-            pageTitle: "架构设计"
+            pageTitle: "Architectural Design"
         )
         let harness = try await makeHarness(context: context)
         let content = ResolvedDragContent(
             contentType: .plainText,
-            text: "第一行标题\n第二行内容",
+            text: "First Line Title\nSecond line content",
             matchedTypeIdentifiers: [PasteboardTypeID.plainText]
         )
 
         let result = try await harness.orchestrator.ingest(content)
         #expect(result.isDuplicate == false)
-        #expect(result.record.title == "第一行标题")
-        #expect(result.record.markdownBody == "第一行标题\n第二行内容")
+        #expect(result.record.title == "First Line Title")
+        #expect(result.record.markdownBody == "First Line Title\nSecond line content")
         #expect(result.record.sourceApp == "com.google.Chrome")
         #expect(result.record.sourceURL == "https://example.com/arch")
-        #expect(result.record.sourceTitle == "架构设计")
+        #expect(result.record.sourceTitle == "Architectural Design")
         #expect(result.stagedAsset == nil)
 
         let stored = try await harness.repository.fetch(id: result.record.id)
-        #expect(stored?.title == "第一行标题")
+        #expect(stored?.title == "First Line Title")
     }
 
-    @Test("拖拽网页图片：内存字节流落盘并记录哈希")
+    @Test("Drag WebImage: Memory byte stream dumped to disk and hash recorded")
     func ingestImage() async throws {
         let harness = try await makeHarness(context: SourceContext(
             appBundleID: "com.brave.Browser",
             pageURL: URL(string: "https://example.com/pic"),
-            pageTitle: "示意图"
+            pageTitle: "Illustration"
         ))
         let bytes = Data(repeating: 0x42, count: 128)
         let content = ResolvedDragContent(
@@ -98,31 +98,31 @@ struct IngestionPipelineTests {
         #expect(asset.relativePath.hasSuffix(".jpg"))
         #expect(result.record.fileHashSHA256 == StagingStore.sha256Hex(of: bytes))
         #expect(result.record.localRelativePath == asset.relativePath)
-        #expect(result.record.title == "示意图")
+        #expect(result.record.title == "Illustration")
         #expect(FileManager.default.fileExists(atPath: asset.absoluteURL.path(percentEncoded: false)))
     }
 
-    @Test("拖拽 PDF：按其扩展名暂存并生成标题")
+    @Test("Drag and drop PDF: temporarily store according to its extension and generate a title")
     func ingestPDF() async throws {
         let harness = try await makeHarness(context: SourceContext(appBundleID: "com.apple.finder"))
         let sourceDirectory = try TestSupport.makeTemporaryDirectory("pdf")
-        let pdf = sourceDirectory.appending(path: "2026 季度报告.pdf")
+        let pdf = sourceDirectory.appending(path: "2026 Quarterly report.pdf")
         try Data(repeating: 0x25, count: 512).write(to: pdf)
 
         let result = try await harness.orchestrator.ingest(
             ResolvedDragContent(contentType: .documentPDF, fileURLs: [pdf])
         )
-        #expect(result.record.title == "2026 季度报告")
-        #expect(result.record.localRelativePath?.hasSuffix("2026 季度报告.pdf") == true)
+        #expect(result.record.title == "2026 Quarterly report")
+        #expect(result.record.localRelativePath?.hasSuffix("2026 Quarterly report.pdf") == true)
         #expect(result.record.fileHashSHA256?.count == 64)
     }
 
-    @Test("相同内容重复拖拽命中哈希去重，不产生第二条记录")
+    @Test("Duplicate dragging of the same content hits the hash for deduplication and does not generate a second record")
     func deduplication() async throws {
         let harness = try await makeHarness(context: SourceContext(appBundleID: "com.apple.finder"))
         let sourceDirectory = try TestSupport.makeTemporaryDirectory("dedupe")
         let source = sourceDirectory.appending(path: "note.txt")
-        try Data("同样的内容".utf8).write(to: source)
+        try Data("The same content".utf8).write(to: source)
         let content = ResolvedDragContent(contentType: .genericFile, fileURLs: [source])
 
         let first = try await harness.orchestrator.ingest(content)
@@ -134,20 +134,20 @@ struct IngestionPipelineTests {
         #expect(try await harness.repository.count() == 1)
     }
 
-    @Test("相同网页链接重复拖拽去重")
+    @Test("Remove duplicates when dragging the same WebLink repeatedly")
     func dedupeWebLink() async throws {
         let harness = try await makeHarness(context: SourceContext(appBundleID: "com.apple.Safari"))
         let content = ResolvedDragContent(
             contentType: .webLink,
             pageURL: URL(string: "https://Example.com/path/#frag"),
-            linkTitle: "示例"
+            linkTitle: "Example"
         )
         let first = try await harness.orchestrator.ingest(content)
         let second = try await harness.orchestrator.ingest(
             ResolvedDragContent(
                 contentType: .webLink,
                 pageURL: URL(string: "https://example.com/path"),
-                linkTitle: "示例又来了"
+                linkTitle: "Here comes the example again"
             )
         )
         #expect(first.isDuplicate == false)
@@ -157,20 +157,20 @@ struct IngestionPipelineTests {
         #expect(first.record.fileHashSHA256?.count == 64)
     }
 
-    @Test("相同纯文本重复拖拽去重")
+    @Test("Remove duplicates by repeatedly dragging the same plain text")
     func dedupePlainText() async throws {
         let harness = try await makeHarness(context: SourceContext(appBundleID: "com.google.Chrome"))
-        let content = ResolvedDragContent(contentType: .plainText, text: "  同一段选中文字  \n")
+        let content = ResolvedDragContent(contentType: .plainText, text: "  The same paragraph of Selected text\n")
         let first = try await harness.orchestrator.ingest(content)
         let second = try await harness.orchestrator.ingest(
-            ResolvedDragContent(contentType: .plainText, text: "同一段选中文字")
+            ResolvedDragContent(contentType: .plainText, text: "The same paragraph of Selected text")
         )
         #expect(first.isDuplicate == false)
         #expect(second.isDuplicate == true)
         #expect(try await harness.repository.count() == 1)
     }
 
-    @Test("不同链接或不同正文不会被误判为重复")
+    @Test("Different links or different bodies will not be mistakenly judged as duplicates")
     func differentContentNotDeduped() async throws {
         let harness = try await makeHarness(context: SourceContext(appBundleID: "com.apple.Safari"))
         _ = try await harness.orchestrator.ingest(
@@ -180,22 +180,22 @@ struct IngestionPipelineTests {
             ResolvedDragContent(contentType: .webLink, pageURL: URL(string: "https://example.com/b"))
         )
         _ = try await harness.orchestrator.ingest(
-            ResolvedDragContent(contentType: .plainText, text: "正文甲")
+            ResolvedDragContent(contentType: .plainText, text: "BodyA")
         )
         _ = try await harness.orchestrator.ingest(
-            ResolvedDragContent(contentType: .plainText, text: "正文乙")
+            ResolvedDragContent(contentType: .plainText, text: "BodyB")
         )
         #expect(try await harness.repository.count() == 4)
     }
 
-    @Test("无指纹的历史链接仍可按 sourceURL 去重")
+    @Test("History Links without fingerprints can still be deduplicated according to sourceURL")
     func dedupeLegacyWebLinkBySourceURL() async throws {
         let harness = try await makeHarness(context: SourceContext(appBundleID: "com.apple.Safari"))
         let url = URL(string: "https://example.com/legacy")!
         var legacy = KnowledgeItemRecord(
             payload: NormalizedPayload(
                 contentType: .webLink,
-                title: "旧条目",
+                title: "Old entry",
                 sourceContext: SourceContext(appBundleID: "com.apple.Safari", pageURL: url)
             ),
             localRelativePath: nil
@@ -204,79 +204,79 @@ struct IngestionPipelineTests {
         try await harness.repository.insert(legacy)
 
         let second = try await harness.orchestrator.ingest(
-            ResolvedDragContent(contentType: .webLink, pageURL: url, linkTitle: "再拖一次")
+            ResolvedDragContent(contentType: .webLink, pageURL: url, linkTitle: "Drag again")
         )
         #expect(second.isDuplicate == true)
         #expect(second.record.id == legacy.id)
         #expect(try await harness.repository.count() == 1)
     }
 
-    @Test("扇区指定目标时按强制路由返回连接器")
+    @Test("When the sector specifies the target, return the connector according to the forced route")
     func sectorRouting() async throws {
         let harness = try await makeHarness(context: SourceContext(appBundleID: "com.google.Chrome"))
         let zone = DropZone(id: "notion", title: "Notion", systemImage: "doc.richtext", connectorID: "notion")
         let result = try await harness.orchestrator.ingest(
-            ResolvedDragContent(contentType: .plainText, text: "笔记内容"),
+            ResolvedDragContent(contentType: .plainText, text: "Notes content"),
             forcedZone: zone
         )
         #expect(result.routeDecision.connectorIDs == ["notion"])
         #expect(result.routeDecision.reason == .sectorForced(zoneID: "notion"))
     }
 
-    @Test("网页链接条目只记录 URL，正文留给 Phase 2 的正文提取器")
+    @Test("WebLink entries only record the URL, the Body is left for the Phase 2 Body extractor")
     func webLinkKeepsURLOnly() async throws {
         let harness = try await makeHarness(context: SourceContext(
             appBundleID: "com.google.Chrome",
             pageURL: URL(string: "https://example.com/article"),
-            pageTitle: "深度技术文章"
+            pageTitle: "In-depth technical article"
         ))
         let result = try await harness.orchestrator.ingest(
             ResolvedDragContent(
                 contentType: .webLink,
                 pageURL: URL(string: "https://example.com/article"),
-                text: "深度技术文章"
+                text: "In-depth technical article"
             )
         )
         #expect(result.record.contentType == .webLink)
-        #expect(result.record.title == "深度技术文章")
+        #expect(result.record.title == "In-depth technical article")
         #expect(result.record.markdownBody == nil)
         #expect(result.record.sourceURL == "https://example.com/article")
     }
 
-    @Test("拖拽浏览器标签：来源用被拖标签的 URL，标题用标签标题")
+    @Test("Drag Browser tab: Use the URL of the dragged tab as the source, and the tab title as the title")
     func browserTabDrag() async throws {
-        // 溯源到的是浏览器「当前激活标签」，与被拖拽的标签不是同一个页面
+        // The origin traces back to the browser's 'currently active tab', which is not the same page as the dragged tab.
         let harness = try await makeHarness(context: SourceContext(
             appBundleID: "org.mozilla.firefox",
             pageURL: URL(string: "https://other.example.com/active"),
-            pageTitle: "另一个激活标签"
+            pageTitle: "Another active tab"
         ))
         let content = ResolvedDragContent(
             contentType: .webLink,
             pageURL: URL(string: "https://example.com/dragged-tab"),
-            linkTitle: "被拖拽的标签标题"
+            linkTitle: "Dragged tab title"
         )
 
         let result = try await harness.orchestrator.ingest(content)
-        #expect(result.record.title == "被拖拽的标签标题")
+        #expect(result.record.title == "Dragged tab title")
         #expect(result.record.sourceURL == "https://example.com/dragged-tab")
-        // 溯源信息仍然保留，便于知道「从哪拖来的」
+        // The source information is still retained, making it easy to know 'where it was dragged from'.
         #expect(result.record.sourceApp == "org.mozilla.firefox")
-        #expect(result.record.sourceTitle == "另一个激活标签")
+        #expect(result.record.sourceTitle == "Another active tab")
     }
 
-    @Test("标题拟定：截断超长标题并为无标题内容兜底")
+    @Test("Title drafting: truncate excessively long titles and provide a fallback for content without a title")
     func titleBuilder() {
         let context = SourceContext(appBundleID: "com.apple.finder")
         let long = ResolvedDragContent(
             contentType: .plainText,
-            text: String(repeating: "很长的标题", count: 40)
+            text: String(repeating: "A very long title", count: 40)
         )
         let title = TitleBuilder.suggest(for: long, sourceContext: context)
         #expect(title.count == TitleBuilder.maxTitleLength + 1)
         #expect(title.hasSuffix("…"))
 
         let empty = ResolvedDragContent(contentType: .plainText, text: "   \n  ")
-        #expect(TitleBuilder.suggest(for: empty, sourceContext: context).hasPrefix("未命名条目"))
+        #expect(TitleBuilder.suggest(for: empty, sourceContext: context).hasPrefix("Untitled item"))
     }
 }

@@ -3,10 +3,10 @@ import Foundation
 import NovPoolCore
 import PDFKit
 
-/// PDF 内容提取：优先使用文件自带的文字层（毫秒级、零算力），
-/// 仅当文字层缺失（扫描件）时才回退到逐页栅格化 + Vision OCR。
+/// PDF content extraction: prioritize using the text layer built into the file (millisecond-level, zero computing power).
+/// Only fallback to page-by-page rasterization + Vision OCR when the text layer is missing (scanned documents).
 public enum PDFContentExtractor {
-    /// 文字层字符数低于该阈值即认为「无有效文字层」（扫描件 / 纯图片 PDF）。
+    /// If the number of characters in the text layer is below this threshold, it is considered 'no valid text layer' (scanned copy / pure Image PDF).
     public static let minimumTextLayerCharacters = 40
 
     public struct TextLayer: Sendable, Equatable {
@@ -17,7 +17,7 @@ public enum PDFContentExtractor {
         public var isUsable: Bool { characterCount >= PDFContentExtractor.minimumTextLayerCharacters }
     }
 
-    /// 读取文字层。文件不可解析时返回 `nil`。
+    /// read text layer. Returns `nil` when the file cannot be parsed.
     public static func textLayer(at url: URL) -> TextLayer? {
         guard let document = PDFDocument(url: url) else { return nil }
         let raw = document.string ?? ""
@@ -29,8 +29,8 @@ public enum PDFContentExtractor {
         )
     }
 
-    /// 收敛 PDF 文字层里的碎片换行：同一段落内的硬换行合并为空格，
-    /// 保留空行分段，避免把整篇文档打散成一行行短句。
+    /// Consolidate line breaks in the PDF text layer: merge hard line breaks within the same paragraph into spaces,
+    /// Keep blank lines for paragraphs, and avoid breaking the entire document into short lines.
     public static func normalize(_ raw: String) -> String {
         let lines = raw
             .replacingOccurrences(of: "\r\n", with: "\n")
@@ -51,7 +51,7 @@ public enum PDFContentExtractor {
             if current.isEmpty {
                 current = line
             } else if current.hasSuffix("-") {
-                // 英文断词换行：去掉连字符直接拼接。
+                // English word break line: remove the hyphen and directly concatenate.
                 current = String(current.dropLast()) + line
             } else {
                 current += " " + line
@@ -62,16 +62,16 @@ public enum PDFContentExtractor {
     }
 }
 
-/// 扫描版 PDF 的逐页栅格化器。
+/// A page-by-page rasterizer for scanned PDFs.
 public enum PDFPageRasterizer {
     public struct RasterizedPage: Sendable {
         public let image: CGImage
         public let pageIndex: Int
     }
 
-    /// 默认 2x 缩放：在字体清晰度与 OCR 耗时之间取平衡。
+    /// Default 2x scaling: balances font clarity and OCR processing time.
     public static let defaultScale: CGFloat = 2
-    /// 单次 OCR 最多处理的页数，避免 200 页扫描件把流水线拖死。
+    /// The maximum number of pages a single OCR process can handle, to prevent a 200-page scan from choking the pipeline.
     public static let defaultMaxPages = 10
 
     public static func rasterize(
@@ -107,7 +107,7 @@ public enum PDFPageRasterizer {
             return nil
         }
 
-        // 先铺白底：PDF 页面本身透明，直接 OCR 透明背景会显著降低识别率。
+        // Lay a white background first: PDF pages are inherently transparent, and performing OCR directly on a transparent background will significantly reduce the recognition rate.
         context.setFillColor(gray: 1, alpha: 1)
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.scaleBy(x: scale, y: scale)

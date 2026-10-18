@@ -1,12 +1,12 @@
 import Foundation
 import NovPoolCore
 
-/// 多源 UTI 拖拽解析器：按 P0 → P3 严格优先级把粘贴板归一化为 `ResolvedDragContent`。
+/// Multi-source UTI drag resolver: normalize the pasteboard to `ResolvedDragContent` with strict P0→P3 priority.
 ///
-/// 优先级依据产品白皮书 §3.2：
-/// P0 本地文件 → P1 内存位图 → P2 网页链接 → P3 富文本 / 纯文本。
+/// Priority follows product whitepaper §3.2:
+/// P0 local files → P1 in-memory bitmaps → P2 web links → P3 rich text / plain text.
 public struct PasteboardResolver: Sendable {
-    /// 超过该长度即认为 `.string` 是正文而非链接文字，此时 HTML 按正文片段处理（P3）。
+    /// Beyond this length, `.string` is body text not link text; HTML is treated as a body fragment (P3).
     public static let articleTextThreshold = 120
 
     public init() {}
@@ -17,15 +17,15 @@ public struct PasteboardResolver: Sendable {
     ) -> ResolvedDragContent? {
         let types = Set(pasteboard.availableTypeIdentifiers)
 
-        // 全局兜底拖网页标签时：拖拽粘贴板常残留上一次 Finder 文件。
-        // 若本次同时带了链接/正文，优先认链接，避免「拖标签却入库旧文档」。
+        // During global fallback of a browser-tab drag, the drag pasteboard often still holds the last Finder file.
+        // If this drag also has a link/body, prefer the link so a tab drag does not archive the old document.
         if preferWebLinksOverFiles, let web = resolveWebOrText(from: pasteboard, types: types) {
             return web
         }
 
         if let files = fileURLs(in: pasteboard), !files.isEmpty {
-            // 按第一个文件的扩展名判定资源类型；图片/视频文件同样走文件暂存，
-            // 只是后续的 OCR、云端命名与图标会据此区分。
+            // Classify by the first file's extension; image/video files still go through file staging,
+            // with OCR, cloud naming, and icons branching afterward.
             let kind = FileKind.of(url: files[0])
             return ResolvedDragContent(
                 contentType: kind.contentType,
@@ -41,7 +41,7 @@ public struct PasteboardResolver: Sendable {
         return resolveWebOrText(from: pasteboard, types: types)
     }
 
-    /// 链接 / HTML / 纯文本分支（不含文件与内存位图）。
+    /// Link / HTML / plain-text branch (excludes files and in-memory bitmaps).
     private func resolveWebOrText(
         from pasteboard: PasteboardReading,
         types: Set<String>
@@ -57,7 +57,7 @@ public struct PasteboardResolver: Sendable {
         if html != nil { matched.append(PasteboardTypeID.html) }
         if text != nil { matched.append(PasteboardTypeID.plainText) }
 
-        // P3 优先于 P2 的唯一情形：粘贴板里带着成段的正文（而非单个链接标签）。
+        // Only case where P3 beats P2: the pasteboard holds a body paragraph, not a single link label.
         if let html, (text?.count ?? 0) >= Self.articleTextThreshold {
             return ResolvedDragContent(
                 contentType: .richHTML,
@@ -95,11 +95,11 @@ public struct PasteboardResolver: Sendable {
         return nil
     }
 
-    // MARK: - 各优先级提取
+    // MARK: - Per-priority extraction
 
     private func fileURLs(in pasteboard: PasteboardReading) -> [URL]? {
         guard pasteboard.availableTypeIdentifiers.contains(PasteboardTypeID.fileURL) else { return nil }
-        // 多文件可能是：多个 pasteboard item，或单个表示层里换行分隔的 URL 列表。
+        // Multiple files may be multiple pasteboard items, or one representation with newline-separated URLs.
         var chunks = pasteboard.allStrings(forTypeIdentifier: PasteboardTypeID.fileURL)
         if chunks.isEmpty,
            let raw = pasteboard.data(forTypeIdentifier: PasteboardTypeID.fileURL)
@@ -115,8 +115,8 @@ public struct PasteboardResolver: Sendable {
 
     private func imagePayload(in pasteboard: PasteboardReading, types: Set<String>) -> ResolvedDragContent? {
         for (typeIdentifier, _) in ImageTypeMapping.preferences where types.contains(typeIdentifier) {
-            // 关键：直接读取内存位图字节流。绝不只保存图片 URL 后二次请求，
-            // 以规避防盗链、Referer 校验与登录态丢失。
+            // Critical: read in-memory bitmap bytes. Never save only an image URL and re-fetch,
+            // to avoid hotlink protection, Referer checks, and lost login state.
             if let data = pasteboard.data(forTypeIdentifier: typeIdentifier), !data.isEmpty {
                 let isMovie = typeIdentifier.contains("movie") || typeIdentifier.contains("mpeg-4")
                 return ResolvedDragContent(
@@ -136,16 +136,16 @@ public struct PasteboardResolver: Sendable {
            let url = URLNormalization.httpURL(from: raw) {
             return url
         }
-        // Chrome / Edge / Firefox 拖标签时带 URL 列表
+        // Chrome / Edge / Firefox tab drags include a URL list
         if let raw = pasteboard.string(forTypeIdentifier: PasteboardTypeID.uriList),
            let url = Self.firstURL(inURIList: raw) {
             return url
         }
-        // Firefox / Zen：UTF-16LE 的「URL\n标题」
+        // Firefox / Zen: UTF-16LE `URL\nTitle`
         if let moz = mozURLPayload(in: pasteboard), let url = URLNormalization.httpURL(from: moz.url) {
             return url
         }
-        // 部分浏览器只提供纯文本形式的链接。
+        // Some browsers only provide the link as plain text.
         if let text = pasteboard.string(forTypeIdentifier: PasteboardTypeID.plainText),
            let url = URLNormalization.httpURL(from: text) {
             return url
@@ -153,7 +153,7 @@ public struct PasteboardResolver: Sendable {
         return nil
     }
 
-    /// 拖拽自带的标题：Safari 的 `public.url-name`，或 Firefox 的 moz-url 第二行。
+    /// Drag-provided title: Safari `public.url-name`, or the second line of Firefox moz-url.
     private func title(in pasteboard: PasteboardReading) -> String? {
         if let raw = pasteboard.string(forTypeIdentifier: PasteboardTypeID.urlName) {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -166,7 +166,7 @@ public struct PasteboardResolver: Sendable {
         return nil
     }
 
-    /// 解析 `text/x-moz-url`（URL 与标题以换行分隔，UTF-16LE 编码）。
+    /// Parse `text/x-moz-url` (URL and title separated by newline, UTF-16LE).
     func mozURLPayload(in pasteboard: PasteboardReading) -> (url: String, title: String?)? {
         guard let data = pasteboard.data(forTypeIdentifier: PasteboardTypeID.mozURL)
             ?? pasteboard.data(forTypeIdentifier: PasteboardTypeID.mozURLData),
@@ -183,7 +183,7 @@ public struct PasteboardResolver: Sendable {
         return (first, title)
     }
 
-    /// `text/uri-list` 取第一条非注释行（RFC 2483：以 # 开头的是注释）。
+    /// `text/uri-list`: first non-comment line (RFC 2483: lines starting with # are comments).
     static func firstURL(inURIList raw: String) -> URL? {
         for line in raw.split(whereSeparator: \.isNewline) {
             let candidate = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -193,7 +193,7 @@ public struct PasteboardResolver: Sendable {
         return nil
     }
 
-    /// moz-url 通常是 UTF-16LE（可能带 BOM），个别版本是 UTF-8。
+    /// moz-url is usually UTF-16LE (optional BOM); some builds use UTF-8.
     static func decodeMozURL(_ data: Data) -> String? {
         if data.starts(with: [0xFF, 0xFE]) {
             return String(data: data.dropFirst(2), encoding: .utf16LittleEndian)
@@ -207,7 +207,7 @@ public struct PasteboardResolver: Sendable {
         return String(data: data, encoding: .utf8)
     }
 
-    /// RTF 兜底：剥掉控制字与分组括号，保留可读文本。
+    /// RTF fallback: strip control words and group braces; keep readable text.
     static func stripRTF(_ raw: String) -> String {
         var output = ""
         var isSkipping = false

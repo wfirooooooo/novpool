@@ -6,10 +6,10 @@
 	<true/>
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
-	<!-- 持久化访问 Google Drive / OneDrive 本地挂载目录与 Obsidian 库 -->
+	<!-- Persist access to local Drive / OneDrive mounts and Obsidian vaults -->
 	<key>com.apple.security.files.bookmarks.app-scope</key>
 	<true/>
-	<!-- 允许执行浏览器上下文溯源脚本 -->
+	<!-- Allow AppleEvents scripts used for browser provenance -->
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
 </dict>

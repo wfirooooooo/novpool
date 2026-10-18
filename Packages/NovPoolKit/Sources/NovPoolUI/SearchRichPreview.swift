@@ -6,7 +6,7 @@ import QuickLookThumbnailing
 import QuickLookUI
 import SwiftUI
 
-/// 检索详情区的媒体预览（图 / PDF / 视频海报 / 文件缩略图）。
+/// Media preview in the search details area (image / PDF / video poster / file thumbnail).
 @MainActor
 struct SearchRichPreview: View {
     let kind: SearchPreviewKind
@@ -35,7 +35,7 @@ struct SearchRichPreview: View {
     }
 }
 
-/// 列表行用的小缩略图（仅图片 / 有缩略图的文件）。
+/// Small thumbnails used for list rows (only Image / Files with thumbnails).
 @MainActor
 struct SearchResultThumbnail: View {
     let kind: SearchPreviewKind
@@ -60,7 +60,7 @@ struct SearchResultThumbnail: View {
     }
 }
 
-// MARK: - 图片
+// MARK: - Image
 
 @MainActor
 struct LocalImagePreview: View {
@@ -112,7 +112,7 @@ struct PDFPreviewRepresentable: NSViewRepresentable {
     }
 }
 
-// MARK: - 视频海报
+// MARK: - Video Poster
 
 @MainActor
 struct VideoPosterPreview: View {
@@ -144,7 +144,7 @@ struct VideoPosterPreview: View {
     }
 }
 
-// MARK: - Quick Look 缩略图
+// MARK: - Quick Look Thumbnail
 
 @MainActor
 struct FileThumbnailPreview: View {
@@ -173,7 +173,7 @@ struct FileThumbnailPreview: View {
     }
 }
 
-// MARK: - 加载
+// MARK: - Loading
 
 enum LocalPreviewLoader {
     static func image(at url: URL) -> NSImage? {
@@ -213,11 +213,11 @@ enum LocalPreviewLoader {
     }
 }
 
-// MARK: - Quick Look 面板
+// MARK: - Quick Look panel
 
-/// 用系统 Quick Look 面板预览单个本机文件（「预览」按钮）。
+/// Use the system Quick Look panel to preview a single native file ("Preview" button).
 ///
-/// QLPreview 回调是非隔离的，因此本类不标 `@MainActor`；由 `SearchPanelController` 持有实例。
+/// QLPreview callbacks are non-isolated, so this class is not marked with `@MainActor`; an instance is held by `SearchPanelController`.
 public final class LocalFileQuickLookController: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     private let lock = NSLock()
     private var previewURL: URL?
@@ -254,7 +254,7 @@ public final class LocalFileQuickLookController: NSObject, QLPreviewPanelDataSou
     }
 }
 
-// MARK: - 占位
+// MARK: - Placeholders
 
 @MainActor
 private func previewPlaceholder(systemName: String, height: CGFloat) -> some View {

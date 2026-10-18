@@ -2,12 +2,12 @@ import AppKit
 import Foundation
 import NovPoolCore
 
-/// 把 `NovPoolPanel`、点击穿透宿主视图与拖拽接收视图装配起来。
+/// Assemble `NovPoolPanel` with click-through host view and drag-receiving view.
 @MainActor
 public final class PanelController: NSObject, NSWindowDelegate, DragTargetProviding {
     public let panel: NovPoolPanel
     public let viewModel: CaptureViewModel
-    /// 原生拖拽与全局兜底的共享协调器。
+    /// Native drag-and-drop with a global fallback shared coordinator.
     public let dragCoordinator: DragCaptureCoordinator
 
     private let hostView: PassthroughHostingView<PanelRootView>
@@ -17,8 +17,8 @@ public final class PanelController: NSObject, NSWindowDelegate, DragTargetProvid
 
     public init(
         viewModel: CaptureViewModel,
-        // 菜单栏常驻工具在启动瞬间未必有 key window，`NSScreen.main` 可能是 nil；
-        // 回落到主显示器（screens[0] 即带菜单栏的那块）更可靠。
+        // The menu bar persistent tool may not have a key window at the moment of startup, and `NSScreen.main` could be nil;
+        // Falling back to the main display (screens[0], which is the one with the menu bar) is more reliable.
         screen: NSScreen? = NSScreen.screens.first ?? NSScreen.main,
         canvasSize: CGSize = NovPoolLayout.canvasSize,
         positionStore: PanelPositionStore = PanelPositionStore(),
@@ -32,16 +32,16 @@ public final class PanelController: NSObject, NSWindowDelegate, DragTargetProvid
         let bridge = DragCaptureBridge()
         bridge.zoneCount = viewModel.zones.count
         bridge.coordinator = dragCoordinator
-        // 拖拽诊断接到启动日志：排查「某个浏览器拖过来没反应」时，
-        // 日志会直接列出该次拖拽的粘贴板类型。
+        // Drag-and-drop diagnostics received startup logs: when investigating 'nothing happens when dragging from a certain browser,'
+        // The log will directly list the clipboard type of that drag operation.
         bridge.logger = { NovPoolDiagnostics.log($0) }
         self.bridge = bridge
 
         let dragView = DragReceivingView(frame: NSRect(origin: .zero, size: canvasSize))
         dragView.bridge = bridge
 
-        // 宿主视图的命中区域跟随扇区展开状态切换：静默态只让中心图标接收事件。
-        // 由控制器推送状态，视图不回调——避免在非隔离的 SwiftUI 生命周期闭包里访问主 actor 模型。
+        // The hit area of the host view switches according to the expansion state of the sector: in silent mode, only the central icon receives events.
+        // State is pushed by the controller, and the view does not callback — avoid accessing the main actor model in non-isolated SwiftUI lifecycle closures.
         let hostView = PassthroughHostingView<PanelRootView>(
             rootView: PanelRootView(
                 viewModel: viewModel,
@@ -56,8 +56,8 @@ public final class PanelController: NSObject, NSWindowDelegate, DragTargetProvid
         container.addSubview(hostView)
         container.addSubview(dragView, positioned: .above, relativeTo: hostView)
 
-        // NSObject 子类：所有存储属性赋值必须先于 super.init()，
-        // 而下面这些回调要用到 self，所以只能放在 super.init() 之后。
+        // NSObject subclass: All stored property assignments must occur before super.init().
+        // And the following callbacks need to use self, so they can only be placed after super.init().
         super.init()
 
         panel.contentView = container
@@ -94,20 +94,20 @@ public final class PanelController: NSObject, NSWindowDelegate, DragTargetProvid
         panel.orderOut(nil)
     }
 
-    /// 设置热生效：更新扇区槽位并同步拖拽命中几何。
+    /// Set heat to take effect: update sector slots and synchronize drag-and-drop hit geometry.
     public func updateZones(_ zones: [DropZone]) {
         viewModel.zones = zones
         bridge.zoneCount = zones.count
         updateRingLayout()
     }
 
-    /// 主图标在屏幕坐标系里的矩形（全局拖拽兜底通路用它判断松手位置）。
+    /// The main icon's rectangle in the screen coordinate system (used to determine the release position for global drag fallback).
     public var iconScreenRect: CGRect {
         let icon = PassthroughHostingView<PanelRootView>.iconRect(canvasSize: panel.frame.size)
         return icon.offsetBy(dx: panel.frame.minX, dy: panel.frame.minY)
     }
 
-    /// 全局拖拽悬停：复用真实拖拽时的展开/收起逻辑。
+    /// Global drag hover: Reuse the expand/collapse logic during real dragging.
     public func setGlobalDragHover(_ hovering: Bool) {
         hostView.forcesInteraction = hovering
         hostView.updateInteractiveRect(isExpanded: hovering)
@@ -118,16 +118,16 @@ public final class PanelController: NSObject, NSWindowDelegate, DragTargetProvid
         }
     }
 
-    // MARK: - 位置：拖动 / 持久化 / 重置
+    // MARK: - Position: drag / persistence / reset
 
-    /// 恢复上次位置；没有记录或记录已不在任何屏幕上时回到默认右下角。
+    /// Restore the last position; if there is no record or the record is no longer on any screen, return to the default bottom right corner.
     private func restorePosition(fallbackScreen: NSScreen?, canvasSize: CGSize) {
         if let saved = positionStore.load() {
             let clamped = PanelPlacement.clampedOrigin(
                 saved,
-                // 用整块显示器范围而不是「可见区域」：允许图标停在 Dock / 菜单栏覆盖的
-                // 区域，也就是「显示器任意位置停留」。误停到 Dock 后面时，
-                // 菜单栏与设置面板里都有「重置悬浮窗位置」兜底。
+                // Use the entire display area instead of the 'visible area': allow icons to stop on areas covered by the Dock / menu bar
+                // Area, that is, 'stay anywhere on the monitor.' When it accidentally stops behind the Dock,
+                // Both the menu bar and the settings panel have a 'Reset floating window position' fallback.
                 visibleFrames: NSScreen.screens.map(\.frame),
                 canvasSize: canvasSize
             )
@@ -138,7 +138,7 @@ public final class PanelController: NSObject, NSWindowDelegate, DragTargetProvid
         panel.setFrameOrigin(PanelPlacement.frame(in: visibleFrame, canvasSize: canvasSize).origin)
     }
 
-    /// 拖到屏幕外会被立刻夹回来，落点同时持久化（去抖 0.3s，避免拖动过程中反复写盘）。
+    /// Dragging it off the screen will immediately snap it back, and the drop point will be persisted at the same time (debounce 0.3s to avoid repeatedly writing to disk during dragging).
     public func windowDidMove(_ notification: Notification) {
         let current = panel.frame.origin
         let clamped = PanelPlacement.clampedOrigin(
@@ -149,12 +149,12 @@ public final class PanelController: NSObject, NSWindowDelegate, DragTargetProvid
         if abs(clamped.x - current.x) > 0.5 || abs(clamped.y - current.y) > 0.5 {
             panel.setFrameOrigin(clamped)
         }
-        // 图标换位置后，扇区环需要重新决定朝哪边让位。
+        // After the icon is moved, the sector ring needs to decide again which way to yield.
         updateRingLayout()
         scheduleSave(clamped)
     }
 
-    /// 回到默认右下角并清除记录（菜单「重置悬浮窗位置」）。
+    /// Return to the default bottom right corner and clear the records (Menu "Reset floating window position").
     public func resetPosition(screen: NSScreen? = NSScreen.screens.first ?? NSScreen.main) {
         positionStore.clear()
         guard let visibleFrame = screen?.visibleFrame else { return }
@@ -164,12 +164,12 @@ public final class PanelController: NSObject, NSWindowDelegate, DragTargetProvid
         scheduleSave(origin)
     }
 
-    /// 求解扇区环的环心与半径，并同时喂给 SwiftUI 布局与拖拽命中判定。
+    /// Solve for the center and radius of a sector ring, and simultaneously feed it to SwiftUI layout and drag hit detection.
     private func updateRingLayout() {
         let canvasSize = panel.frame.size
         let visibleFrameInCanvas = visibleFrameInCanvasCoordinates(canvasSize: canvasSize)
         let resolved = SectorLayout.resolve(
-            // 主图标始终位于画布正中心。
+            // The main icon is always positioned at the center of the canvas.
             iconCenter: CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2),
             canvasSize: canvasSize,
             visibleFrameInCanvas: visibleFrameInCanvas
@@ -179,7 +179,7 @@ public final class PanelController: NSObject, NSWindowDelegate, DragTargetProvid
     }
 
 
-    /// 取图标所在屏幕的可见区域，换算到画布坐标（画布原点在面板左下角）。
+    /// Get the visible area of the screen where the icon is located and convert it to canvas coordinates (the canvas origin is at the bottom left corner of the panel).
     private func visibleFrameInCanvasCoordinates(canvasSize: CGSize) -> CGRect {
         let icon = PanelPlacement.iconRect(forOrigin: panel.frame.origin, canvasSize: canvasSize)
         let screen = NSScreen.screens.first { $0.frame.intersects(icon) }

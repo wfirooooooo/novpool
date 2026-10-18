@@ -5,10 +5,10 @@ import AppKit
 import CoreGraphics
 import CoreText
 
-/// 内存粘贴板替身。
+/// Memory clipboard proxy.
 ///
-/// 真实 `NSPasteboard` 需要 WindowServer 与 `pboard` 守护进程，在无 GUI 会话的环境中
-/// 完全不可用（`data(forType:)` 恒为 `nil`），因此解析逻辑一律针对抽象协议测试。
+/// The real `NSPasteboard` requires WindowServer and the `pboard` daemon in an environment without a GUI session
+/// Completely unusable (`data(forType:)` is always `nil`), so the parsing logic is tested exclusively against abstract protocols.
 struct FakePasteboard: PasteboardReading {
     var storage: [String: Data] = [:]
     var order: [String] = []
@@ -35,7 +35,7 @@ struct FakePasteboard: PasteboardReading {
     }
 }
 
-/// 前台应用替身。
+/// Front-end application stand-in.
 struct FakeFrontmostApp: FrontmostAppProviding {
     var bundleID: String?
     var processIdentifier: pid_t = 4242
@@ -45,7 +45,7 @@ struct FakeFrontmostApp: FrontmostAppProviding {
     }
 }
 
-/// AppleScript 执行器替身，记录调用过的脚本源码。
+/// AppleScript executor proxy, records the source code of the scripts that have been called.
 final class FakeScriptRunner: AppleScriptRunning, @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [String] = []
@@ -66,7 +66,7 @@ final class FakeScriptRunner: AppleScriptRunning, @unchecked Sendable {
         return output
     }
 
-    /// 同步加锁助手：`NSLock.lock()` 在 async 上下文中被 Swift 标记为不可用。
+    /// Synchronous locking helper: `NSLock.lock()` is marked as unavailable in async contexts in Swift.
     private func withLock<T>(_ body: () -> T) -> T {
         lock.lock()
         defer { lock.unlock() }
@@ -74,14 +74,14 @@ final class FakeScriptRunner: AppleScriptRunning, @unchecked Sendable {
     }
 }
 
-/// 溯源提供者替身。
+/// Traceability provider substitute.
 struct FakeBrowserContext: BrowserContextProviding {
     var context: SourceContext
 
     func captureContext() async -> SourceContext { context }
 }
 
-/// HTTP 传输替身：可编排响应或注入错误。
+/// HTTP transport stub: can orchestrate responses or inject Errors.
 final class StubTransport: HTTPTransport, @unchecked Sendable {
     enum StubError: Error { case offline }
 
@@ -113,7 +113,7 @@ final class StubTransport: HTTPTransport, @unchecked Sendable {
     }
 }
 
-/// 文本识别替身。
+/// Text recognition stand-in.
 struct FakeOCR: ImageTextRecognizing {
     struct Failure: Error {}
     var imageText: String = "fake image text"
@@ -139,28 +139,28 @@ struct FakeOCR: ImageTextRecognizing {
     }
 }
 
-/// 网页抓取替身。
+/// Web scraping substitute.
 struct FakeFetcher: ArticleFetching {
     var result: WebFetchResult
 
     func fetchArticle(from url: URL) async -> WebFetchResult { result }
 }
 
-/// AI 增强替身。
+/// AI-enhanced substitute.
 struct FakeAI: AIEnriching {
     var enrichment: AIEnrichment?
     var shouldFail = false
-    var failureReason = "替身故意失败"
+    var failureReason = "The stunt double intentionally failed"
 
     func enrichDetailed(_ request: AIEnrichmentRequest) async -> AIEnrichmentOutcome {
         if shouldFail { return .failure(failureReason) }
         if let enrichment { return .success(enrichment) }
-        return .failure("替身未配置增强结果")
+        return .failure("The substitute has not configured enhancement results")
     }
 }
 
 enum TestSupport {
-    /// 创建一次性沙盒目录。
+    /// Create a disposable sandbox directory.
     static func makeTemporaryDirectory(_ label: String = "novpool") throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appending(path: "\(label)-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -169,9 +169,9 @@ enum TestSupport {
     }
 
     static func samplePayload(
-        title: String = "示例文档",
+        title: String = "Example Document",
         contentType: ContentType = .plainText,
-        body: String? = "正文",
+        body: String? = "Body",
         category: String? = nil,
         tags: [String] = [],
         sourceApp: String = "com.google.Chrome",
@@ -186,12 +186,12 @@ enum TestSupport {
             sourceContext: SourceContext(
                 appBundleID: sourceApp,
                 pageURL: pageURL,
-                pageTitle: "示例页面标题"
+                pageTitle: "Example Page Title"
             )
         )
     }
 
-    /// 用 CoreText 画一张含文字的位图（供 OCR 相关测试复用）。
+    /// Use CoreText to draw a bitmap containing text (for reuse in OCR-related testing).
     static func makeTextImage(_ text: String, fontSize: CGFloat = 64) -> CGImage? {
         let width = 1_000
         let height = 240
@@ -226,10 +226,10 @@ enum TestSupport {
         return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
     }
 
-    /// 生成一份带文字层的 PDF（用于验证「文字层优先于 OCR」）。
+    /// Generate a PDF with a text layer (used to verify 'text layer takes precedence over OCR').
     ///
-    /// 文本按固定长度折行绘制：单行超宽会被页面裁掉，文字层随之变短，
-    /// 那样的样本无法代表真实文档。
+    /// Text is wrapped and drawn at a fixed length: if a single line is too wide, it will be cut off by the page, and the text layer will become shorter accordingly.
+    /// Such a sample cannot represent a real document.
     @discardableResult
     static func makePDF(text: String, at url: URL, pageCount: Int = 1) -> Bool {
         var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)

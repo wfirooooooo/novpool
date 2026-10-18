@@ -2,20 +2,20 @@ import Foundation
 import NovPoolCore
 import NovPoolStorage
 
-/// 检索详情区应渲染的富预览形态。
+/// The rich PreviewKind that should be rendered in the search details area.
 public enum SearchPreviewKind: String, Sendable, Equatable {
-    /// 本机图片：直接解码显示。
+    /// Local Image: Decode and display directly.
     case image
-    /// PDF：面板内 PDFKit 翻页预览。
+    /// PDF: PDFKit page flip preview within the panel.
     case pdf
-    /// 视频：截取海报帧。
+    /// Video: Capture poster frame.
     case video
-    /// 其他本机文件：Quick Look 缩略图。
+    /// Other local machine File: Quick Look thumbnails.
     case fileThumbnail
-    /// 无可视化媒体（纯文本 / 网页等）。
+    /// No visual media (Plain Text / Web, etc.).
     case none
 
-    /// 按内容类型与本地文件扩展名决定预览形态；无本地文件时一律 `none`。
+    /// Determine PreviewKind based on content type and local file extension; if there is no local file, always `none`.
     public static func resolve(
         contentType: ContentType,
         localFileURL: URL?

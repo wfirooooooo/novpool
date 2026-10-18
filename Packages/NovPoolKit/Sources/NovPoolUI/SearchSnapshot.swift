@@ -1,10 +1,10 @@
 import Foundation
 import NovPoolStorage
 
-/// 检索面板渲染快照（纯值）。
+/// Retrieve panel rendering snapshot (pure value).
 ///
-/// 与 `PanelSnapshot` 同样的理由：SwiftUI 的 `ForEach` / 手势 / 输入框回调签名都是
-/// 非隔离的，闭包里直接读 `@MainActor` 模型会插入运行时隔离检查。
+/// The same reason as `PanelSnapshot`: SwiftUI's `ForEach` / gestures / input box callback signatures are all
+/// Non-isolated, directly reading `@MainActor` models inside a closure will insert runtime isolation checks.
 struct SearchSnapshot: Equatable {
     var query: String
     var focusToken: Int

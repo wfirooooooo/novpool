@@ -1,19 +1,19 @@
 import Foundation
 
-/// 路由规则：把载荷特征映射到一组目标连接器。
+/// Routing rule: Map payload characteristics to a set of target connectors.
 public struct RouteRule: Codable, Sendable, Equatable, Identifiable {
     public let id: String
     public var name: String
-    /// 数值越大越先匹配；同分按 `id` 稳定排序，保证路由结果可复现。
+    /// The larger the value, the higher the matching priority; ties are stably sorted by `id` to ensure reproducible routing results.
     public var priority: Int
     public var isEnabled: Bool
 
-    // 匹配条件（所有非空条件之间是「与」关系）
+    // Matching conditions (all non-empty conditions are connected by 'and')
     public var contentTypes: [ContentType]
     public var categories: [String]
     public var tags: [String]
     public var sourceAppBundleIDs: [String]
-    /// 对标题 / 正文 / OCR 文本的大小写不敏感子串匹配。
+    /// Case-insensitive substring matching for Title / Body / OCR Text.
     public var keywords: [String]
 
     public var targetConnectorIDs: [String]
@@ -73,7 +73,7 @@ public struct RouteRule: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-/// 路由决策及其依据，便于在设置面板中解释「为什么走了这条路由」。
+/// Routing decisions and their basis, making it easier to explain in the settings panel 'why this route was taken'.
 public enum RouteReason: Sendable, Equatable {
     case sectorForced(zoneID: String)
     case smartRouteRule(ruleID: String, ruleName: String)
@@ -90,10 +90,10 @@ public struct RouteDecision: Sendable, Equatable {
     }
 }
 
-/// 扇区强制路由 / 规则匹配路由的评估器（AI 语义路由在 Phase 2 之后接入）。
+/// Sector forced routing / rule-matching routing evaluator (AI Semantic Routing will be integrated after Phase 2).
 public struct RouteEvaluator: Sendable {
     public var rules: [RouteRule]
-    /// 智能路由兜底连接器（用户配置的默认归档目标）。
+    /// Intelligent routing fallback connector (user-configured default archive target).
     public var defaultConnectorIDs: [String]
 
     public init(rules: [RouteRule] = [], defaultConnectorIDs: [String] = []) {

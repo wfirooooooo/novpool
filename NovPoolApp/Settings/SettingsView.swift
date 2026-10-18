@@ -4,7 +4,7 @@ import NovPoolStorage
 import NovPoolUI
 import SwiftUI
 
-/// 设置中心：本机知识库优先；云端目标可选。
+/// Settings: local library first; cloud targets optional.
 struct SettingsView: View {
     @Bindable var store: AppSettingsStore
     var onRunSyncNow: () async -> String
@@ -85,27 +85,27 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - 本机知识库
+    // MARK: - Library
 
     @ViewBuilder
     private var libraryTab: some View {
-        Section("怎么用") {
-            Text("把文件、图片、链接或文字拖到桌面悬浮图标 → 本机自动入库 → ⇧⌘Space 搜索。入库后按「内容主题」归类（不是按文件类型），并可改标签、摘要；云端推送是可选能力。")
+        Section("How to use") {
+            Text("Drop files, images, links, or text on the desktop icon → saved locally → ⇧⌘Space to search. Items are tagged by topic (not file type); cloud push is optional.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             HStack {
-                Button("在访达中打开知识库目录") { onRevealDataDirectory() }
-                Button("保存设置") { store.save() }
+                Button("Reveal knowledge folder in Finder") { onRevealDataDirectory() }
+                Button(store.t(.saveSettings)) { store.save() }
                     .keyboardShortcut("s", modifiers: .command)
             }
         }
 
-        Section("添加本地归档目录（可选复制一份到文件夹）") {
-            TextField("命名模板", text: $newNamingTemplate)
+        Section("Add local archive folder (optional second copy)") {
+            TextField("Naming template", text: $newNamingTemplate)
                 .font(.system(size: 11, design: .monospaced))
-            Button("选择目录…") { chooseDirectory() }
+            Button("Choose folder…") { chooseDirectory() }
                 .disabled(isChoosingDirectory)
-            Text("拖入默认已写入 Application Support；这里再选一个目录（如 Obsidian 库），可作为额外落盘目标，绑定到下方扇区即可。")
+            Text("Drops already go to Application Support. Pick another folder (e.g. an Obsidian vault) as an extra write target and bind it to a sector below.")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
@@ -116,10 +116,10 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var localConnectorsSection: some View {
-        Section("已配置的目标端") {
+        Section("Configured local targets") {
             let locals = store.connectors.filter { $0.connectorType == "local_mount" }
             if locals.isEmpty {
-                Text("尚未添加本地归档目录。不添加也能用：拖入资源会进入本机知识库并可搜索。")
+                Text("No local archive folders yet. You can still use NovPool: drops go into the local library and are searchable.")
                     .foregroundStyle(.secondary)
             }
             ForEach(locals) { connector in
@@ -128,29 +128,29 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - 云端（可选）
+    // MARK: - Cloud (optional)
 
     @ViewBuilder
     private var cloudTab: some View {
-        Section("说明") {
-            Text("云端连接暂缓优先开发。以下配置保留可用；日常本机入库不依赖它们。")
+        Section("About") {
+            Text("Cloud connectors are lower priority for now. These settings still work; everyday local ingest does not depend on them.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-            Toggle("显示云端授权表单", isOn: $showCloudTargets)
+            Toggle("Show cloud authorization forms", isOn: $showCloudTargets)
         }
 
-        Section("已配置的云端目标") {
+        Section("Configured cloud targets") {
             let clouds = store.connectors.filter { $0.connectorType != "local_mount" }
             if clouds.isEmpty {
-                Text("还没有云端目标。需要时再授权 Notion / Drive / OneDrive。")
+                Text("No cloud targets yet. Authorize Notion / Drive / OneDrive when you need them.")
                     .foregroundStyle(.secondary)
             }
             HStack {
-                Button(store.isProbingAuth ? "检查中…" : "检查授权状态") {
+                Button(store.isProbingAuth ? "Checking…" : "Check authorization") {
                     Task { await store.refreshAuthStatuses() }
                 }
                 .disabled(store.isProbingAuth)
-                Text("失效时会提示重新授权；发件箱遇授权错误会停止重试。")
+                Text("Expired auth prompts re-authorize; the outbox stops retrying on auth errors.")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
@@ -177,7 +177,7 @@ struct SettingsView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                 if let status = store.authStatuses[connector.id] {
-                    Text(status.detail.map { "\(status.title)：\($0)" } ?? status.title)
+                    Text(status.detail.map { "\(status.title): \($0)" } ?? status.title)
                         .font(.system(size: 10))
                         .foregroundStyle(status.needsAttention ? Color.orange : Color.secondary)
                         .lineLimit(2)
@@ -185,12 +185,12 @@ struct SettingsView: View {
             }
             Spacer()
             if store.authStatuses[connector.id]?.needsAttention == true {
-                Button("重新授权") {
+                Button("Re-authorize") {
                     Task { await store.reauthorize(connectorID: connector.id) }
                 }
                 .disabled(store.isAuthorizing)
             }
-            Toggle("启用", isOn: Binding(
+            Toggle("Enabled", isOn: Binding(
                 get: { connector.isEnabled },
                 set: { value in
                     Task { await store.setEnabled(value, connectorID: connector.id) }
@@ -205,56 +205,56 @@ struct SettingsView: View {
                 Image(systemName: "trash")
             }
             .buttonStyle(.borderless)
-            .help("删除该连接器（同时清除钥匙串凭据）")
+            .help("Delete this connector (and clear Keychain credentials)")
         }
     }
 
-    // MARK: - 云端连接器表单
+    // MARK: - Cloud connector forms
 
     @ViewBuilder
     private var notionSection: some View {
-        Section("Notion（浏览器授权，无需手填令牌）") {
+        Section("Notion (browser auth — no manual token)") {
             TextField("Integration Client ID", text: $store.notionClientID)
             SecureField("Integration Client Secret", text: $store.notionClientSecret)
-            Button(store.isAuthorizing ? "等待浏览器授权…" : "用浏览器授权 Notion") {
+            Button(store.isAuthorizing ? "Waiting for browser…" : "Authorize Notion in browser") {
                 Task { await store.authorizeNotion() }
             }
             .disabled(store.isAuthorizing)
-            Text("点击后会在浏览器打开 Notion 授权页；登录并允许后自动回到本应用完成登记。Client ID / Secret 来自你在 Notion 建好的 Public Integration（属于应用配置，填一次即可）。")
+            Text("Opens Notion’s authorize page; after you allow access, NovPool finishes registration. Client ID / Secret come from your Public Integration (app config — fill once).")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
 
-        Section("Notion 数据库与属性") {
+        Section("Notion database & properties") {
             HStack {
-                TextField("数据库 ID", text: $store.notionDatabaseID)
-                Button(store.isFetchingNotionDatabases ? "拉取中…" : "拉取数据库") {
+                TextField("Database ID", text: $store.notionDatabaseID)
+                Button(store.isFetchingNotionDatabases ? "Fetching…" : "Fetch databases") {
                     Task { await store.fetchNotionDatabases() }
                 }
                 .disabled(store.isFetchingNotionDatabases)
             }
             if !store.notionDatabases.isEmpty {
-                Picker("选择数据库", selection: $store.notionDatabaseID) {
+                Picker("Choose database", selection: $store.notionDatabaseID) {
                     ForEach(store.notionDatabases) { database in
                         Text(database.title).tag(database.id)
                     }
                 }
             }
-            TextField("标题属性名", text: $store.notionTitleProperty)
-            TextField("URL 属性名（可选）", text: $store.notionUrlProperty)
-            TextField("标签属性名（multi_select，可选）", text: $store.notionTagsProperty)
-            TextField("分类属性名（select，可选）", text: $store.notionCategoryProperty)
-            TextField("摘要属性名（rich_text，可选）", text: $store.notionSummaryProperty)
-            Button("保存数据库与属性") { Task { await store.saveNotionProperties() } }
+            TextField("Title property", text: $store.notionTitleProperty)
+            TextField("URL property (optional)", text: $store.notionUrlProperty)
+            TextField("Tags property (multi_select, optional)", text: $store.notionTagsProperty)
+            TextField("Category property (select, optional)", text: $store.notionCategoryProperty)
+            TextField("Summary property (rich_text, optional)", text: $store.notionSummaryProperty)
+            Button("Save database & properties") { Task { await store.saveNotionProperties() } }
         }
     }
 
     @ViewBuilder
     private var driveSection: some View {
-        Section("Google Drive（浏览器授权，无需手填令牌）") {
-            TextField("目标文件夹 ID（可选，留空为根目录）", text: $store.driveFolderID)
+        Section("Google Drive (browser auth — no manual token)") {
+            TextField("Target folder ID (optional; empty = root)", text: $store.driveFolderID)
             TextField("OAuth Client ID", text: $store.driveClientID)
-            Button(store.isAuthorizing ? "等待浏览器授权…" : "用浏览器授权 Google Drive") {
+            Button(store.isAuthorizing ? "Waiting for browser…" : "Authorize Google Drive in browser") {
                 Task { await store.authorizeGoogleDrive() }
             }
             .disabled(store.isAuthorizing)
@@ -263,24 +263,24 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var oneDriveSection: some View {
-        Section("OneDrive（浏览器授权，无需手填令牌）") {
-            TextField("租户（默认 common）", text: $store.oneDriveTenant)
-            TextField("目标路径（例如 NovPool/技术）", text: $store.oneDriveFolderPath)
+        Section("OneDrive (browser auth — no manual token)") {
+            TextField("Tenant (default common)", text: $store.oneDriveTenant)
+            TextField("Target path (e.g. NovPool/Tech)", text: $store.oneDriveFolderPath)
             TextField("OAuth Client ID", text: $store.oneDriveClientID)
-            Button(store.isAuthorizing ? "等待浏览器授权…" : "用浏览器授权 OneDrive") {
+            Button(store.isAuthorizing ? "Waiting for browser…" : "Authorize OneDrive in browser") {
                 Task { await store.authorizeOneDrive() }
             }
             .disabled(store.isAuthorizing)
         }
     }
 
-    /// 悬浮窗拖拽展开的槽位：标题、图标、绑定到哪个连接器。
+    /// Drop-zone sectors: title, icon, and which connector they bind to.
     @ViewBuilder
     private var zonesSection: some View {
-        Section("悬浮窗扇区槽位（最多 \(DropZoneConfiguration.maximumZones) 个）") {
+        Section("Drop-zone sectors (max \(DropZoneConfiguration.maximumZones))") {
             ForEach(store.zoneDrafts.indices, id: \.self) { index in
                 HStack(spacing: 8) {
-                    TextField("标题", text: Binding(
+                    TextField("Title", text: Binding(
                         get: { store.zoneDrafts[index].title },
                         set: { store.zoneDrafts[index].title = $0 }
                     ))
@@ -291,11 +291,11 @@ struct SettingsView: View {
                     ))
                     .frame(width: 130)
                     .font(.system(size: 11, design: .monospaced))
-                    Picker("目标", selection: Binding(
+                    Picker("Target", selection: Binding(
                         get: { store.zoneDrafts[index].connectorID ?? "" },
                         set: { store.zoneDrafts[index].connectorID = $0.isEmpty ? nil : $0 }
                     )) {
-                        Text("智能路由").tag("")
+                        Text("Smart routing").tag("")
                         ForEach(store.connectors) { connector in
                             Text(connector.id).tag(connector.id)
                         }
@@ -304,9 +304,9 @@ struct SettingsView: View {
                 }
             }
             HStack {
-                Button("保存槽位") { store.saveZones() }
-                Button("恢复默认") { store.resetZones() }
-                Text("默认「本机入库」不推云端。绑定连接器 = 拖到该槽位强制送往它（含本地归档目录）。")
+                Button("Save sectors") { store.saveZones() }
+                Button("Restore defaults") { store.resetZones() }
+                Text("Default “Local ingest” does not push to cloud. Binding a connector forces drops on that sector to it (including local archive folders).")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
@@ -319,8 +319,8 @@ struct SettingsView: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "作为归档目录"
-        panel.message = "选择本地云盘挂载目录或 Obsidian 库"
+        panel.prompt = "Use as archive"
+        panel.message = "Choose a local cloud-mount folder or Obsidian vault"
         let template = newNamingTemplate
         if panel.runModal() == .OK, let url = panel.url {
             let name = url.lastPathComponent
@@ -339,17 +339,17 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - 路由
+    // MARK: - Routing
 
     @ViewBuilder
     private var routingTab: some View {
-        Section("同步（默认关闭：只本机入库）") {
-            Toggle("启用后台同步（发件箱工作器）", isOn: $store.isSyncEnabled)
-            Text("关闭时拖入只进本地知识库。开启且路由命中连接器时，才会推送本地归档目录或云端。")
+        Section("Sync (off by default: local ingest only)") {
+            Toggle("Enable background sync (outbox worker)", isOn: $store.isSyncEnabled)
+            Text("When off, drops stay in the local library. When on and a route hits a connector, local archives or cloud targets are pushed.")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
             HStack {
-                Button("立即同步一轮") {
+                Button("Sync now") {
                     Task {
                         let summary = await onRunSyncNow()
                         store.showStatus(summary)
@@ -364,12 +364,12 @@ struct SettingsView: View {
             }
         }
 
-        Section("默认目标端（可留空）") {
-            TextField("连接器 ID，逗号分隔（无规则命中时使用；本地优先请留空）", text: $store.defaultConnectorIDsText)
+        Section("Default targets (optional)") {
+            TextField("Connector IDs, comma-separated (used when no rule matches; leave empty for local-first)", text: $store.defaultConnectorIDsText)
                 .font(.system(size: 11, design: .monospaced))
         }
 
-        Section("路由规则（JSON）") {
+        Section("Route rules (JSON)") {
             TextEditor(text: $store.routeRulesJSON)
                 .font(.system(size: 11, design: .monospaced))
                 .frame(minHeight: 130)
@@ -378,13 +378,13 @@ struct SettingsView: View {
                         .strokeBorder(Color.primary.opacity(0.15))
                 )
             HStack {
-                Button("校验") { store.validateRouteRules() }
-                Button("填入示例") { store.routeRulesJSON = Self.sampleRules }
+                Button("Validate") { store.validateRouteRules() }
+                Button("Insert sample") { store.routeRulesJSON = Self.sampleRules }
                 Spacer()
-                Button("保存设置") { store.save() }
+                Button(store.t(.saveSettings)) { store.save() }
                     .keyboardShortcut("s", modifiers: .command)
             }
-            Text("按优先级匹配内容类型 / 分类 / 标签 / 来源 App / 关键词；命中后按目标顺序推送——文件型连接器会自动排到前面，其云端链接随后注入下游（例如先传网盘、再把链接写进 Notion）。")
+            Text("Match by priority on content type / category / tags / source app / keywords; push targets in order — file connectors are sorted first so their cloud URLs can feed downstream (e.g. Drive then Notion).")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
@@ -394,7 +394,7 @@ struct SettingsView: View {
     [
       {
         "id": "pdf-to-cloud",
-        "name": "PDF 先传网盘再进 Notion",
+        "name": "PDF to Drive then Notion",
         "priority": 10,
         "isEnabled": true,
         "contentTypes": ["documentPDF"],
@@ -406,11 +406,11 @@ struct SettingsView: View {
       },
       {
         "id": "tech-to-notion",
-        "name": "技术内容进 Notion",
+        "name": "Tech content to Notion",
         "priority": 5,
         "isEnabled": true,
         "contentTypes": [],
-        "categories": ["技术"],
+        "categories": ["Tech"],
         "tags": [],
         "sourceAppBundleIDs": [],
         "keywords": [],
@@ -420,14 +420,14 @@ struct SettingsView: View {
     """
 
     private var queueSummary: String {
-        guard !store.queueCounts.isEmpty else { return "队列为空" }
+        guard !store.queueCounts.isEmpty else { return "Queue empty" }
         let order = ["PENDING", "BLOCKED", "RUNNING", "SUCCEEDED", "FAILED"]
         return order
             .compactMap { key in store.queueCounts[key].map { "\(key.lowercased()) \($0)" } }
             .joined(separator: " · ")
     }
 
-    // MARK: - 检索与 AI
+    // MARK: - Search & AI
 
     @ViewBuilder
     private var intelligenceTab: some View {
@@ -458,7 +458,7 @@ struct SettingsView: View {
                 Toggle(provider.title(language: store.uiLanguage), isOn: store.bindingForProvider(provider))
             }
         } header: {
-            Text(store.uiLanguage == .zh ? "AI 后端（互斥）" : "AI backend (one at a time)")
+            Text(store.t(.aiBackendHeader))
         }
 
         Section {
@@ -469,9 +469,7 @@ struct SettingsView: View {
             TextField(store.t(.aiChatModel), text: $store.chatModel)
             TextField(store.t(.aiEmbeddingModel), text: $store.embeddingModel)
             HStack(spacing: 8) {
-                Button(store.isResummarizing
-                       ? (store.uiLanguage == .zh ? "正在总结…" : "Working…")
-                       : store.t(.aiResummarize)) {
+                Button(store.isResummarizing ? store.t(.working) : store.t(.aiResummarize)) {
                     Task { await store.resummarizeMissingSummaries() }
                 }
                 .disabled(store.isResummarizing || !store.isAIEnabled)
@@ -480,7 +478,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text(store.uiLanguage == .zh ? "AI 增强" : "AI enrichment")
+            Text(store.t(.aiEnrichmentHeader))
         }
 
         if store.aiProvider == .ollama {
@@ -507,7 +505,7 @@ struct SettingsView: View {
         }
     }
 
-    /// 本机 llama.cpp：以 Base URL 为主（同 Ollama）；可选代启或按命令自行启动。
+    /// Local llama.cpp: Base URL primary (same as Ollama); optional managed start or DIY command.
     @ViewBuilder
     private var localLLMSection: some View {
         Section(AIProvider.localLlama.title(language: store.uiLanguage)) {
@@ -549,7 +547,7 @@ struct SettingsView: View {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
                     pasteboard.setString(store.localLLM.configuration.suggestedLaunchCommand, forType: .string)
-                    store.showStatus(store.uiLanguage == .zh ? "已复制启动命令" : "Launch command copied")
+                    store.showStatus(store.t(.launchCommandCopied))
                 }
             }
             Text(LocalLLMConfiguration.setupHint)
@@ -563,7 +561,7 @@ struct SettingsView: View {
                         set: { store.localLLM.configuration.binaryPath = $0 }
                     ))
                     .font(.system(size: 11, design: .monospaced))
-                    Button(store.uiLanguage == .zh ? "选择…" : "Choose…") {
+                    Button(store.t(.chooseEllipsis)) {
                         chooseFile { store.localLLM.configuration.binaryPath = $0.path }
                     }
                 }
@@ -573,7 +571,7 @@ struct SettingsView: View {
                         set: { store.localLLM.configuration.modelPath = $0 }
                     ))
                     .font(.system(size: 11, design: .monospaced))
-                    Button(store.uiLanguage == .zh ? "选择…" : "Choose…") {
+                    Button(store.t(.chooseEllipsis)) {
                         chooseFile { store.localLLM.configuration.modelPath = $0.path }
                     }
                 }
@@ -652,7 +650,7 @@ struct SettingsView: View {
         HotKeySpec(named: store.searchHotKey) != nil
     }
 
-    // MARK: - 维护
+    // MARK: - Maintenance
 
     @ViewBuilder
     private var maintenanceTab: some View {
@@ -665,9 +663,7 @@ struct SettingsView: View {
             .pickerStyle(.segmented)
             .onChange(of: store.uiLanguage) { _, language in
                 language.save()
-                store.showStatus(
-                    language == .zh ? "界面语言已切换为中文" : "Language switched to English"
-                )
+                store.showStatus(store.t(.languageSwitched))
             }
             Text(store.t(.languageHint))
                 .font(.system(size: 10))
@@ -679,7 +675,7 @@ struct SettingsView: View {
         }
         Section(store.t(.maintenanceData)) {
             Button(store.t(.maintenanceReveal)) { onRevealDataDirectory() }
-            Text("\(store.t(.maintenanceLog))：\(logPath)")
+            Text("\(store.t(.maintenanceLog)): \(logPath)")
                 .font(.system(size: 10, design: .monospaced))
                 .textSelection(.enabled)
                 .foregroundStyle(.secondary)

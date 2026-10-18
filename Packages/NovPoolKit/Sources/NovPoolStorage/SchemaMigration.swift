@@ -1,6 +1,6 @@
 import Foundation
 
-/// Schema 迁移。v1 与产品白皮书 §4.2 保持一一对应。
+/// Schema migration. v1 corresponds one-to-one with §4.2 of the product white paper.
 public enum SchemaMigration {
     public struct Migration: Sendable {
         public let name: String
@@ -41,7 +41,7 @@ public enum SchemaMigration {
             "CREATE INDEX idx_knowledge_items_fileHash ON knowledge_items(fileHashSHA256)",
             "CREATE INDEX idx_knowledge_items_createdAt ON knowledge_items(createdAt)",
 
-            // FTS5 外部内容表 + trigram 分词器：支持中英文混合子串检索。
+            // FTS5 external content table + trigram tokenizer: supports mixed Chinese and English substring search.
             """
             CREATE VIRTUAL TABLE knowledge_items_fts USING fts5(
                 title,
@@ -108,7 +108,7 @@ public enum SchemaMigration {
         ]
     )
 
-    /// Phase C：人工整理 — 置顶与收藏。
+    /// Phase C: Manual Organize — Pinned and Favorite.
     public static let v2 = Migration(
         name: "v2_organization_flags",
         statements: [
@@ -120,7 +120,7 @@ public enum SchemaMigration {
     )
 }
 
-/// 迁移执行器：以 `novpool_migrations` 表记录已应用的迁移名。
+/// Migration executor: Records applied migration names in the `novpool_migrations` table.
 public enum SchemaMigrator {
     public static func migrate(_ database: NovPoolDatabase, migrations: [SchemaMigration.Migration] = SchemaMigration.all) async throws {
         try await database.execute(

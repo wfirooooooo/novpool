@@ -3,10 +3,11 @@ import NovPoolConnectors
 import NovPoolCore
 import NovPoolStorage
 
-/// 连接器与同步的命令行入口。
+/// Connector and sync CLI entry points.
 ///
-/// 图形界面只覆盖「本地归档目录」这一条最常用路径；云端连接器（Notion / Drive / OneDrive）
-/// 需要凭据，走命令行登记最直接，也便于脚本化与排障：
+/// The GUI covers the common “local archive folder” path; cloud connectors
+/// (Notion / Drive / OneDrive) need credentials—register them on the CLI for scripting
+/// and troubleshooting:
 ///
 ///     NovPool --list-connectors
 ///     NovPool --add-connector '{"id":"notion","name":"Notion","type":"notion","config":{"databaseID":"…"},"token":"ntn_…"}'
@@ -18,15 +19,15 @@ enum ConnectorCLI {
         var id: String
         var name: String?
         var type: String
-        /// 非敏感配置，原样写入 `connectors.configJSON`。
+        /// Non-sensitive config, stored as-is in `connectors.configJSON`.
         var config: JSONValue?
-        /// Notion 等 Token 型连接器的凭据（写入 Keychain）。
+        /// Token credentials for Notion-style connectors (Keychain).
         var token: String?
-        /// OAuth 凭据（写入 Keychain）。
+        /// OAuth credentials (Keychain).
         var oauth: OAuthCredentials?
     }
 
-    /// 任意 JSON 值，用于把 `config` 原样序列化。
+    /// Arbitrary JSON value so `config` can be re-serialized verbatim.
     enum JSONValue: Codable {
         case string(String), number(Double), bool(Bool), object([String: JSONValue]), array([JSONValue]), null
 
@@ -60,7 +61,7 @@ enum ConnectorCLI {
         }
     }
 
-    /// 返回 nil 表示当前参数不需要 CLI 处理。
+    /// Returns nil when the current arguments do not need CLI handling.
     static func run(arguments: [String]) -> Int32? {
         guard let command = arguments.first(where: { $0.hasPrefix("--") && $0 != "--selftest" }) else {
             return nil
@@ -74,13 +75,13 @@ enum ConnectorCLI {
             return execute { try await listConnectors() }
         case "--add-connector":
             guard let json = value("--add-connector") else {
-                print("用法：--add-connector '<json>'")
+                print("Usage: --add-connector '<json>'")
                 return 2
             }
             return execute { try await addConnector(json) }
         case "--remove-connector":
             guard let id = value("--remove-connector") else {
-                print("用法：--remove-connector <id>")
+                print("Usage: --remove-connector <id>")
                 return 2
             }
             return execute { try await removeConnector(id) }
@@ -91,18 +92,18 @@ enum ConnectorCLI {
         }
     }
 
-    // MARK: - 命令实现
+    // MARK: - Command implementations
 
     private static func listConnectors() async throws -> Int32 {
         let context = try makeContext()
         let connectors = try await context.connectorRepository.list()
         if connectors.isEmpty {
-            print("还没有登记任何连接器。")
+            print("No connectors registered.")
         } else {
-            print("连接器（\(connectors.count)）：")
+            print("Connectors (\(connectors.count)):")
             for connector in connectors {
-                let state = connector.isEnabled ? "启用" : "停用"
-                let credential = connector.keychainAccountRef == nil ? "无凭据" : "凭据在钥匙串"
+                let state = connector.isEnabled ? "enabled" : "disabled"
+                let credential = connector.keychainAccountRef == nil ? "no credentials" : "credentials in Keychain"
                 print("  [\(state)] \(connector.id)  \(connector.connectorType)  \(connector.name)  \(credential)")
             }
         }
@@ -110,20 +111,20 @@ enum ConnectorCLI {
         let repository = OutboxRepository(database: context.database)
         let counts = try await repository.statusCounts()
         if counts.isEmpty {
-            print("同步队列为空。")
+            print("Sync queue empty.")
         } else {
             let summary = counts
                 .sorted { $0.key.rawValue < $1.key.rawValue }
                 .map { "\($0.key.rawValue.lowercased()) \($0.value)" }
                 .joined(separator: " · ")
-            print("同步队列：\(summary)")
+            print("Sync queue: \(summary)")
         }
         return 0
     }
 
     private static func addConnector(_ json: String) async throws -> Int32 {
         let context = try makeContext()
-        guard let data = json.data(using: .utf8) else { throw NovPoolError.connectorNotConfigured("参数不是有效文本") }
+        guard let data = json.data(using: .utf8) else { throw NovPoolError.connectorNotConfigured("Argument is not valid text") }
         let request = try JSONDecoder().decode(Request.self, from: data)
 
         let keychain = KeychainStore()
@@ -146,16 +147,16 @@ enum ConnectorCLI {
             configJSON: request.config?.jsonString ?? "{}"
         )
         try await context.connectorRepository.upsert(record)
-        print("已登记连接器：\(record.id)（\(record.connectorType)）")
-        if account != nil { print("凭据已写入系统钥匙串：\(account!)") }
+        print("Registered connector: \(record.id) (\(record.connectorType))")
+        if account != nil { print("Credentials stored in Keychain: \(account!)") }
 
-        // 立即校验一次，让「id/密钥写错」当场暴露，而不是等到第一次同步才失败。
+        // Validate immediately so bad ids/secrets surface here, not on first sync.
         let hub = ConnectorHub(repository: context.connectorRepository, keychain: keychain)
         if let resolved = await hub.resolve(connectorID: record.id) {
             let valid = (try? await resolved.connector.validateAuthentication(configJSON: resolved.record.configData)) ?? false
-            print(valid ? "鉴权校验通过。" : "鉴权校验未通过：请检查配置与凭据（离线环境无法验证云端连接）。")
+            print(valid ? "Auth check passed." : "Auth check failed: verify config and credentials (offline cannot verify cloud).")
         } else {
-            print("警告：连接器类型 \(record.connectorType) 未实现，同步时会跳过。")
+            print("Warning: connector type \(record.connectorType) is not implemented; sync will skip it.")
         }
         return 0
     }
@@ -163,14 +164,14 @@ enum ConnectorCLI {
     private static func removeConnector(_ id: String) async throws -> Int32 {
         let context = try makeContext()
         guard let record = try await context.connectorRepository.fetch(id: id) else {
-            print("未找到连接器：\(id)")
+            print("Connector not found: \(id)")
             return 1
         }
         if let account = record.keychainAccountRef {
             try? KeychainStore().delete(account: account)
         }
         try await context.connectorRepository.delete(id: id)
-        print("已删除连接器：\(id)")
+        print("Deleted connector: \(id)")
         return 0
     }
 
@@ -183,17 +184,17 @@ enum ConnectorCLI {
             staging: try StagingStore(root: NovPoolPaths.stagingRoot())
         )
         let result = await worker.runOnce()
-        print("本轮：处理 \(result.processed)，成功 \(result.succeeded)，失败 \(result.failed)，"
-            + "等待前置 \(result.waiting)，解锁下游 \(result.released)")
+        print("This run: processed \(result.processed), succeeded \(result.succeeded), failed \(result.failed), "
+            + "waiting \(result.waiting), released \(result.released)")
 
         let repository = OutboxRepository(database: context.database)
         for job in try await repository.dueJobs(now: Date(), limit: 5) {
-            print("  待重试：\(job.connectorID) 第 \(job.retryCount) 次 · \(job.lastError ?? "")")
+            print("  Retry pending: \(job.connectorID) attempt \(job.retryCount) · \(job.lastError ?? "")")
         }
         return result.failed > 0 ? 1 : 0
     }
 
-    // MARK: - 上下文
+    // MARK: - Context
 
     private struct Context {
         let database: NovPoolDatabase
@@ -204,7 +205,7 @@ enum ConnectorCLI {
         let database = try NovPoolDatabase(
             path: NovPoolPaths.databaseURL().path(percentEncoded: false)
         )
-        // CLI 可能先于 GUI 首次运行，因此这里也要保证 schema 已就绪。
+        // CLI may run before first GUI launch; ensure schema is ready.
         let semaphore = DispatchSemaphore(value: 0)
         let failure = FailureBox()
         Task.detached {
@@ -217,7 +218,7 @@ enum ConnectorCLI {
         }
         semaphore.wait()
         if let message = failure.message {
-            throw NovPoolError.database("迁移失败：\(message)")
+            throw NovPoolError.database("Migration failed: \(message)")
         }
         return Context(database: database, connectorRepository: ConnectorRepository(database: database))
     }
@@ -226,8 +227,8 @@ enum ConnectorCLI {
         var message: String?
     }
 
-    /// CLI 是同步入口（无 GUI），因此用信号量等待异步实现。
-    /// `work` 必须显式 `@Sendable`：它会跨进 detached task 执行。
+    /// CLI is a sync entry (no GUI), so wait on a semaphore for async work.
+    /// `work` must be `@Sendable` because it crosses into a detached task.
     private static func execute(_ work: @escaping @Sendable () async throws -> Int32) -> Int32 {
         let box = ResultBox()
         let semaphore = DispatchSemaphore(value: 0)
@@ -235,7 +236,7 @@ enum ConnectorCLI {
             do {
                 box.code = try await work()
             } catch {
-                print("失败：\((error as? NovPoolError)?.errorDescription ?? "\(error)")")
+                print("Failed: \((error as? NovPoolError)?.errorDescription ?? "\(error)")")
                 box.code = 1
             }
             semaphore.signal()

@@ -4,9 +4,9 @@ import ImageIO
 import NovPoolCore
 import Vision
 
-/// 端侧 ANE 文本识别（中英混排）。
+/// Edge-side ANE Text Recognition (Chinese-English Mixed)
 ///
-/// 走 `Vision.framework`：零网络、零第三方依赖、Neural Engine 硬件加速。
+/// Using `Vision.framework`: zero network, zero third-party dependencies, Neural Engine hardware acceleration.
 public actor VisionOCRService {
     public struct Configuration: Sendable, Equatable {
         public var recognitionLanguages: [String]
@@ -36,7 +36,7 @@ public actor VisionOCRService {
         self.configuration = configuration
     }
 
-    /// 识别内存中的图片字节流（P1 拖入的网页图片走这条路径）。
+    /// Identify the Image byte stream in memory (WebImage dragged into P1 follows this path).
     public func recognize(imageData: Data) throws -> TextRecognitionResult {
         guard let image = Self.decodeImage(imageData) else {
             throw NovPoolError.unsupportedContent
@@ -44,7 +44,7 @@ public actor VisionOCRService {
         return try recognize(cgImage: image)
     }
 
-    /// 识别单张位图。
+    /// Recognize a single bitmap.
     public func recognize(cgImage: CGImage, pageIndex: Int = 0) throws -> TextRecognitionResult {
         let request = makeRequest()
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
@@ -62,7 +62,7 @@ public actor VisionOCRService {
         return Self.makeResult(from: blocks)
     }
 
-    /// 扫描版 PDF：逐页栅格化后 OCR，页与页之间用空行分隔。
+    /// Scanned PDF: OCR after rasterizing page by page, separated by blank lines between pages.
     public func recognizePDF(at url: URL) throws -> TextRecognitionResult {
         let pages = PDFPageRasterizer.rasterize(
             pagesAt: url,
@@ -85,7 +85,7 @@ public actor VisionOCRService {
         )
     }
 
-    // MARK: - 内部
+    // MARK: - Internals
 
     private func makeRequest() -> VNRecognizeTextRequest {
         let request = VNRecognizeTextRequest()

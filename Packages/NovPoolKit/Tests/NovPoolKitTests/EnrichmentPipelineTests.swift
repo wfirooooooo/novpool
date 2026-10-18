@@ -5,7 +5,7 @@ import NovPoolStorage
 import Testing
 @testable import NovPoolSystemBridge
 
-@Suite("多模态补齐流水线")
+@Suite("Multimodal Completion Pipeline")
 struct EnrichmentPipelineTests {
     private struct Harness {
         let database: NovPoolDatabase
@@ -18,7 +18,7 @@ struct EnrichmentPipelineTests {
     private func makeHarness(
         ocr: any ImageTextRecognizing = FakeOCR(),
         fetcher: any ArticleFetching = FakeFetcher(result: .unparseable),
-        ai: any AIEnriching = FakeAI(enrichment: AIEnrichment(summary: "AI 摘要", category: "技术", tags: ["标签"], embedding: [0.5, 0.25])),
+        ai: any AIEnriching = FakeAI(enrichment: AIEnrichment(summary: "AI Summary", category: "Technology", tags: ["Label"], embedding: [0.5, 0.25])),
         configuration: EnrichmentPipeline.Configuration = .init()
     ) async throws -> Harness {
         let directory = try TestSupport.makeTemporaryDirectory("enrich")
@@ -47,10 +47,10 @@ struct EnrichmentPipelineTests {
         )
     }
 
-    @Test("图片条目：OCR 文本与 AI 标签、向量一并回填并进入 FTS 索引")
+    @Test("Image entry: OCR text and AI tags, embedding batched back and entered into FTS index")
     func imageEnrichment() async throws {
-        let harness = try await makeHarness(ocr: FakeOCR(imageText: "Apple Neural Engine 神经网络加速"))
-        let bytes = try #require(TestSupport.pngData("Apple Neural Engine 神经网络加速"))
+        let harness = try await makeHarness(ocr: FakeOCR(imageText: "Apple Neural Engine Neural network acceleration"))
+        let bytes = try #require(TestSupport.pngData("Apple Neural Engine Neural network acceleration"))
         let content = ResolvedDragContent(
             contentType: .image,
             imageData: bytes,
@@ -63,23 +63,23 @@ struct EnrichmentPipelineTests {
         )
 
         #expect(result.enrichment?.ocrText != nil)
-        #expect(result.record.ocrText == "Apple Neural Engine 神经网络加速")
-        #expect(result.record.aiSummary == "AI 摘要")
-        #expect(result.record.aiTags == ["标签"])
+        #expect(result.record.ocrText == "Apple Neural Engine Neural network acceleration")
+        #expect(result.record.aiSummary == "AI Summary")
+        #expect(result.record.aiTags == ["Label"])
         #expect(result.record.embedding?.count == 2)
 
-        // 回填后立即可被全文检索命中（FTS 触发器同步）。
-        let hits = try await harness.repository.searchFullText("神经网络加速")
+        // After backfilling, it can be immediately hit by full-text search (FTS trigger synchronization).
+        let hits = try await harness.repository.searchFullText("Neural network acceleration")
         #expect(hits.count == 1)
         #expect(hits.first?.id == result.record.id)
     }
 
-    @Test("网页链接条目：抓取正文写入 markdownBody，弱标题被真实标题替换")
+    @Test("WebLink entry: fetch Bodywrite markdownBody, weak headings are replaced by real headings")
     func webLinkEnrichment() async throws {
         let article = ArticleExtraction(
-            title: "多云知识路由实践",
-            excerpt: "摘要",
-            markdown: "# 多云知识路由实践\n\n正文内容若干。",
+            title: "Cloudy Knowledge Routing Practice",
+            excerpt: "Summary",
+            markdown: "# Cloudy Knowledge Routing Practice\n\nBodySome content.",
             textLength: 300,
             contentSelector: "article"
         )
@@ -87,26 +87,26 @@ struct EnrichmentPipelineTests {
         let content = ResolvedDragContent(
             contentType: .webLink,
             pageURL: URL(string: "https://blog.example.com/a"),
-            text: "多云知识路由实践"
+            text: "Cloudy Knowledge Routing Practice"
         )
 
         let result = try await harness.orchestrator.ingestAndEnrich(
             content,
             sourceContext: SourceContext(appBundleID: "com.google.Chrome")
         )
-        // 入库标题来自用户拖拽文本，不用被覆盖
-        #expect(result.record.title == "多云知识路由实践")
-        #expect(result.record.markdownBody?.contains("正文内容若干") == true)
+        // The inventory title comes from the user dragging the text and does not need to be overwritten
+        #expect(result.record.title == "Cloudy Knowledge Routing Practice")
+        #expect(result.record.markdownBody?.contains("BodySome content") == true)
 
-        let hits = try await harness.repository.searchFullText("正文内容若干")
+        let hits = try await harness.repository.searchFullText("BodySome content")
         #expect(hits.count == 1)
     }
 
-    @Test("弱标题（仅域名）会被抓取到的真实标题替换")
+    @Test("Weak titles (domain only) will be replaced by the actual titles that are crawled")
     func weakTitleAdoption() async throws {
         let article = ArticleExtraction(
-            title: "真正的文章标题",
-            markdown: String(repeating: "正文。", count: 80),
+            title: "The Real Article Title",
+            markdown: String(repeating: "Body。", count: 80),
             textLength: 240,
             contentSelector: "article"
         )
@@ -117,17 +117,15 @@ struct EnrichmentPipelineTests {
             content,
             sourceContext: SourceContext(appBundleID: "com.google.Chrome", pageURL: URL(string: "https://blog.example.com/a"))
         )
-        #expect(result.record.title == "真正的文章标题")
+        #expect(result.record.title == "The Real Article Title")
     }
 
-    @Test("数字版 PDF 走文字层，不消耗 OCR")
+    @Test("Digital PDF uses a text layer, does not consume OCR")
     func pdfUsesTextLayer() async throws {
-        let harness = try await makeHarness(ocr: FakeOCR(pdfText: "不该被调用"))
+        let harness = try await makeHarness(ocr: FakeOCR(pdfText: "Should not be called"))
         let pdf = harness.directory.appending(path: "report.pdf")
-        let body = """
-        季度报告核心结论：多云归档流水线在本地完成清洗与索引，随后分发到各类云端知识库；\
-        大体积 PDF 先上传网盘拿到预览链接，再注入 Notion 数据库记录完成级联。
-        """
+        // Avoid mid-word hyphens: PDF line wrapping + normalize() joins "multi-"+"cloud" into "multicloud".
+        let body = "Key Conclusions of the Quarterly Report: the multicloud archive pipeline cleans and indexes locally, then fans out to cloud knowledge bases; large PDFs upload to drive first for a PreviewLink, then cascade into a Notion database record."
         #expect(TestSupport.makePDF(text: body, at: pdf))
 
         let result = try await harness.orchestrator.ingestAndEnrich(
@@ -135,13 +133,14 @@ struct EnrichmentPipelineTests {
             sourceContext: SourceContext(appBundleID: "com.apple.finder")
         )
         #expect(result.record.ocrText == nil)
-        #expect(result.record.markdownBody?.contains("季度报告核心结论") == true)
+        // PDFKit may wrap/normalize spaces; assert on a contiguous token from the text layer.
+        #expect(result.record.markdownBody?.contains("PreviewLink") == true)
     }
 
-    @Test("无文字层的 PDF 回退到 OCR")
+    @Test("PDF without text layer reverts to OCR")
     func scannedPDFFallsBackToOCR() async throws {
-        // 构造一个不含文字层的 PDF：只画图形，不画文字。
-        let harness = try await makeHarness(ocr: FakeOCR(pdfText: "扫描件 OCR 结果"))
+        // Create a PDF without a text layer: only draw graphics, no text.
+        let harness = try await makeHarness(ocr: FakeOCR(pdfText: "Scanned OCR results"))
         let pdf = harness.directory.appending(path: "scanned.pdf")
         let url = pdf
         var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)
@@ -157,18 +156,18 @@ struct EnrichmentPipelineTests {
             ResolvedDragContent(contentType: .documentPDF, fileURLs: [pdf]),
             sourceContext: SourceContext(appBundleID: "com.apple.finder")
         )
-        #expect(result.record.ocrText == "扫描件 OCR 结果")
+        #expect(result.record.ocrText == "Scanned OCR results")
         #expect(result.record.markdownBody == nil)
     }
 
-    @Test("本机 HTML 文件提取正文并进入全文索引")
+    @Test("Local HTML file extracts the Body and enters full-text indexing")
     func localHTMLFileEnrichment() async throws {
         let harness = try await makeHarness(ai: FakeAI(enrichment: nil))
         let file = harness.directory.appending(path: "local-report.html")
-        let paragraph = String(repeating: "这是拖拽进来的本机 HTML 文件正文，用于验证知识库检索。", count: 6)
+        let paragraph = String(repeating: "This is a locally dragged-in HTML FileBody, used to verify knowledge base retrieval.", count: 6)
         let html = """
-        <html><head><title>本机报告</title></head>
-        <body><article><h1>本机报告</h1><p>\(paragraph)</p></article></body></html>
+        <html><head><title>Local report</title></head>
+        <body><article><h1>Local report</h1><p>\(paragraph)</p></article></body></html>
         """
         try Data(html.utf8).write(to: file)
 
@@ -177,26 +176,26 @@ struct EnrichmentPipelineTests {
             sourceContext: SourceContext(appBundleID: "com.apple.finder")
         )
 
-        #expect(result.record.markdownBody?.contains("本机 HTML 文件正文") == true)
-        let hits = try await harness.repository.searchFullText("拖拽进来的本机 HTML 文件正文")
+        #expect(result.record.markdownBody?.contains("locally dragged-in HTML FileBody") == true)
+        let hits = try await harness.repository.searchFullText("locally dragged-in HTML FileBody")
         #expect(hits.first?.id == result.record.id)
     }
 
-    @Test("本机纯文本与代码文件直接作为正文保存")
+    @Test("This machine's Plain Text and code File are directly used as BodySave")
     func plainTextFileEnrichment() async throws {
         let harness = try await makeHarness(ai: FakeAI(enrichment: nil))
         let file = harness.directory.appending(path: "release-notes.md")
-        try Data("# 发布说明\n\n界面调整与拖拽修复。".utf8).write(to: file)
+        try Data("# Release Notes\n\nInterface adjustments and drag-and-drop fixes.".utf8).write(to: file)
 
         let result = try await harness.orchestrator.ingestAndEnrich(
             ResolvedDragContent(contentType: .genericFile, fileURLs: [file]),
             sourceContext: SourceContext(appBundleID: "com.apple.finder")
         )
 
-        #expect(result.record.markdownBody?.contains("拖拽修复") == true)
+        #expect(result.record.markdownBody?.contains("drag-and-drop fixes") == true)
     }
 
-    @Test("无法提取文本的文件也生成文件信息预览")
+    @Test("Unable to extract Text from the File, but still generate File information Preview")
     func binaryFileGetsSummary() async throws {
         let harness = try await makeHarness(ai: FakeAI(enrichment: nil))
         let file = harness.directory.appending(path: "archive.docx")
@@ -207,16 +206,16 @@ struct EnrichmentPipelineTests {
             sourceContext: SourceContext(appBundleID: "com.apple.finder")
         )
 
-        #expect(result.record.markdownBody?.contains("## 文件信息") == true)
+        #expect(result.record.markdownBody?.contains("## File info") == true)
         #expect(result.record.markdownBody?.contains("archive.docx") == true)
-        #expect(result.record.markdownBody?.contains("DOCX 文件") == true)
+        #expect(result.record.markdownBody?.contains("DOCX file") == true)
     }
 
-    @Test("启动回填能找到并补齐缺正文的本机文件")
+    @Test("Enabling backfill can find and complete local files missing a Body")
     func legacyFileBackfill() async throws {
         let harness = try await makeHarness(ai: FakeAI(enrichment: nil))
         let file = harness.directory.appending(path: "legacy.html")
-        let paragraph = String(repeating: "旧版本拖入的本机文件没有正文，启动后应当自动补齐。", count: 6)
+        let paragraph = String(repeating: "Native Files dragged in from the old version have no Body, and it should be automatically completed upon startup.", count: 6)
         try Data("<html><body><article><p>\(paragraph)</p></article></body></html>".utf8).write(to: file)
 
         let item = try await harness.orchestrator.ingest(
@@ -230,13 +229,13 @@ struct EnrichmentPipelineTests {
 
         #expect(try await harness.repository.recordsNeedingLocalFileContent().isEmpty)
         let record = try #require(try await harness.repository.fetch(id: item.record.id))
-        #expect(record.markdownBody?.contains("启动后应当自动补齐") == true)
+        #expect(record.markdownBody?.contains("automatically completed") == true)
     }
 
-    @Test("OCR 失败不影响入库结果")
+    @Test("OCR failure does not affect the storage result")
     func ocrFailureIsolation() async throws {
         let harness = try await makeHarness(ocr: FakeOCR(shouldFail: true))
-        let bytes = try #require(TestSupport.pngData("任意图片"))
+        let bytes = try #require(TestSupport.pngData("Any Image"))
         let result = try await harness.orchestrator.ingestAndEnrich(
             ResolvedDragContent(contentType: .image, imageData: bytes, imageTypeIdentifier: "public.png"),
             sourceContext: SourceContext(appBundleID: "com.apple.Safari")
@@ -246,7 +245,7 @@ struct EnrichmentPipelineTests {
         #expect(try await harness.repository.count() == 1)
     }
 
-    @Test("抓取失败时不做任何回填，但条目仍在库中")
+    @Test("When capture fails, no backfill is done, but the item remains in the database")
     func fetchFailureIsolation() async throws {
         let harness = try await makeHarness(fetcher: FakeFetcher(result: .httpError(status: 403)))
         let result = try await harness.orchestrator.ingestAndEnrich(
@@ -258,24 +257,24 @@ struct EnrichmentPipelineTests {
         #expect(try await harness.repository.count() == 1)
     }
 
-    @Test("关闭 OCR 与 AI 后仍生成本机文件的预览信息")
+    @Test("After closing OCR and AI, still generate the preview information of the local file")
     func disabledEnrichment() async throws {
         let harness = try await makeHarness(
             configuration: .init(runOCR: false, extractWebContent: false, runAI: false)
         )
-        let bytes = try #require(TestSupport.pngData("任意图片"))
+        let bytes = try #require(TestSupport.pngData("Any Image"))
         let result = try await harness.orchestrator.ingestAndEnrich(
             ResolvedDragContent(contentType: .image, imageData: bytes, imageTypeIdentifier: "public.png"),
             sourceContext: SourceContext(appBundleID: "com.apple.Safari")
         )
-        #expect(result.enrichment?.markdownBody?.contains("## 文件信息") == true)
+        #expect(result.enrichment?.markdownBody?.contains("## File info") == true)
         #expect(result.record.ocrText == nil)
         #expect(result.record.aiSummary == nil)
     }
 
-    @Test("纯文本条目只在有正文时调用 AI，正文缺失则跳过")
+    @Test("Plain Text entries only call AI when there is a Body; if the Body is missing, it is skipped.")
     func plainTextSkipsAIWithoutBody() async throws {
-        let ai = FakeAI(enrichment: AIEnrichment(summary: "不该出现"))
+        let ai = FakeAI(enrichment: AIEnrichment(summary: "Should not appear"))
         let harness = try await makeHarness(ai: ai)
         let result = try await harness.orchestrator.ingestAndEnrich(
             ResolvedDragContent(contentType: .genericFile, fileURLs: []),
@@ -284,18 +283,18 @@ struct EnrichmentPipelineTests {
         #expect(result.enrichment == nil)
     }
 
-    @Test("补齐状态行用于悬浮窗提示")
+    @Test("Complete the status bar for floating window notifications")
     func summaryLine() {
-        #expect(ContentEnrichment().summaryLine == "无新增")
-        #expect(ContentEnrichment(ocrText: "t", aiSummary: "s").summaryLine == "OCR·AI 标签")
-        #expect(ContentEnrichment(markdownBody: "b", embedding: [1]).summaryLine == "正文·向量")
+        #expect(ContentEnrichment().summaryLine == "Nothing new")
+        #expect(ContentEnrichment(ocrText: "t", aiSummary: "s").summaryLine == "OCR·AI tags")
+        #expect(ContentEnrichment(markdownBody: "b", embedding: [1]).summaryLine == "Body·Embedding")
     }
 
-    @Test("标题采纳策略：兜底标题与域名标题可被替换")
+    @Test("Title Adoption Strategy: Fallback Titles and Domain Titles Can Be Replaced")
     func titleAdoption() {
         #expect(TitleAdoption.shouldAdopt(current: ""))
-        #expect(TitleAdoption.shouldAdopt(current: "未命名条目 2026/3/9"))
+        #expect(TitleAdoption.shouldAdopt(current: "Untitled item 2026/3/9"))
         #expect(TitleAdoption.shouldAdopt(current: "example.com"))
-        #expect(TitleAdoption.shouldAdopt(current: "多云知识路由实践") == false)
+        #expect(TitleAdoption.shouldAdopt(current: "Cloudy Knowledge Routing Practice") == false)
     }
 }

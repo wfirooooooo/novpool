@@ -3,7 +3,7 @@ import NovPoolCore
 import Testing
 @testable import NovPoolStorage
 
-@Suite("GRDB 等价的 Schema 与检索")
+@Suite("GRDB Equivalent Schema and Retrieval")
 struct DatabaseTests {
     private func makeDatabase() async throws -> (NovPoolDatabase, KnowledgeRepository, URL) {
         let directory = try TestSupport.makeTemporaryDirectory("db")
@@ -12,7 +12,7 @@ struct DatabaseTests {
         return (database, KnowledgeRepository(database: database), directory)
     }
 
-    @Test("迁移可重复执行且幂等")
+    @Test("Migrations can be executed repeatedly and are idempotent")
     func migrationIsIdempotent() async throws {
         let (database, _, _) = try await makeDatabase()
         try await SchemaMigrator.migrate(database)
@@ -28,31 +28,31 @@ struct DatabaseTests {
         ]))
     }
 
-    @Test("WAL 模式已开启")
+    @Test("WAL mode is enabled")
     func walEnabled() async throws {
         let (database, _, _) = try await makeDatabase()
         let rows = try await database.query("PRAGMA journal_mode")
         #expect(rows.first?.text("journal_mode")?.lowercased() == "wal")
     }
 
-    @Test("写入后可读回全部字段")
+    @Test("After write, all fields can be read back")
     func insertAndFetch() async throws {
         let (_, repository, _) = try await makeDatabase()
-        let payload = TestSupport.samplePayload(title: "架构白皮书", tags: ["swift", "架构"])
+        let payload = TestSupport.samplePayload(title: "Architecture whitepaper", tags: ["swift", "architecture"])
         var record = KnowledgeItemRecord(payload: payload, localRelativePath: "uuid/asset.png")
         record.fileHashSHA256 = "deadbeef"
         try await repository.insert(record)
 
         let loaded = try #require(try await repository.fetch(id: record.id))
-        #expect(loaded.title == "架构白皮书")
-        #expect(loaded.aiTags == ["swift", "架构"])
+        #expect(loaded.title == "Architecture whitepaper")
+        #expect(loaded.aiTags == ["swift", "architecture"])
         #expect(loaded.sourceApp == "com.google.Chrome")
         #expect(loaded.sourceURL == "https://example.com/a")
         #expect(loaded.localRelativePath == "uuid/asset.png")
         #expect(try await repository.fetchByHash("deadbeef")?.id == record.id)
     }
 
-    @Test("FTS5 trigram 支持中文子串检索")
+    @Test("FTS5 trigram supports Chinese substring search")
     func chineseFullTextSearch() async throws {
         let (_, repository, _) = try await makeDatabase()
         try await repository.insert(KnowledgeItemRecord(
@@ -69,56 +69,57 @@ struct DatabaseTests {
         #expect(hits.first?.title == "多云知识路由中枢")
     }
 
-    @Test("少于 3 个字符的查询自动降级为 LIKE 子串扫描")
+    @Test("Queries with fewer than 3 characters are automatically downgraded to LIKE substring scans")
     func shortQueryFallsBackToLike() async throws {
         let (_, repository, _) = try await makeDatabase()
         try await repository.insert(KnowledgeItemRecord(
-            payload: TestSupport.samplePayload(title: "AI 摘要流水线", body: nil),
+            payload: TestSupport.samplePayload(title: "AI 摘要 pipeline", body: nil),
             localRelativePath: nil
         ))
 
-        // trigram 索引无法命中 2 字符查询，必须由 LIKE 兜底。
+        // Trigram indexing cannot hit 2-character queries and must fall back to LIKE.
         let twoCharacterHits = try await repository.searchFullText("AI")
         #expect(twoCharacterHits.count == 1)
+        // Keep a 2-character Chinese query to verify CJK short-query LIKE fallback.
         let chineseHits = try await repository.searchFullText("摘要")
         #expect(chineseHits.count == 1)
     }
 
-    @Test("包含引号与通配符的查询不会破坏 SQL")
+    @Test("Queries containing quotes and wildcards will not break SQL")
     func hostileQueryIsEscaped() async throws {
         let (_, repository, _) = try await makeDatabase()
         try await repository.insert(KnowledgeItemRecord(
-            payload: TestSupport.samplePayload(title: "含 100% 与 \"引号\" 的标题"),
+            payload: TestSupport.samplePayload(title: "Title with 100% and \"quotes\""),
             localRelativePath: nil
         ))
-        let quoted = try await repository.searchFullText("\"引号\"")
+        let quoted = try await repository.searchFullText("\"quotes\"")
         #expect(quoted.count == 1)
         let percent = try await repository.searchFullText("100%")
         #expect(percent.count == 1)
     }
 
-    @Test("OCR / AI 回填后 FTS 索引由触发器自动同步")
+    @Test("After OCR / AI backfill, the FTS index is automatically synchronized by triggers")
     func enrichmentUpdatesIndex() async throws {
         let (_, repository, _) = try await makeDatabase()
         let record = KnowledgeItemRecord(
-            payload: TestSupport.samplePayload(title: "截图条目", body: nil),
+            payload: TestSupport.samplePayload(title: "Screenshot item", body: nil),
             localRelativePath: "uuid/asset.png"
         )
         try await repository.insert(record)
-        #expect(try await repository.searchFullText("神经网络加速").isEmpty)
+        #expect(try await repository.searchFullText("neural acceleration").isEmpty)
 
         try await repository.updateEnrichment(
             id: record.id,
-            ocrText: "Apple Neural Engine 神经网络加速",
-            aiSummary: "端侧 OCR 摘要",
-            aiCategory: "技术",
+            ocrText: "Apple Neural Engine neural acceleration",
+            aiSummary: "On-device OCR summary",
+            aiCategory: "Technology",
             aiTags: ["OCR", "ANE"],
             embedding: [0.1, 0.2, 0.3]
         )
 
-        let hits = try await repository.searchFullText("神经网络加速")
+        let hits = try await repository.searchFullText("neural acceleration")
         #expect(hits.count == 1)
-        #expect(hits.first?.category == "技术")
+        #expect(hits.first?.category == "Technology")
         #expect(hits.first?.tags == ["OCR", "ANE"])
 
         let embeddings = try await repository.embeddingRows()
@@ -126,11 +127,11 @@ struct DatabaseTests {
         #expect(embeddings[0].vector.count == 3)
     }
 
-    @Test("删除条目后索引同步清理")
+    @Test("Index synchronization cleanup after deleting an entry")
     func deleteClearsIndex() async throws {
         let (_, repository, _) = try await makeDatabase()
         let record = KnowledgeItemRecord(
-            payload: TestSupport.samplePayload(title: "临时笔记"),
+            payload: TestSupport.samplePayload(title: "Temporary note"),
             localRelativePath: nil
         )
         try await repository.insert(record)
@@ -138,11 +139,11 @@ struct DatabaseTests {
 
         #expect(try await repository.delete(id: record.id))
         #expect(try await repository.count() == 0)
-        #expect(try await repository.searchFullText("临时笔记").isEmpty)
-        #expect(try await repository.searchSubstring("临时笔记").isEmpty)
+        #expect(try await repository.searchFullText("Temporary note").isEmpty)
+        #expect(try await repository.searchSubstring("Temporary note").isEmpty)
     }
 
-    @Test("条目删除后级联清理发件箱任务")
+    @Test("Cascade clean-up of outbox tasks after item deletion")
     func outboxCascadeDelete() async throws {
         let (database, repository, _) = try await makeDatabase()
         let connectors = ConnectorRepository(database: database)
@@ -167,7 +168,7 @@ struct DatabaseTests {
         #expect(remaining.first?.int("value") == 0)
     }
 
-    @Test("连接器配置可增删改查，敏感字段不落库")
+    @Test("Connector configuration can be added, deleted, modified, and queried, and sensitive fields are not stored in the database.")
     func connectorCRUD() async throws {
         let (database, _, _) = try await makeDatabase()
         let connectors = ConnectorRepository(database: database)

@@ -3,11 +3,11 @@ import NovPoolCore
 import NovPoolSystemBridge
 import Observation
 
-/// 一次投递的回执摘要，用于悬浮窗状态提示。
+/// Capture outcome summary for the floating panel status.
 public struct CaptureOutcome: Sendable, Equatable {
     public var title: String
     public var isDuplicate: Bool
-    /// 本次投递命中的路由目标（Phase 3 起由发件箱真正推送）。
+    /// Route targets hit by this drop (Phase 3 onward, pushed via the outbox).
     public var routeTargets: [String]
 
     public init(title: String, isDuplicate: Bool, routeTargets: [String]) {
@@ -17,7 +17,7 @@ public struct CaptureOutcome: Sendable, Equatable {
     }
 }
 
-/// 悬浮窗交互状态模型。所有 UI 状态都在 `@MainActor` 上，保证主线程响应预算。
+/// Floating panel interaction model. All UI state is `@MainActor` for main-thread budget.
 @MainActor
 @Observable
 public final class CaptureViewModel {
@@ -27,7 +27,7 @@ public final class CaptureViewModel {
     public private(set) var isBusy = false
     public private(set) var statusText: String?
     public private(set) var statusIsError = false
-    /// 扇区环心相对画布中心的偏移：图标贴边时会朝屏幕内侧平移，保证四个槽位都在屏幕内。
+    /// Ring-center offset from canvas center: when the icon is near an edge, shift inward so all four slots stay on-screen.
     public private(set) var ringOffset: CGSize = .zero
     public private(set) var ringRadius: CGFloat = SectorLayout.preferredRadius
 
@@ -47,13 +47,13 @@ public final class CaptureViewModel {
         return zones[index]
     }
 
-    // MARK: - 拖拽会话
+    // MARK: - Drag session
 
     public func dragSessionBegan() {
         isExpanded = true
     }
 
-    /// 由面板控制器在落位变化时调用，布局与命中判定共用同一份几何。
+    /// Called by the panel controller on reposition; layout and hit-testing share the same geometry.
     public func updateRingLayout(_ resolved: SectorLayout.Resolved) {
         ringOffset = resolved.offset
         ringRadius = resolved.radius
@@ -89,9 +89,9 @@ public final class CaptureViewModel {
         }
     }
 
-    // MARK: - 状态提示
+    // MARK: - Status
 
-    /// 供后台阶段（OCR / 正文提取 / AI 增强）回写提示，不改变当前忙闲状态。
+    /// Background stages (OCR / extract / AI) write status here without changing busy state.
     public func showTransientStatus(_ text: String, isError: Bool = false) {
         showStatus(text, isError: isError)
     }
@@ -109,33 +109,33 @@ public final class CaptureViewModel {
 
     static func describe(_ outcome: CaptureOutcome) -> String {
         if outcome.isDuplicate {
-            return "已存在：\(outcome.title)"
+            return "Already exists: \(outcome.title)"
         }
         if outcome.routeTargets.isEmpty {
-            return "已收录：\(outcome.title)"
+            return "Saved: \(outcome.title)"
         }
-        return "已收录 → \(outcome.routeTargets.joined(separator: "、"))：\(outcome.title)"
+        return "Saved → \(outcome.routeTargets.joined(separator: ", ")): \(outcome.title)"
     }
 
-    /// 多文件一次投递的汇总文案。
+    /// Summary line for a multi-file drop.
     static func describe(_ outcomes: [CaptureOutcome]) -> String {
-        guard let first = outcomes.first else { return "已收录" }
+        guard let first = outcomes.first else { return "Saved" }
         guard outcomes.count > 1 else { return describe(first) }
 
         let saved = outcomes.filter { !$0.isDuplicate }.count
         let duplicates = outcomes.count - saved
         if duplicates == 0 {
-            return "已收录 \(saved) 项"
+            return "Saved \(saved) items"
         }
         if saved == 0 {
-            return "已存在 \(duplicates) 项"
+            return "Already exists \(duplicates) items"
         }
-        return "已收录 \(saved) 项，跳过 \(duplicates) 个重复"
+        return "Saved \(saved), skipped \(duplicates) duplicates"
     }
 
     static func describe(_ error: any Error) -> String {
         if let novPoolError = error as? NovPoolError {
-            return novPoolError.errorDescription ?? "投递失败"
+            return novPoolError.errorDescription ?? "Capture failed"
         }
         return error.localizedDescription
     }

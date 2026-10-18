@@ -3,9 +3,9 @@ import NovPoolCore
 import Testing
 @testable import NovPoolSystemBridge
 
-@Suite("内容指纹与 URL 规范化")
+@Suite("Content Fingerprinting and URL Normalization")
 struct ContentFingerprintTests {
-    @Test("网页链接忽略大小写 host、fragment 与末尾斜杠")
+    @Test("WebLink ignores case for host, fragment, and trailing slash")
     func canonicalWebLink() {
         let a = ContentFingerprint.digest(
             for: ResolvedDragContent(
@@ -27,7 +27,7 @@ struct ContentFingerprintTests {
         #expect(a?.count == 64)
     }
 
-    @Test("纯文本去首尾空白后指纹一致")
+    @Test("After removing the leading and trailing whitespace from the plain text, the fingerprints are identical")
     func plainTextTrimmed() {
         let a = ContentFingerprint.digest(
             for: ResolvedDragContent(contentType: .plainText, text: "  hello\n"),
@@ -42,7 +42,7 @@ struct ContentFingerprintTests {
         #expect(a == b)
     }
 
-    @Test("有 Staging 哈希时优先用字节指纹")
+    @Test("When there is a Staging hash, prioritize using the byte fingerprint")
     func stagedHashWins() {
         let digest = ContentFingerprint.digest(
             for: ResolvedDragContent(
@@ -55,7 +55,7 @@ struct ContentFingerprintTests {
         #expect(digest == "abc123")
     }
 
-    @Test("空正文无法生成指纹")
+    @Test("Empty Body cannot generate fingerprint")
     func emptyTextHasNoFingerprint() {
         let digest = ContentFingerprint.digest(
             for: ResolvedDragContent(contentType: .plainText, text: "   \n"),

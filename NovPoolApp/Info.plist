@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>zh_CN</string>
+	<string>en</string>
 	<key>CFBundleExecutable</key>
 	<string>NovPool</string>
 	<key>CFBundleIdentifier</key>
@@ -24,16 +24,16 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
-	<!-- Menu Bar + 悬浮窗常驻工具，不在 Dock 栏占位 -->
+	<!-- Menu bar + floating panel utility; not shown in the Dock -->
 	<key>LSUIElement</key>
 	<true/>
-	<!-- 需要 AppleEvents 读取浏览器活跃标签页的 URL 与标题，实现静默溯源 -->
+	<!-- AppleEvents: read the active browser tab URL/title for silent provenance -->
 	<key>NSAppleEventsUsageDescription</key>
-	<string>NovPool 需要通过 AppleEvents 读取当前浏览器标签页的网址与标题，以便为拖入的内容记录来源。</string>
-	<!-- 非标准 Scriptable 浏览器（Firefox / Zen）降级读取地址栏 -->
+	<string>NovPool needs AppleEvents to read the current browser tab’s URL and title so dropped items can record their source.</string>
+	<!-- Fallback address-bar read for non-scriptable browsers (Firefox / Zen) -->
 	<key>NSAccessibilityUsageDescription</key>
-	<string>NovPool 需要辅助功能权限，用于在不支持 AppleScript 的浏览器中读取地址栏，实现来源溯源。</string>
-	<!-- ASWebAuthenticationSession OAuth 回调（Phase 3 网盘连接器） -->
+	<string>NovPool needs Accessibility permission to read the address bar in browsers that do not support AppleScript, so sources can be recorded.</string>
+	<!-- ASWebAuthenticationSession OAuth callback (cloud connectors) -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

@@ -3,15 +3,15 @@ import NovPoolCore
 import Testing
 @testable import NovPoolSystemBridge
 
-@Suite("粘贴板 UTI 优先级解析")
+@Suite("Clipboard UTI Priority Analysis")
 struct PasteboardResolverTests {
     private let resolver = PasteboardResolver()
 
-    @Test("P0：本地文件优先于同一粘贴板中的图片与文本")
+    @Test("P0: Local files take precedence over images and text on the same clipboard")
     func fileURLWins() throws {
         let pasteboard = FakePasteboard(strings: [
             (PasteboardTypeID.fileURL, "file:///tmp/novpool-fixtures/report%20final.pdf"),
-            (PasteboardTypeID.plainText, "一些正文"),
+            (PasteboardTypeID.plainText, "Some Body"),
             (PasteboardTypeID.png, "fake-image"),
         ])
         let content = try #require(resolver.resolve(from: pasteboard))
@@ -20,7 +20,7 @@ struct PasteboardResolverTests {
         #expect(content.fileURLs[0].pathExtension == "pdf")
     }
 
-    @Test("P0：多文件拖拽解析出全部路径，类型按首个文件判断")
+    @Test("P0: Parse all paths from multiple file drags, and determine the type based on the first file")
     func multipleFiles() throws {
         let pasteboard = FakePasteboard(strings: [
             (PasteboardTypeID.fileURL, "file:///tmp/a.png\nfile:///tmp/b.txt"),
@@ -33,14 +33,14 @@ struct PasteboardResolverTests {
         #expect(expanded.map { $0.fileURLs.map(\.lastPathComponent) } == [["a.png"], ["b.txt"]])
     }
 
-    @Test("P0：多个 pasteboard item 时枚举全部文件 URL")
+    @Test("P0: Enumerate all file URLs when there are multiple pasteboard items")
     func multiplePasteboardItems() throws {
-        // 模拟 NSPasteboardReader.allStrings：每个 item 一个 URL
+        // Simulate NSPasteboardReader.allStrings: one URL per item
         struct MultiItemPasteboard: PasteboardReading {
             var availableTypeIdentifiers: [String] { [PasteboardTypeID.fileURL] }
             func data(forTypeIdentifier typeIdentifier: String) -> Data? { nil }
             func string(forTypeIdentifier typeIdentifier: String) -> String? {
-                // 与真实 NSPasteboard 一样：聚合读取只给第一项
+                // Like the real NSPasteboard: aggregate read only gives the first item
                 "file:///tmp/only-first.png"
             }
             func allStrings(forTypeIdentifier typeIdentifier: String) -> [String] {
@@ -51,7 +51,7 @@ struct PasteboardResolverTests {
         #expect(content.fileURLs.map(\.lastPathComponent) == ["only-first.png", "second.txt"])
     }
 
-    @Test("P1：网页图片走内存字节流，不依赖图片 URL 二次下载")
+    @Test("P1: WebImage uses in-memory byte stream, does not rely on Image URL for secondary download")
     func imageBytesWinOverLink() throws {
         let bytes = Data(repeating: 0x89, count: 64)
         let pasteboard = FakePasteboard([
@@ -66,21 +66,21 @@ struct PasteboardResolverTests {
         #expect(content.pageURL?.absoluteString == "https://example.com/pic.png")
     }
 
-    @Test("P2：只有短链接文字时判定为网页链接")
+    @Test("P2: It is determined as a WebLink only when there is a short Link text")
     func shortLinkBecomesWebLink() throws {
         let pasteboard = FakePasteboard(strings: [
             (PasteboardTypeID.url, "https://example.com/post"),
-            (PasteboardTypeID.plainText, "一篇好文"),
-            (PasteboardTypeID.html, "<a href=\"https://example.com/post\">一篇好文</a>"),
+            (PasteboardTypeID.plainText, "A good article"),
+            (PasteboardTypeID.html, "<a href=\"https://example.com/post\">A good article</a>"),
         ])
         let content = try #require(resolver.resolve(from: pasteboard))
         #expect(content.contentType == .webLink)
         #expect(content.pageURL?.absoluteString == "https://example.com/post")
     }
 
-    @Test("P3：成段正文携带 HTML 时判定为富文本")
+    @Test("P3: When the Body contains a block of HTML, it is considered Rich Text")
     func longTextBecomesRichHTML() throws {
-        let article = String(repeating: "这是一段足够长的正文内容，用于触发富文本判定。", count: 6)
+        let article = String(repeating: "This is a long enough body content to trigger the Rich Text determination.", count: 6)
         let pasteboard = FakePasteboard(strings: [
             (PasteboardTypeID.html, "<div><p>\(article)</p></div>"),
             (PasteboardTypeID.plainText, article),
@@ -91,44 +91,44 @@ struct PasteboardResolverTests {
         #expect(content.html?.hasPrefix("<div>") == true)
     }
 
-    @Test("P3：纯文本兜底")
+    @Test("P3: Plain Text Bottom Line")
     func plainTextFallback() throws {
-        let pasteboard = FakePasteboard(strings: [(PasteboardTypeID.plainText, "随手记一句话")])
+        let pasteboard = FakePasteboard(strings: [(PasteboardTypeID.plainText, "Jot down a sentence casually")])
         let content = try #require(resolver.resolve(from: pasteboard))
         #expect(content.contentType == .plainText)
-        #expect(content.text == "随手记一句话")
+        #expect(content.text == "Jot down a sentence casually")
     }
 
-    @Test("空粘贴板与纯空白文本返回 nil")
+    @Test("An empty clipboard and a completely blank Text return nil")
     func emptyPasteboard() {
         #expect(resolver.resolve(from: FakePasteboard()) == nil)
         #expect(resolver.resolve(from: FakePasteboard(strings: [(PasteboardTypeID.plainText, "   \n ") ])) == nil)
     }
 
-    @Test("非 http(s) 的 URL 不当作网页链接")
+    @Test("Non-http(s) URLs are not treated as WebLinks")
     func nonHTTPURLIgnored() throws {
         let pasteboard = FakePasteboard(strings: [
             (PasteboardTypeID.url, "mailto:someone@example.com"),
-            (PasteboardTypeID.plainText, "联系我"),
+            (PasteboardTypeID.plainText, "Contact me"),
         ])
         let content = try #require(resolver.resolve(from: pasteboard))
         #expect(content.contentType == .plainText)
     }
 
-    @Test("RTF 兜底剥离控制字")
+    @Test("RTF Bottom-Line Stripping Control Character")
     func rtfStripping() {
-        let raw = "{\\rtf1\\ansi\\deff0 {\\fonttbl{\\f0 Helvetica;}}Hello 世界\\par}"
+        let raw = "{\\rtf1\\ansi\\deff0 {\\fonttbl{\\f0 Helvetica;}}Hello World\\par}"
         let stripped = PasteboardResolver.stripRTF(raw)
-        #expect(stripped.contains("Hello 世界"))
+        #expect(stripped.contains("Hello World"))
         #expect(!stripped.contains("rtf1"))
         #expect(!stripped.contains("fonttbl"))
     }
 
-    // MARK: - 浏览器标签拖拽
+    // MARK: - Browser tab drag
 
-    @Test("Firefox 标签：解析 UTF-16LE 的 text/x-moz-url（URL + 标题）")
+    @Test("Firefox tab: parse text/x-moz-url (URL + title) in UTF-16LE")
     func firefoxTabDrag() throws {
-        let payload = "https://example.com/arch\n多云架构实践"
+        let payload = "https://example.com/arch\nCloud Architecture Practice"
         let data = payload.data(using: .utf16LittleEndian)!
         let pasteboard = FakePasteboard([
             (PasteboardTypeID.mozURL, data),
@@ -137,42 +137,42 @@ struct PasteboardResolverTests {
         let content = try #require(resolver.resolve(from: pasteboard))
         #expect(content.contentType == .webLink)
         #expect(content.pageURL?.absoluteString == "https://example.com/arch")
-        #expect(content.linkTitle == "多云架构实践")
+        #expect(content.linkTitle == "Cloud Architecture Practice")
     }
 
-    @Test("Firefox 带 BOM 的 moz-url 也能解析")
+    @Test("Firefox can also parse moz-urls with BOM")
     func firefoxTabDragWithBOM() throws {
         var data = Data([0xFF, 0xFE])
-        data.append("https://example.com/x\n标题".data(using: .utf16LittleEndian)!)
+        data.append("https://example.com/x\nTitle".data(using: .utf16LittleEndian)!)
         let pasteboard = FakePasteboard([(PasteboardTypeID.mozURL, data)])
         let content = try #require(resolver.resolve(from: pasteboard))
         #expect(content.pageURL?.absoluteString == "https://example.com/x")
-        #expect(content.linkTitle == "标题")
+        #expect(content.linkTitle == "Title")
     }
 
-    @Test("Safari 标签：public.url + public.url-name 提供标题")
+    @Test("Safari tab: public.url + public.url-name provides title")
     func safariTabDrag() throws {
         let pasteboard = FakePasteboard(strings: [
             (PasteboardTypeID.url, "https://example.com/a"),
-            (PasteboardTypeID.urlName, "深度技术文章"),
+            (PasteboardTypeID.urlName, "In-depth technical article"),
         ])
         let content = try #require(resolver.resolve(from: pasteboard))
         #expect(content.contentType == .webLink)
-        #expect(content.linkTitle == "深度技术文章")
+        #expect(content.linkTitle == "In-depth technical article")
     }
 
-    @Test("Chrome 标签：从 text/uri-list 取第一条非注释行")
+    @Test("Chrome tab: Get the first non-comment line from text/uri-list")
     func chromeTabDrag() throws {
         let pasteboard = FakePasteboard(strings: [
-            (PasteboardTypeID.uriList, "# 拖拽来源\nhttps://example.com/chrome-tab\nhttps://example.com/second"),
+            (PasteboardTypeID.uriList, "# Drag source\nhttps://example.com/chrome-tab\nhttps://example.com/second"),
         ])
         let content = try #require(resolver.resolve(from: pasteboard))
         #expect(content.pageURL?.absoluteString == "https://example.com/chrome-tab")
     }
 
-    @Test("uri-list 解析：跳过注释与空行，拒绝非 http(s)")
+    @Test("uri-list parsing: skip comments and empty lines, reject non-http(s)")
     func uriListParsing() {
-        #expect(PasteboardResolver.firstURL(inURIList: "# 注释\n\nhttps://a.com/x")?.absoluteString
+        #expect(PasteboardResolver.firstURL(inURIList: "# Annotation\n\nhttps://a.com/x")?.absoluteString
             == "https://a.com/x")
         #expect(PasteboardResolver.firstURL(inURIList: "javascript:alert(1)") == nil)
         #expect(PasteboardResolver.firstURL(inURIList: "   ") == nil)

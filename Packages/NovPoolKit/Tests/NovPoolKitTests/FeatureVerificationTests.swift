@@ -7,26 +7,26 @@ import Testing
 @testable import NovPoolSystemBridge
 @testable import NovPoolUI
 
-/// 无头环境能验证的部分：几何、窗口配置、权限降级。
-@Suite("功能自检（无头可验证部分）")
+/// Parts that can be verified in a headless environment: geometry, window configuration, permission degradation.
+@Suite("Function self-check (headless verifiable part)")
 @MainActor
 struct FeatureVerificationTests {
-    // MARK: - 全局拖拽命中
+    // MARK: - Global Drag Hit
 
-    @Test("拖到图标上才算投递：排除普通点击与窗口拖动")
+    @Test("Delivery only counts when dragged onto the icon: excludes regular clicks and window dragging")
     func dragDropThreshold() {
         let icon = CGRect(x: 2000, y: 900, width: 48, height: 48)
         #expect(GlobalDragMonitor.isDrop(iconRect: icon, point: CGPoint(x: 2020, y: 920), movedDistance: 40))
-        // 位移不足：只是点了图标
+        // Insufficient displacement: only clicked the icon
         #expect(!GlobalDragMonitor.isDrop(iconRect: icon, point: CGPoint(x: 2020, y: 920), movedDistance: 2))
-        // 落点在图标外
+        // The landing point is outside the icon
         #expect(!GlobalDragMonitor.isDrop(iconRect: icon, point: CGPoint(x: 1900, y: 800), movedDistance: 400))
     }
 
-    @Test("悬浮窗图标矩形：以画布中心为锚、48pt 见方，随窗口位置平移")
+    @Test("Floating window icon rectangle: anchored at the center of the canvas, 48pt square, moves with the window position")
     func panelIconRect() {
         let viewModel = CaptureViewModel { _, _ in
-            CaptureOutcome(title: "自检", isDuplicate: false, routeTargets: [])
+            CaptureOutcome(title: "Self-check", isDuplicate: false, routeTargets: [])
         }
         let controller = PanelController(viewModel: viewModel, screen: nil)
         controller.panel.setFrameOrigin(NSPoint(x: 1_000, y: 500))
@@ -40,9 +40,9 @@ struct FeatureVerificationTests {
         #expect(rect.midY == 500 + NovPoolLayout.canvasSize.height / 2)
     }
 
-    // MARK: - 设置窗口
+    // MARK: - Settings window
 
-    @Test("设置窗口提到浮动层、跟随所有 Space，且不触发互斥的 collectionBehavior")
+    @Test("Set the window to mention the floating layer, follow all Spaces, and not trigger the mutually exclusive collectionBehavior")
     func settingsWindowConfiguration() throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
@@ -55,15 +55,15 @@ struct FeatureVerificationTests {
         #expect(window.level == .floating)
         #expect(window.collectionBehavior.contains(.canJoinAllSpaces))
         #expect(window.collectionBehavior.contains(.fullScreenAuxiliary))
-        // 这两个同时设置会让 AppKit 抛 NSInternalInconsistencyException（曾导致启动崩溃）
+        // Setting both of these at the same time will cause AppKit to throw NSInternalInconsistencyException (once caused startup crashes)
         #expect(!window.collectionBehavior.contains(.moveToActiveSpace))
     }
 
-    // MARK: - 权限降级
+    // MARK: - Permission downgrade
 
-    @Test("未授予辅助功能权限时，读取选中文字安静返回 nil 而不是报错")
+    @Test("When accessibility permissions are not granted, readSelectedText quietly returns nil instead of throwing an error")
     func axSelectionDegradesGracefully() {
-        guard !AXIsProcessTrusted() else { return }   // 已授权环境不适用
+        guard !AXIsProcessTrusted() else { return }   // The authorized environment is not applicable
         #expect(AXSelectionReader().selectedText() == nil)
     }
 }

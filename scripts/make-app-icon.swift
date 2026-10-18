@@ -1,9 +1,9 @@
-// 从 NovPoolApp/Assets/blackhole-app-1024.png 生成 NovPoolApp/Assets/AppIcon.icns。
+// Build NovPoolApp/Assets/AppIcon.icns from NovPoolApp/Assets/blackhole-app-1024.png.
 //
-// 不依赖 iconutil（该工具在受限沙盒中依赖被拦截的系统服务，连合法输入都会误报
-// "Invalid Iconset"），直接按 .icns 容器格式组装：icns 头 + 类型化 PNG chunk。
+// Avoids iconutil (in restricted sandboxes it hits blocked system services and falsely
+// reports "Invalid Iconset"). Assembles the .icns container directly: header + typed PNG chunks.
 //
-// 运行：
+// Run:
 //   swift scripts/make-app-icon.swift
 import CoreGraphics
 import Foundation
@@ -15,7 +15,7 @@ let outputURL = root.appending(path: "NovPoolApp/Assets/AppIcon.icns")
 
 guard let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
       let master = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-    fatalError("无法读取源图")
+    fatalError("Cannot read source image")
 }
 
 func resized(_ image: CGImage, to pixels: Int) -> CGImage {
@@ -36,11 +36,11 @@ func resized(_ image: CGImage, to pixels: Int) -> CGImage {
 func pngData(for image: CGImage) -> Data {
     let data = NSMutableData()
     guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else {
-        fatalError("无法创建 PNG destination")
+        fatalError("Cannot create PNG destination")
     }
     CGImageDestinationAddImage(destination, image, nil)
     guard CGImageDestinationFinalize(destination) else {
-        fatalError("PNG 编码失败")
+        fatalError("PNG encode failed")
     }
     return data as Data
 }
@@ -61,7 +61,7 @@ func appendBE32(_ value: UInt32, to data: inout Data) {
     data.append(UInt8(value & 0xFF))
 }
 
-/// 像素尺寸 → icns 类型码（PNG 编码的类型，与 iconutil 产出一致）。
+/// Pixel size → icns type code (PNG-encoded types, same as iconutil).
 let sizes: [(pixels: Int, type: String)] = [
     (16, "icp4"), (32, "icp5"), (64, "icp6"), (128, "ic07"), (256, "ic08"),
     (512, "ic09"), (1024, "ic10"),
@@ -82,4 +82,4 @@ appendBE32(UInt32(8 + chunks.count), to: &icns)
 icns.append(chunks)
 
 try icns.write(to: outputURL, options: .atomic)
-print("已生成：\(outputURL.path(percentEncoded: false))（\(icns.count) 字节，\(sizes.count) 个尺寸）")
+print("Wrote \(outputURL.path(percentEncoded: false)) (\(icns.count) bytes, \(sizes.count) sizes)")

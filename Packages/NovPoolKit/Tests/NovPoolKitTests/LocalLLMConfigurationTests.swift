@@ -2,9 +2,9 @@ import Foundation
 import NovPoolCore
 import Testing
 
-@Suite("本机 llama.cpp 配置")
+@Suite("Local llama.cpp configuration")
 struct LocalLLMConfigurationTests {
-    @Test("启动参数：模型、回环地址、端口按序拼装")
+    @Test("Startup parameters: model, loopback address, port assembled in order")
     func arguments() {
         let config = LocalLLMConfiguration(
             binaryPath: "/opt/homebrew/bin/llama-server",
@@ -18,7 +18,7 @@ struct LocalLLMConfigurationTests {
         ])
     }
 
-    @Test("上下文长度与额外参数追加在后面")
+    @Test("Context length and additional parameters are appended at the back")
     func contextAndExtraArguments() {
         let config = LocalLLMConfiguration(
             binaryPath: "/bin/llama-server",
@@ -33,7 +33,7 @@ struct LocalLLMConfigurationTests {
         #expect(arguments.suffix(4) == ["--threads", "8", "--n-gpu-layers", "99"])
     }
 
-    @Test("OpenAI 兼容地址与模型名")
+    @Test("OpenAI compatible address and model name")
     func baseURLAndModelName() {
         let config = LocalLLMConfiguration(
             binaryPath: "/bin/llama-server",
@@ -44,7 +44,7 @@ struct LocalLLMConfigurationTests {
         #expect(config.modelName == "Llama-3.2-3B-Instruct-Q5")
     }
 
-    @Test("可直接填写 Base URL；改端口可同步默认 URL")
+    @Test("You can directly fill in the Base URL; changing the port can synchronize the default URL")
     func apiBaseURLOverrideAndSync() {
         var config = LocalLLMConfiguration(apiBaseURL: "http://127.0.0.1:9090/v1", port: 8080)
         #expect(config.baseURL.absoluteString == "http://127.0.0.1:9090/v1")
@@ -56,7 +56,7 @@ struct LocalLLMConfigurationTests {
         #expect(config.apiBaseURLValidationMessage != nil)
     }
 
-    @Test("给出可复制的终端启动命令提示")
+    @Test("Provide a copyable terminal startup command prompt")
     func suggestedLaunchCommand() {
         let config = LocalLLMConfiguration(
             binaryPath: "/opt/homebrew/bin/llama-server",
@@ -73,25 +73,25 @@ struct LocalLLMConfigurationTests {
         #expect(command.contains("--n-gpu-layers 99"))
     }
 
-    @Test("端口越界时回退默认值，不会生成非法参数")
+    @Test("When the port is out of range, it falls back to the default value and will not generate illegal parameters.")
     func portClamping() {
         var config = LocalLLMConfiguration(binaryPath: "/bin/x", modelPath: "/m.gguf", port: 0)
         #expect(config.clampedPort == LocalLLMConfiguration.defaultPort)
         #expect(config.arguments().contains(String(LocalLLMConfiguration.defaultPort)))
-        #expect(config.validationMessage?.contains("端口") == true)
+        #expect(config.validationMessage?.contains("Port") == true)
 
         config.port = 70000
         #expect(config.clampedPort == LocalLLMConfiguration.defaultPort)
     }
 
-    @Test("路径缺失时给出可读的校验提示")
+    @Test("Provide a readable validation prompt when the path is missing")
     func validation() {
         #expect(LocalLLMConfiguration().validationMessage?.contains("llama-server") == true)
         #expect(LocalLLMConfiguration(binaryPath: "/bin/x").validationMessage?.contains("gguf") == true)
         #expect(LocalLLMConfiguration(binaryPath: "/bin/x", modelPath: "/m.gguf").isValid)
     }
 
-    @Test("默认安装提示与常见二进制候选路径")
+    @Test("Default installation prompts and common binary candidate paths")
     func setupHints() {
         #expect(LocalLLMConfiguration.setupHint.contains("brew install"))
         #expect(LocalLLMConfiguration.commonBinaryCandidates.contains("/opt/homebrew/bin/llama-server"))

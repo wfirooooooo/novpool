@@ -1,7 +1,7 @@
 import NovPoolStorage
 import SwiftUI
 
-/// 检索详情里的人工整理表单：主题分类、标签、置顶、收藏。
+/// Manual organization form in search details: topic category, tags, pinned, favorite.
 @MainActor
 struct SearchOrganizationEditor: View {
     let result: KnowledgeSearchResult
@@ -42,20 +42,20 @@ struct SearchOrganizationEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("整理")
+            Text("Organize")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 8) {
-                TextField("主题分类", text: $categoryText)
+                TextField("Topic category", text: $categoryText)
                     .textFieldStyle(.roundedBorder)
-                    .help("按内容主题归类，例如技术/产品/生活；不要填图片、PDF 等格式名")
+                    .help("Classify by topic, e.g. Technology/Product/Life; do not use format names like Image or PDF")
                 if !availableCategories.isEmpty {
-                    Picker("选用", selection: Binding(
+                    Picker("Use", selection: Binding(
                         get: { categoryText },
                         set: { categoryText = $0 }
                     )) {
-                        Text("选用主题…").tag("")
+                        Text("Choose topic…").tag("")
                         ForEach(availableCategories, id: \.self) { name in
                             Text(name).tag(name)
                         }
@@ -65,14 +65,14 @@ struct SearchOrganizationEditor: View {
                 }
             }
 
-            TextField("标签（逗号分隔，内容关键词）", text: $tagsText)
+            TextField("Tags (comma-separated content keywords)", text: $tagsText)
                 .textFieldStyle(.roundedBorder)
 
             HStack(spacing: 14) {
-                Toggle("置顶", isOn: $isPinned)
-                Toggle("收藏", isOn: $isFavorite)
+                Toggle("Pinned", isOn: $isPinned)
+                Toggle("Favorite", isOn: $isFavorite)
                 Spacer(minLength: 0)
-                Button("保存") {
+                Button("Save") {
                     onSave(draft)
                 }
                 .disabled(!isDirty)

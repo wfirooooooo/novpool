@@ -1,9 +1,9 @@
 import Foundation
 
-/// 本机文件的可读内容提取。
+/// Extraction of readable content from this machine's files.
 ///
-/// 文本类文件直接入库，HTML 走现有的正文提取器；无法提取文本的二进制文件
-/// 至少生成文件信息，保证检索详情页不会出现空白正文。
+/// Text type Files go directly into the database, HTML uses the existing Body extractor; binary Files whose Text cannot be extracted
+/// At least generate File information to ensure that the detailed page will not show a blank Body.
 enum LocalFileContent {
     struct ExtractedText {
         let markdown: String
@@ -42,8 +42,8 @@ enum LocalFileContent {
                 return ExtractedText(markdown: markdown, title: article.title)
             }
 
-            // 短页面或结构松散的本机 HTML 可能达不到 Readability 的正文阈值，
-            // 此时直接渲染正文节点，而不是让条目退化成“没有正文”。
+            // Short pages or natively HTML with loose structure may not reach Readability's Body threshold.
+            // At this time, directly render the Body node, rather than letting the item degrade to 'no Body'.
             let document = HTMLParser().parse(raw)
             let body = MarkdownRenderer.firstDescendant(in: document, named: "body") ?? document
             let markdown = MarkdownRenderer(baseURL: url).render(element: body)
@@ -61,20 +61,20 @@ enum LocalFileContent {
         return ExtractedText(markdown: text, title: nil)
     }
 
-    /// 二进制文件或内容为空的文件也需要可读预览。
+    /// Binary files or files with empty content also need to be readable in preview.
     static func summary(for url: URL) -> String {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         let sizeText = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
         let ext = url.pathExtension.uppercased()
-        let type = ext.isEmpty ? "文件" : "\(ext) 文件"
+        let type = ext.isEmpty ? "File" : "\(ext) file"
         return """
-        ## 文件信息
+        ## File info
 
-        - 文件名：\(url.lastPathComponent)
-        - 类型：\(type)
-        - 大小：\(sizeText)
+        - Name: \(url.lastPathComponent)
+        - Type: \(type)
+        - Size: \(sizeText)
 
-        原始文件已保存在 NovPool 暂存目录，可点击「打开」查看。
+        The original file is saved in the NovPool staging directory. Use Open to view it.
         """
     }
 
@@ -82,6 +82,6 @@ enum LocalFileContent {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         guard trimmed.count > maximumCharacters else { return trimmed }
-        return String(trimmed.prefix(maximumCharacters)) + "\n\n…（内容过长，已截断）"
+        return String(trimmed.prefix(maximumCharacters)) + "\n\n… (truncated; content too long)"
     }
 }

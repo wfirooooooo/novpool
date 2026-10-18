@@ -1,12 +1,12 @@
-// 生成 NovPool 的「不规则湖面 + 中心漩涡」图标（原创、纯色、无渐变、无黄色）。
+// Generate NovPool’s irregular lake + center vortex icon (original, flat color, no yellow).
 //
-// 运行：
+// Run:
 //   swift scripts/render-blackhole-icon.swift
 //
-// 产物（写入 NovPoolApp/Assets/）：
-//   - blackhole.png          256x256，透明背景不规则湖面（桌面悬浮图标）
-//   - blackhole-template.png 36x36（18pt@2x），单色剪影，供菜单栏状态图标使用
-//   - blackhole-app-1024.png 1024x1024，浅色底 + 不规则湖面（app 图标主图）
+// Outputs (under NovPoolApp/Assets/):
+//   - blackhole.png          256x256 transparent irregular lake (desktop float icon)
+//   - blackhole-template.png 36x36 (18pt@2x) monochrome silhouette for menu bar
+//   - blackhole-app-1024.png 1024x1024 light background + lake (app icon master)
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -15,12 +15,12 @@ let outputDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryP
     .appending(path: "NovPoolApp/Assets", directoryHint: .isDirectory)
 try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
 
-// 调色板（湖蓝/青系，无黄色）
-let lakeColor = CGColor(red: 0.145, green: 0.58, blue: 0.675, alpha: 1)     // 湖面青蓝
-let vortexColor = CGColor(red: 0.055, green: 0.30, blue: 0.36, alpha: 1)     // 漩涡（更深一档的青）
-let appBackground = CGColor(red: 0.93, green: 0.965, blue: 0.98, alpha: 1)   // app 图标浅底
+// Palette (lake cyan/teal, no yellow)
+let lakeColor = CGColor(red: 0.145, green: 0.58, blue: 0.675, alpha: 1)     // lake teal
+let vortexColor = CGColor(red: 0.055, green: 0.30, blue: 0.36, alpha: 1)     // vortex (deeper teal)
+let appBackground = CGColor(red: 0.93, green: 0.965, blue: 0.98, alpha: 1)   // app icon light bg
 
-/// 不规则湖岸：半径是角度的平滑函数（固定谐波，可复现，无随机）。
+/// Irregular lakeshore: radius is a smooth function of angle (fixed harmonics, reproducible).
 func lakeRadius(_ theta: CGFloat) -> CGFloat {
     let base: CGFloat = 0.44
     let wobble = 1
@@ -43,7 +43,7 @@ func lakePath(center: CGPoint) -> CGPath {
     return path
 }
 
-/// 中心漩涡：阿基米德螺线，由内向外两圈多一点。
+/// Center vortex: Archimedean spiral, a bit more than two turns outward.
 func vortexPath(center: CGPoint) -> CGPath {
     let path = CGMutablePath()
     let turns: CGFloat = 2.25
@@ -61,7 +61,7 @@ func vortexPath(center: CGPoint) -> CGPath {
     return path
 }
 
-/// 画不规则湖面 + 中心漩涡。
+/// Draw irregular lake + center vortex.
 func drawWhirlpool(in context: CGContext, size: CGFloat) {
     context.saveGState()
     context.scaleBy(x: size, y: size)
@@ -81,7 +81,7 @@ func drawWhirlpool(in context: CGContext, size: CGFloat) {
     context.restoreGState()
 }
 
-/// 菜单栏模板：单色剪影（湖面实心，漩涡镂空透明）。
+/// Menu-bar template: monochrome silhouette (solid lake, transparent vortex cutout).
 func drawWhirlpoolTemplate(in context: CGContext, size: CGFloat) {
     context.saveGState()
     context.scaleBy(x: size, y: size)
@@ -117,15 +117,15 @@ func makeContext(pixels: Int) -> CGContext {
 
 func writePNG(_ image: CGImage, to url: URL) {
     guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
-        fatalError("无法创建 PNG destination")
+        fatalError("Cannot create PNG destination")
     }
     CGImageDestinationAddImage(destination, image, nil)
     guard CGImageDestinationFinalize(destination) else {
-        fatalError("PNG 写入失败")
+        fatalError("PNG write failed")
     }
 }
 
-// 悬浮图标：透明背景不规则湖面
+// Float icon: transparent irregular lake
 let floatingPixels = 256
 let floatingContext = makeContext(pixels: floatingPixels)
 floatingContext.translateBy(
@@ -135,9 +135,9 @@ floatingContext.translateBy(
 drawWhirlpool(in: floatingContext, size: CGFloat(floatingPixels) * 0.94)
 writePNG(floatingContext.makeImage()!, to: outputDirectory.appending(path: "blackhole.png"))
 
-// 菜单栏模板：按状态栏图标的实际显示尺寸出图（18pt@2x）并留光学边距。
-// 若沿用大尺寸位图又不显式设置 NSImage.size，系统会按像素尺寸当点尺寸渲染，
-// 图标在菜单栏里会明显比其他应用大一圈。
+// Menu-bar template: render at status-item display size (18pt@2x) with optical padding.
+// If a large bitmap is used without setting NSImage.size, the system treats pixels as points
+// and the menu-bar icon looks oversized next to other apps.
 let templatePixels = 36
 let templateContext = makeContext(pixels: templatePixels)
 let menubarGlyph = CGFloat(templatePixels) * 0.84
@@ -148,7 +148,7 @@ templateContext.translateBy(
 drawWhirlpoolTemplate(in: templateContext, size: menubarGlyph)
 writePNG(templateContext.makeImage()!, to: outputDirectory.appending(path: "blackhole-template.png"))
 
-// app 图标：浅底 + 不规则湖面
+// App icon: light background + irregular lake
 let appPixels = 1024
 let appContext = makeContext(pixels: appPixels)
 appContext.setFillColor(appBackground)
@@ -160,7 +160,7 @@ appContext.translateBy(
 drawWhirlpool(in: appContext, size: CGFloat(appPixels) * 0.88)
 writePNG(appContext.makeImage()!, to: outputDirectory.appending(path: "blackhole-app-1024.png"))
 
-print("已生成：")
+print("Wrote:")
 print("  \(outputDirectory.appending(path: "blackhole.png").path(percentEncoded: false))")
 print("  \(outputDirectory.appending(path: "blackhole-template.png").path(percentEncoded: false))")
 print("  \(outputDirectory.appending(path: "blackhole-app-1024.png").path(percentEncoded: false))")

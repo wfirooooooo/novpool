@@ -5,15 +5,15 @@ import NovPoolStorage
 import Testing
 @testable import NovPoolUI
 
-@Suite("检索富预览分类")
+@Suite("Search Rich Preview Categories")
 struct SearchPreviewKindTests {
-    @Test("无本地文件时不显示媒体区")
+    @Test("Do not display the media area when there is no local file")
     func noLocalFile() {
         #expect(SearchPreviewKind.resolve(contentType: .image, localFileURL: nil) == .none)
         #expect(SearchPreviewKind.resolve(contentType: .documentPDF, localFileURL: nil) == .none)
     }
 
-    @Test("按内容类型选择预览形态")
+    @Test("Select Preview Kind by Content Type")
     func byContentType() {
         let png = URL(filePath: "/tmp/a.png")
         let pdf = URL(filePath: "/tmp/a.pdf")
@@ -23,7 +23,7 @@ struct SearchPreviewKindTests {
         #expect(SearchPreviewKind.resolve(contentType: .video, localFileURL: mov) == .video)
     }
 
-    @Test("genericFile 按扩展名回退到图 / PDF / 视频 / 缩略图")
+    @Test("genericFile falls back to image / PDF / video / thumbnail according to the extension")
     func genericFileByExtension() {
         #expect(
             SearchPreviewKind.resolve(
@@ -51,7 +51,7 @@ struct SearchPreviewKindTests {
         )
     }
 
-    @Test("本机 PNG 可解码为 NSImage")
+    @Test("This machine's PNG can be decoded into NSImage")
     func loadsLocalPNG() throws {
         let dir = FileManager.default.temporaryDirectory
             .appending(path: "novpool-preview-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -59,7 +59,7 @@ struct SearchPreviewKindTests {
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let url = dir.appending(path: "dot.png")
-        // 1×1 透明 PNG
+        // 1×1 Transparent PNG
         let pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
         let data = try #require(Data(base64Encoded: pngBase64))
         try data.write(to: url)

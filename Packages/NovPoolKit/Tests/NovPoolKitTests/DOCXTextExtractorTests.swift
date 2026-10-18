@@ -2,38 +2,38 @@ import Foundation
 import Testing
 @testable import NovPoolSystemBridge
 
-@Suite("DOCX 正文提取")
+@Suite("DOCX Body Extraction")
 struct DOCXTextExtractorTests {
-    @Test("从 document.xml 按段落提取 w:t")
+    @Test("Extract w:t from document.xml by paragraph")
     func parsesDocumentXML() {
         let xml = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
           <w:body>
-            <w:p><w:r><w:t>第一段</w:t></w:r></w:p>
+            <w:p><w:r><w:t>First paragraph</w:t></w:r></w:p>
             <w:p><w:r><w:t>Hello </w:t></w:r><w:r><w:t>World</w:t></w:r></w:p>
           </w:body>
         </w:document>
         """
         let text = DOCXTextExtractor.plainText(fromDocumentXML: xml)
-        #expect(text == "第一段\n\nHello World")
+        #expect(text == "First paragraph\n\nHello World")
     }
 
-    @Test("真实 docx zip 可抽出正文")
+    @Test("The real docx zip can have the Body extracted")
     func extractsFromDOCXFile() throws {
         let dir = try TestSupport.makeTemporaryDirectory("docx")
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let docx = try makeMinimalDOCX(
             in: dir,
-            paragraphs: ["多云知识路由", "Phase C DOCX 提取"]
+            paragraphs: ["Cloud Knowledge Routing", "Phase C DOCX Extract"]
         )
         let text = try #require(DOCXTextExtractor.extract(from: docx))
-        #expect(text.contains("多云知识路由"))
-        #expect(text.contains("Phase C DOCX 提取"))
+        #expect(text.contains("Cloud Knowledge Routing"))
+        #expect(text.contains("Phase C DOCX Extract"))
 
         let extracted = try #require(LocalFileContent.extract(from: docx))
-        #expect(extracted.markdown.contains("多云知识路由"))
+        #expect(extracted.markdown.contains("Cloud Knowledge Routing"))
     }
 
     private func makeMinimalDOCX(in directory: URL, paragraphs: [String]) throws -> URL {

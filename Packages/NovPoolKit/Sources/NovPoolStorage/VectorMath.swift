@@ -1,9 +1,9 @@
 import Accelerate
 import Foundation
 
-/// Apple Silicon 硬件加速向量运算（Accelerate / vDSP）。
+/// Apple Silicon hardware-accelerated embedding computation (Accelerate / vDSP).
 public enum VectorMath {
-    /// 余弦相似度。维度不一致或空向量返回 0。
+    /// Cosine similarity. Returns 0 if dimensions are inconsistent or the embedding is empty.
     public static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dotProduct: Float = 0
@@ -19,12 +19,12 @@ public enum VectorMath {
         return denominator > 0 ? dotProduct / denominator : 0
     }
 
-    /// `[Float]` → 连续内存字节，用于写入 `embeddingBlob` 列。
+    /// `[Float]` → consecutive memory bytes, used for writing the `embeddingBlob` column.
     public static func encode(_ vector: [Float]) -> Data {
         vector.withUnsafeBufferPointer { Data(buffer: $0) }
     }
 
-    /// `embeddingBlob` → `[Float]`。
+    /// `embeddingBlob` → `[Float]`.
     public static func decode(_ data: Data) -> [Float] {
         let count = data.count / MemoryLayout<Float>.size
         guard count > 0 else { return [] }

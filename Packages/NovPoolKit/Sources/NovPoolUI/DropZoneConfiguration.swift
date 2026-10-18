@@ -1,12 +1,12 @@
 import Foundation
 import NovPoolCore
 
-/// 悬浮窗扇区槽位的配置读写。
+/// Configuration read and write of floating window sector slots.
 ///
-/// 槽位是「拖拽时往哪送」的快捷入口，必须允许用户自定义：改标题、换图标、绑定到哪个连接器。
-/// 配置以 JSON 存在 `UserDefaults` 里；解析失败一律回退到内置默认值，绝不让悬浮窗开不起来。
+/// A slot is a shortcut for 'where to send when dragging,' and it must allow users to customize it: change the title, replace the icon, and bind it to which connector.
+/// The configuration exists in `UserDefaults` as JSON; if parsing fails, it will always fall back to the built-in default values, never allowing the floating window to fail to open.
 public enum DropZoneConfiguration {
-    /// 悬浮窗最多同时显示四个扇区（固定画布与环形布局所限）。
+    /// The floating window can display up to four sectors at the same time (limited by the fixed canvas and ring layout).
     public static let maximumZones = 4
     public static let defaultsKey = "novpool.zones"
 
@@ -25,12 +25,12 @@ public enum DropZoneConfiguration {
         return text
     }
 
-    /// 兜底：`nil` 表示用户没配置过，用内置默认四槽位。
+    /// Fallback: `nil` means the user has not configured it, so the built-in default four slots are used.
     public static func zones(from raw: String?) -> [DropZone] {
         decode(raw) ?? DropZone.defaultZones
     }
 
-    /// 规整：去空标题、去重 ID、限制数量；结果为空则退回默认值（不允许出现空扇区）。
+    /// Normalization: remove empty titles, remove duplicate IDs, limit quantity; if the result is empty, return to the default value (empty sectors are not allowed).
     public static func sanitize(_ zones: [DropZone]) -> [DropZone] {
         var seen = Set<String>()
         var result: [DropZone] = []

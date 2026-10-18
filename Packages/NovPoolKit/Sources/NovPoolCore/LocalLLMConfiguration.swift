@@ -1,40 +1,40 @@
 import Foundation
 
-/// 本机 llama.cpp（`llama-server`）的配置。
+/// Local llama.cpp (`llama-server`) configuration.
 ///
-/// 主路径与 Ollama 一致：填写 OpenAI 兼容 **Base URL**（默认 `http://127.0.0.1:8080/v1`）。
-/// 可选：由 NovPool 代为启动 `llama-server`，或按提示在终端自行启动。
+/// Same primary path as Ollama: set an OpenAI-compatible **Base URL** (default `http://127.0.0.1:8080/v1`).
+/// Optionally let NovPool launch `llama-server`, or start it yourself from the terminal tip.
 public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
-    /// OpenAI 兼容接口地址，例如 `http://127.0.0.1:8080/v1`。
+    /// OpenAI-compatible API base URL, e.g. `http://127.0.0.1:8080/v1`.
     public var apiBaseURL: String
     public var binaryPath: String
     public var modelPath: String
     public var port: Int
-    /// 上下文长度（`-c`）；0 表示用 llama-server 默认值。
+    /// Context length (`-c`); 0 means llama-server default.
     public var contextSize: Int
-    /// 透传给 llama-server 的额外参数，按空白切分。
+    /// Extra llama-server args, split on whitespace.
     public var extraArguments: String
 
     public static let defaultPort = 8080
     public static let defaultAPIBaseURL = "http://127.0.0.1:8080/v1"
 
-    /// 设置面板提示：安装与目录约定。
+    /// Settings hint: install and directory conventions.
     public static let setupHint =
-        "常见安装：brew install llama.cpp → /opt/homebrew/bin/llama-server；.gguf 可放在 ~/Models/。也可用下方命令自行启动，再把 Base URL 指过去。"
+        "Common install: brew install llama.cpp → /opt/homebrew/bin/llama-server; place .gguf files in ~/Models/. Or start the server yourself with the command below and point Base URL at it."
 
-    /// 常见 llama-server 路径（按优先级）。
+    /// Common llama-server paths (priority order).
     public static let commonBinaryCandidates: [String] = [
         "/opt/homebrew/bin/llama-server",
         "/usr/local/bin/llama-server",
         "\(NSHomeDirectory())/.local/bin/llama-server",
     ]
 
-    /// 返回本机已存在的第一个可执行 llama-server 路径。
+    /// First existing executable llama-server path on this Mac.
     public static func firstExistingBinaryPath(fileManager: FileManager = .default) -> String? {
         commonBinaryCandidates.first { fileManager.isExecutableFile(atPath: $0) }
     }
 
-    /// 返回 ~/Models 下第一个 .gguf（若目录存在）。
+    /// First .gguf under ~/Models (if the directory exists).
     public static func firstExistingModelPath(fileManager: FileManager = .default) -> String? {
         let modelsDir = URL(filePath: NSHomeDirectory()).appending(path: "Models")
         guard let files = try? fileManager.contentsOfDirectory(
@@ -85,7 +85,7 @@ public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
         case apiBaseURL, binaryPath, modelPath, port, contextSize, extraArguments
     }
 
-    /// 请求用的 OpenAI 兼容根地址。
+    /// OpenAI-compatible root URL used for requests.
     public var baseURL: URL {
         let trimmed = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if let url = URL(string: trimmed), url.scheme != nil, url.host != nil {
@@ -94,12 +94,12 @@ public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
         return URL(string: "http://127.0.0.1:\(clampedPort)/v1")!
     }
 
-    /// 按当前端口刷新默认形态的 Base URL（用户改端口后同步）。
+    /// Refresh the default-shaped Base URL when the user changes the port.
     public mutating func syncAPIBaseURLFromPort() {
         apiBaseURL = "http://127.0.0.1:\(clampedPort)/v1"
     }
 
-    /// 请求里使用的模型名：llama-server 只服务已加载的模型，用文件名即可。
+    /// Model name for requests: llama-server only serves the loaded model; the file name is enough.
     public var modelName: String {
         let name = URL(filePath: modelPath).deletingPathExtension().lastPathComponent
         return name.isEmpty ? "local-model" : name
@@ -109,33 +109,33 @@ public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
         (1...65535).contains(port) ? port : Self.defaultPort
     }
 
-    /// 能否由 NovPool 代为启动：两个路径都不能空。
+    /// Whether NovPool can launch it: both paths must be set.
     public var validationMessage: String? {
         if binaryPath.trimmingCharacters(in: .whitespaces).isEmpty {
-            return "请选择 llama-server 可执行文件路径（或仅填写 Base URL，在终端自行启动）"
+            return "Choose the llama-server executable path (or only fill in Base URL and start it yourself in a terminal)"
         }
         if modelPath.trimmingCharacters(in: .whitespaces).isEmpty {
-            return "请选择 .gguf 模型文件"
+            return "Choose a .gguf model file"
         }
         if !(1...65535).contains(port) {
-            return "端口需要在 1～65535 之间"
+            return "Port must be between 1 and 65535"
         }
         return nil
     }
 
     public var isValid: Bool { validationMessage == nil }
 
-    /// 仅校验 Base URL 是否可连（不要求本机二进制）。
+    /// Only validate that Base URL is usable (local binary not required).
     public var apiBaseURLValidationMessage: String? {
         let trimmed = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "请填写 Base URL，例如 \(Self.defaultAPIBaseURL)" }
+        guard !trimmed.isEmpty else { return "Enter a Base URL, e.g.\(Self.defaultAPIBaseURL)" }
         guard let url = URL(string: trimmed), url.scheme == "http" || url.scheme == "https", url.host != nil else {
-            return "Base URL 无效，示例：\(Self.defaultAPIBaseURL)"
+            return "Invalid Base URL, example: \(Self.defaultAPIBaseURL)"
         }
         return nil
     }
 
-    /// 组装 llama-server 启动参数。
+    /// Build llama-server launch arguments.
     public func arguments() -> [String] {
         var result = [
             "--model", modelPath,
@@ -152,7 +152,7 @@ public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
         return result + extra
     }
 
-    /// 终端启动命令提示（可复制）。路径含空格时加引号。
+    /// Copyable terminal launch hint. Quote paths that contain spaces.
     public var suggestedLaunchCommand: String {
         let binary = shellQuote(binaryPath.isEmpty ? "/opt/homebrew/bin/llama-server" : binaryPath)
         let model = shellQuote(modelPath.isEmpty ? "~/Models/your-model.gguf" : modelPath)

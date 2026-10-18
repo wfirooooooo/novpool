@@ -2,7 +2,7 @@ import Foundation
 import NovPoolCore
 import NovPoolStorage
 
-/// 文件扩展名 → MIME 类型（上传时必填，给错会导致云端预览异常）。
+/// File extension → MIME type (required when uploading; entering it incorrectly will cause cloud preview errors).
 public enum MimeType {
     public static func forExtension(_ raw: String) -> String {
         switch raw.lowercased() {
@@ -26,13 +26,13 @@ public enum MimeType {
     }
 }
 
-/// 上传用的载荷：文件名 + 字节 + MIME。
+/// Payload for upload: Filename + bytes + MIME.
 struct UploadPayload {
     let fileName: String
     let data: Data
     let mimeType: String
 
-    /// 有原始文件就用原文件；否则把正文落成一份 Markdown 归档。
+    /// Use the original file if it exists; otherwise, save the Body as a Markdown archive.
     static func make(
         payload: NormalizedPayload,
         namingTemplate: String,
@@ -67,14 +67,14 @@ struct UploadPayload {
 
 // MARK: - Google Drive
 
-/// Google Drive 连接器（REST v3）。
+/// Google Drive Connector (REST v3).
 ///
-/// 小文件走 `multipart/related` 一次性上传；大文件走 resumable 上传，
-/// 两条路径都直接返回 `webViewLink` 作为云端回执。
+/// Small files use `multipart/related` for one-time upload; large files use resumable upload,
+/// Both paths directly return `webViewLink` as the Remote receipt.
 public struct GoogleDriveAPIConnector: DestinationConnector, @unchecked Sendable {
     public struct Config: Codable, Sendable, Equatable {
         public var namingTemplate: String
-        /// 目标文件夹的 Drive ID（Drive API 用 ID 而不是路径）。
+        /// The Drive ID of the target folder (Drive API uses ID instead of path).
         public var folderID: String?
 
         public init(namingTemplate: String = NamingTemplate.defaultTemplate, folderID: String? = nil) {
@@ -82,8 +82,8 @@ public struct GoogleDriveAPIConnector: DestinationConnector, @unchecked Sendable
             self.folderID = folderID
         }
 
-        /// 容错解析：用户（或设置面板）只写关心的字段时，其余走默认值，
-        /// 不能因为缺一个键就让整份配置失效。
+        /// Fault-tolerant parsing: When the user (or settings panel) only writes the fields of concern, the rest use default values.
+        /// You can't let the entire configuration fail just because one key is missing.
         public init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             namingTemplate = try container.decodeIfPresent(String.self, forKey: .namingTemplate)
@@ -92,7 +92,7 @@ public struct GoogleDriveAPIConnector: DestinationConnector, @unchecked Sendable
         }
     }
 
-    /// 超过该体积改用 resumable 上传。
+    /// Use resumable upload for volumes exceeding this size.
     public static let multipartLimit = 5 * 1024 * 1024
 
     public var connectorType: String { "gdrive_api" }
@@ -122,7 +122,7 @@ public struct GoogleDriveAPIConnector: DestinationConnector, @unchecked Sendable
     public func push(payload: NormalizedPayload, configJSON: Data) async throws -> RemoteReceipt {
         let config = (try? JSONDecoder().decode(Config.self, from: configJSON)) ?? Config()
         guard let credentials else {
-            throw NovPoolError.authenticationRequired("gdrive_api：请先在设置里完成 Google 授权")
+            throw NovPoolError.authenticationRequired("gdrive_api: complete Google authorization in Settings first")
         }
         let accessToken = try await tokenService.accessToken(credentials: credentials)
         let upload = try UploadPayload.make(
@@ -147,14 +147,14 @@ public struct GoogleDriveAPIConnector: DestinationConnector, @unchecked Sendable
         }
 
         guard let fileID = json["id"] as? String else {
-            throw NovPoolError.connectorNotConfigured("Google Drive 未返回文件 ID")
+            throw NovPoolError.connectorNotConfigured("Google Drive did not return a file ID")
         }
         let webURL = (json["webViewLink"] as? String).flatMap(URL.init(string:))
             ?? URL(string: "https://drive.google.com/file/d/\(fileID)/view")!
         return RemoteReceipt(connectorID: connectorType, remoteItemID: fileID, remoteWebURL: webURL)
     }
 
-    // MARK: - 上传路径
+    // MARK: - Upload paths
 
     private func multipartUpload(
         _ upload: UploadPayload,
@@ -178,7 +178,7 @@ public struct GoogleDriveAPIConnector: DestinationConnector, @unchecked Sendable
         request.httpBody = body
 
         let response = try await transport.send(request)
-        try Self.ensureSuccess(response, label: "Google Drive 上传")
+        try Self.ensureSuccess(response, label: "Google Drive upload")
         return (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any] ?? [:]
     }
 
@@ -198,11 +198,11 @@ public struct GoogleDriveAPIConnector: DestinationConnector, @unchecked Sendable
         start.httpBody = try JSONSerialization.data(withJSONObject: metadata)
 
         let sessionResponse = try await transport.send(start)
-        try Self.ensureSuccess(sessionResponse, label: "Google Drive 建立上传会话")
+        try Self.ensureSuccess(sessionResponse, label: "Google Drive create upload session")
         guard let locationHeader = sessionResponse.headers
             .first(where: { $0.key.lowercased() == "location" })?.value,
             let location = URL(string: locationHeader) else {
-            throw NovPoolError.connectorNotConfigured("Google Drive 未返回上传会话地址")
+            throw NovPoolError.connectorNotConfigured("Google Drive did not return an upload session URL")
         }
 
         var uploadRequest = URLRequest(url: location)
@@ -210,28 +210,28 @@ public struct GoogleDriveAPIConnector: DestinationConnector, @unchecked Sendable
         uploadRequest.setValue(upload.mimeType, forHTTPHeaderField: "Content-Type")
         uploadRequest.httpBody = upload.data
         let response = try await transport.send(uploadRequest)
-        try Self.ensureSuccess(response, label: "Google Drive 分片上传")
+        try Self.ensureSuccess(response, label: "Google Drive chunked upload")
         return (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any] ?? [:]
     }
 
     static func ensureSuccess(_ payload: HTTPPayload, label: String) throws {
         guard (200..<300).contains(payload.statusCode) else {
             let detail = String(decoding: payload.body.prefix(200), as: UTF8.self)
-            throw NovPoolError.connectorNotConfigured("\(label)失败（HTTP \(payload.statusCode)）：\(detail)")
+            throw NovPoolError.connectorNotConfigured("\(label) failed (HTTP\(payload.statusCode)): \(detail)")
         }
     }
 }
 
 // MARK: - OneDrive
 
-/// OneDrive 连接器（Microsoft Graph）。
+/// OneDrive Connector (Microsoft Graph).
 ///
-/// 小于 4MB 直接 `PUT .../content`；更大的文件走 `createUploadSession` 分片上传
-/// （每片必须是 320KiB 的整数倍，这是 Graph 的硬性要求）。
+/// Files smaller than 4MB can be directly `PUT .../content`; larger files use `createUploadSession` for chunked upload
+///  (Each piece must be a multiple of 320 KiB, which is a strict requirement of Graph).
 public struct OneDriveAPIConnector: DestinationConnector, @unchecked Sendable {
     public struct Config: Codable, Sendable, Equatable {
         public var namingTemplate: String
-        /// 目标路径，例如 `NovPool/技术`；为空表示根目录。
+        /// Target path, for example `NovPool/Technology`; empty means the root directory.
         public var folderPath: String?
 
         public init(namingTemplate: String = NamingTemplate.defaultTemplate, folderPath: String? = nil) {
@@ -248,7 +248,7 @@ public struct OneDriveAPIConnector: DestinationConnector, @unchecked Sendable {
     }
 
     public static let simpleUploadLimit = 4 * 1024 * 1024
-    /// Graph 要求分片大小是 320KiB 的整数倍。
+    /// Graph requires the shard size to be a multiple of 320 KiB.
     public static let chunkSize = 5 * 1024 * 1024
     static let uploadChunkUnit = 320 * 1024
 
@@ -279,7 +279,7 @@ public struct OneDriveAPIConnector: DestinationConnector, @unchecked Sendable {
     public func push(payload: NormalizedPayload, configJSON: Data) async throws -> RemoteReceipt {
         let config = (try? JSONDecoder().decode(Config.self, from: configJSON)) ?? Config()
         guard let credentials else {
-            throw NovPoolError.authenticationRequired("onedrive_api：请先在设置里完成 Microsoft 授权")
+            throw NovPoolError.authenticationRequired("onedrive_api: complete Microsoft authorization in Settings first")
         }
         let accessToken = try await tokenService.accessToken(credentials: credentials)
         let upload = try UploadPayload.make(
@@ -297,14 +297,14 @@ public struct OneDriveAPIConnector: DestinationConnector, @unchecked Sendable {
         }
 
         guard let itemID = json["id"] as? String else {
-            throw NovPoolError.connectorNotConfigured("OneDrive 未返回文件 ID")
+            throw NovPoolError.connectorNotConfigured("OneDrive did not return a file ID")
         }
         let webURL = (json["webUrl"] as? String).flatMap(URL.init(string:))
             ?? URL(string: "https://onedrive.live.com/?id=\(itemID)")!
         return RemoteReceipt(connectorID: connectorType, remoteItemID: itemID, remoteWebURL: webURL)
     }
 
-    /// 拼出 `folder/file` 形式的相对路径，并清洗路径穿越。
+    /// Construct a relative path in the form of `folder/file` and sanitize path traversal.
     static func remotePath(folderPath: String?, fileName: String) -> String {
         let folder = (folderPath ?? "")
             .split(separator: "/")
@@ -329,7 +329,7 @@ public struct OneDriveAPIConnector: DestinationConnector, @unchecked Sendable {
         request.httpBody = upload.data
 
         let response = try await transport.send(request)
-        try GoogleDriveAPIConnector.ensureSuccess(response, label: "OneDrive 上传")
+        try GoogleDriveAPIConnector.ensureSuccess(response, label: "OneDrive upload")
         return (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any] ?? [:]
     }
 
@@ -350,11 +350,11 @@ public struct OneDriveAPIConnector: DestinationConnector, @unchecked Sendable {
         ])
 
         let sessionResponse = try await transport.send(session)
-        try GoogleDriveAPIConnector.ensureSuccess(sessionResponse, label: "OneDrive 建立上传会话")
+        try GoogleDriveAPIConnector.ensureSuccess(sessionResponse, label: "OneDrive create upload session")
         guard let uploadURL = ((try? JSONSerialization.jsonObject(with: sessionResponse.body)) as? [String: Any])
             .flatMap({ $0["uploadUrl"] as? String })
             .flatMap(URL.init(string:)) else {
-            throw NovPoolError.connectorNotConfigured("OneDrive 未返回上传会话地址")
+            throw NovPoolError.connectorNotConfigured("OneDrive did not return an upload session URL")
         }
 
         let total = upload.data.count
@@ -371,7 +371,7 @@ public struct OneDriveAPIConnector: DestinationConnector, @unchecked Sendable {
 
             let response = try await transport.send(request)
             guard (200..<300).contains(response.statusCode) else {
-                try GoogleDriveAPIConnector.ensureSuccess(response, label: "OneDrive 分片上传")
+                try GoogleDriveAPIConnector.ensureSuccess(response, label: "OneDrive chunked upload")
                 break
             }
             if let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any] {
@@ -382,10 +382,10 @@ public struct OneDriveAPIConnector: DestinationConnector, @unchecked Sendable {
         return last
     }
 
-    /// Graph 路径参数里的特殊字符需要百分号编码（保留 `/` 作为层级分隔）。
+    /// Special characters in Graph path parameters need to be percent-encoded (keeping `/` as a hierarchy separator).
     static func encodePath(_ path: String) -> String {
-        // 注意：不能把 "/" 从允许集合里去掉——那会把目录分隔符编码成 %2F，
-        // Graph 会把它当成文件名的一部分，于是不再创建目录层级。
+        // Note: You cannot remove "/" from the allowed set — that would encode the directory separator as %2F,
+        // Graph will treat it as part of the filename, so it will no longer create a directory hierarchy.
         path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
     }
 }

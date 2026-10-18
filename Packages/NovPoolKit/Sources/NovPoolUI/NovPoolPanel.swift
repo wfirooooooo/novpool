@@ -1,25 +1,25 @@
 import AppKit
 import Foundation
 
-/// 悬浮窗固定布局常量（非隔离，供 UI 层与测试共用）。
+/// Floating window fixed layout constants (non-isolated, shared by the UI layer and testing).
 ///
-/// 画布尺寸恒为 260x260 pt：悬停展开扇区时**绝不**改变窗口大小，
-/// 从根源上消灭坐标换算抖动与透明窗口闪烁。
+/// The canvas size is always 260x260 pt: **never** change the window size when hovering over an expanded sector.
+/// Eliminate coordinate conversion jitter and transparent window flicker from the root.
 public enum NovPoolLayout {
-    /// 固定画布尺寸。
+    /// Fixed canvas size.
     ///
-    /// 比图标大得多是**有意为之**：扇区环需要在图标贴边时朝屏幕内侧平移，
-    /// 画布必须留出这段平移空间（环半跨度约 117pt，因此半画布至少要 117 + 平移量）。
-    /// 画布本身完全透明且静默态点击穿透，不占用桌面视觉空间。
+    /// Much larger than the icon is **intentional**: the sector ring needs to shift inward toward the screen when it is aligned with the edge of the icon.
+    /// The canvas must leave this translation space (the half span of the ring is about 117pt, so the half canvas should be at least 117 + the translation amount).
+    /// The canvas itself is completely transparent and silent, allowing clicks to pass through, without occupying visual space on the desktop.
     public static let canvasSize = CGSize(width: 440, height: 440)
     public static let iconSize: CGFloat = 48
 }
 
-/// 无焦点悬浮面板。
+/// Non-focus floating panel.
 ///
-/// 关键约束（白皮书 §3.1）：
-/// - 画布尺寸固定 260x260 pt，**永不**在悬停时动态 `setFrame`，以此消灭坐标抖动与闪烁。
-/// - `.nonActivatingPanel` 保证拖拽与点击都不会抢走当前活跃窗口的焦点。
+/// Key Constraints (White Paper §3.1):
+/// - The canvas size is fixed at 260x260 pt, **never** dynamically `setFrame` on hover, in order to eliminate coordinate jitter and flicker.
+/// - `.nonActivatingPanel` ensures that dragging and clicking will not steal focus from the currently active window.
 @MainActor
 public final class NovPoolPanel: NSPanel {
     public init(canvasSize: CGSize = NovPoolLayout.canvasSize) {
@@ -33,20 +33,20 @@ public final class NovPoolPanel: NSPanel {
         isFloatingPanel = true
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        // 透明由内部 SwiftUI 视图自绘，窗口本身不画任何像素。
+        // Transparency is drawn by the internal SwiftUI view itself, and the window itself does not draw any pixels.
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
-        // 允许用户按住图标拖动整个面板（见 `DragReceivingView.mouseDown`，
-        // 那里显式调用 `NSWindow.performDrag(with:)`，不依赖这条启发式开关）。
+        // Allows users to hold down the icon and drag the entire panel (see `DragReceivingView.mouseDown`,
+        // There, `NSWindow.performDrag(with:)` is called explicitly, without relying on this heuristic switch).
         isMovableByWindowBackground = true
         isExcludedFromWindowsMenu = true
         animationBehavior = .none
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
-        // 不进入 WindowServer 的窗口缩略图，降低常驻开销。
+        // Do not enter the WindowServer's window thumbnails, reducing persistent overhead.
         sharingType = .none
     }
 
@@ -54,16 +54,16 @@ public final class NovPoolPanel: NSPanel {
     public override var canBecomeMain: Bool { false }
 }
 
-/// 面板落位计算（纯函数，便于单测）。
+/// Panel placement calculation (pure function, convenient for unit testing).
 public enum PanelPlacement {
     public static let margin: CGFloat = 24
-    /// 拖动夹紧时保留的最小可见边距，避免图标半个身子贴在屏幕外。
+    /// The minimum visible margin retained when dragging to clamp, to prevent the icon from being half off-screen.
     public static let dragInset: CGFloat = 4
 
-    /// 把主图标锚定在屏幕可见区域的右下角（画布中心与图标重合，画布可以溢出屏幕）。
+    /// Anchor the main icon to the bottom-right corner of the visible screen area (the center of the canvas coincides with the icon, and the canvas can overflow the screen).
     ///
-    /// 图标贴角是产品本意（桌面悬浮小图标）；扇区够不够得到由 `SectorLayout` 负责——
-    /// 展开时环心会朝屏幕内侧平移，因此不必为了扇区把图标推进屏幕里面。
+    /// The icon corner sticker reflects the intended purpose of the product (desktop floating small icon); whether the sector is sufficient is determined by `SectorLayout`——
+    /// When expanded, the center of the ring will move toward the inside of the screen, so there is no need to push the icon further into the screen for the sector.
     public static func frame(
         in visibleFrame: NSRect,
         canvasSize: CGSize = NovPoolLayout.canvasSize,
@@ -82,7 +82,7 @@ public enum PanelPlacement {
         )
     }
 
-    /// 主图标在面板坐标系里的位置（画布正中央）。
+    /// The main icon's position in the panel coordinate system (center of the canvas).
     public static func iconRect(
         forOrigin origin: NSPoint,
         canvasSize: CGSize = NovPoolLayout.canvasSize,
@@ -96,10 +96,10 @@ public enum PanelPlacement {
         )
     }
 
-    /// 把面板原点夹紧到可见屏幕上，保证图标既不会被拖丢、也不会整块跑出屏幕。
+    /// Clamp the panel's origin to the visible screen to ensure that the icons are neither dragged away nor completely move off the screen.
     ///
-    /// 规则：选与图标重叠面积最大的那块屏幕；完全不重叠时选最近的一块；
-    /// 然后把图标夹进该屏幕的可见区域（留 `inset` 边距）。
+    /// Rule: Choose the screen that has the largest overlapping area with the icon; if there is no overlap at all, choose the one labeled Recent.
+    /// Then clip the icon into the visible area of the screen (leaving the `inset` margin).
     public static func clampedOrigin(
         _ origin: NSPoint,
         visibleFrames: [NSRect],
@@ -116,7 +116,7 @@ public enum PanelPlacement {
 
         let icon = iconRect(forOrigin: origin, canvasSize: canvasSize, iconSize: iconSize)
         let safe = frame.insetBy(dx: inset, dy: inset)
-        // 屏幕比图标还小时（几乎不可能），只保证原点在屏幕内。
+        // The screen is smaller than the icon (almost impossible), only ensuring that the origin is within the screen.
         let minX = min(safe.minX, safe.maxX)
         let maxX = max(safe.minX, safe.maxX)
         let minY = min(safe.minY, safe.maxY)
@@ -130,7 +130,7 @@ public enum PanelPlacement {
         )
     }
 
-    /// 选择承载图标的屏幕。
+    /// Select the screen that carries the icon.
     static func targetFrame(forIcon icon: NSRect, visibleFrames: [NSRect]) -> NSRect? {
         guard !visibleFrames.isEmpty else { return nil }
         let overlaps = visibleFrames.map { frame -> (frame: NSRect, area: CGFloat) in
@@ -140,7 +140,7 @@ public enum PanelPlacement {
         if let best = overlaps.max(by: { $0.area < $1.area }), best.area > 0 {
             return best.frame
         }
-        // 完全在屏幕外：挑离图标中心最近的一块，把图标拉回来。
+        // Completely off the screen: detach a piece from the center of the Recent icon and pull the icon back.
         let iconCenter = NSPoint(x: icon.midX, y: icon.midY)
         return visibleFrames.min { lhs, rhs in
             distance(from: iconCenter, to: lhs) < distance(from: iconCenter, to: rhs)
