@@ -1,5 +1,7 @@
 # NovPool
 
+**[English](README.md)** | **[中文](README.zh-CN.md)**
+
 **Drag anything worth keeping into a tiny macOS drop zone — then search, organize, and summarize it later.**
 
 NovPool is a menu-bar / floating-icon tool for macOS. Drop web pages, files, images, video, or text onto the desktop icon; items land in a **local-first knowledge base** with optional AI enrichment and optional cloud sync.
@@ -9,7 +11,6 @@ NovPool is a menu-bar / floating-icon tool for macOS. Drop web pages, files, ima
 | Platform | macOS (Apple Silicon / Intel) |
 | UI language | English (default) or 中文 — switch in Settings |
 | Data | Local SQLite + staging files under Application Support |
-| License / docs | See [novpool-product-and-arch-design.md](novpool-product-and-arch-design.md), [HANDOFF.md](HANDOFF.md), [ROADMAP.md](ROADMAP.md) |
 
 ---
 
@@ -153,34 +154,3 @@ Drop / global fallback
 ```
 
 Search: **FTS5 (BM25) + vDSP cosine similarity**, fused with **RRF**. Without embeddings, search falls back to full-text only.
-
----
-
-## 中文简介
-
-**NovPool** 是 macOS 桌面常驻小工具：把网页、文件、图片、视频、文字拖到悬浮图标即可收藏；数据**默认只落本机**，可搜索、按**内容主题**整理与总结；云同步为可选。
-
-### 快速使用
-
-1. 启动后看**菜单栏图标**和桌面**悬浮图标**（无 Dock 图标）。
-2. 拖拽资源到悬浮图标入库；悬停展开扇区可指定目标。
-3. **⇧⌘Space**（可改）打开检索面板；空查询浏览最近条目。
-4. **设置**里切换界面语言、配置唯一启用的 AI 后端（Ollama / OpenAI 兼容 / 本机 llama.cpp）、主题分类树与可选云端。
-
-### 构建
-
-```bash
-./scripts/test.sh
-./scripts/build-app.sh --run
-./build/NovPool.app/Contents/MacOS/NovPool --selftest
-```
-
-更细的产品架构、交接与路线图见仓库内中英文技术文档（设计稿与 HANDOFF / ROADMAP）。
-
----
-
-## More documentation
-
-- [Product & architecture](novpool-product-and-arch-design.md)
-- [HANDOFF](HANDOFF.md) — agent / developer handoff
-- [ROADMAP](ROADMAP.md) — phased plan

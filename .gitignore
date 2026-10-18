@@ -59,3 +59,8 @@ credentials/
 
 # Swift Package resolved may be committed for apps; keep ignore optional
 # Package.resolved is fine to track for reproducibility — do not ignore.
+
+# Internal engineering docs (keep locally; not for the public repo)
+HANDOFF.md
+ROADMAP.md
+novpool-product-and-arch-design.md
