@@ -106,7 +106,7 @@ struct BrowserContextExtractorTests {
         #expect(BrowserContextExtractor.normalizeURL("https://a.com/b c") == nil)
         #expect(BrowserContextExtractor.normalizeURL("") == nil)
         // 浏览器标签指向本机 HTML 文件时同样要接受（否则整条标签会被静默丢弃）
-        #expect(BrowserContextExtractor.normalizeURL("file:///Users/wong/manual.html")?.isFileURL == true)
+        #expect(BrowserContextExtractor.normalizeURL("file:///tmp/novpool-fixtures/manual.html")?.isFileURL == true)
         #expect(BrowserContextExtractor.normalizeTitle("  ") == nil)
         #expect(BrowserContextExtractor.normalizeTitle("标题") == "标题")
     }

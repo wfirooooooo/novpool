@@ -10,7 +10,7 @@ struct PasteboardResolverTests {
     @Test("P0：本地文件优先于同一粘贴板中的图片与文本")
     func fileURLWins() throws {
         let pasteboard = FakePasteboard(strings: [
-            (PasteboardTypeID.fileURL, "file:///Users/wong/Desktop/report%20final.pdf"),
+            (PasteboardTypeID.fileURL, "file:///tmp/novpool-fixtures/report%20final.pdf"),
             (PasteboardTypeID.plainText, "一些正文"),
             (PasteboardTypeID.png, "fake-image"),
         ])
