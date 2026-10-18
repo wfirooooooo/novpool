@@ -34,10 +34,12 @@ struct LayoutTests {
             visibleFrameInCanvas: visibleInCanvas
         )
         let chipSize = SectorLayout.chipSize
-        let rects = (0..<DropZone.defaultZones.count).map { index -> NSRect in
+        // 几何用例固定用 4 槽，与产品默认扇区数量解耦（默认已改为本机单槽）。
+        let zoneCount = 4
+        let rects = (0..<zoneCount).map { index -> NSRect in
             let offset = SectorGeometry.zoneCenter(
                 index: index,
-                zoneCount: DropZone.defaultZones.count,
+                zoneCount: zoneCount,
                 radius: resolved.radius
             )
             // AppKit 画布坐标 → 屏幕坐标
@@ -136,11 +138,12 @@ struct LayoutTests {
             visibleFrameInCanvas: visibleInCanvas
         )
 
-        for index in 0..<DropZone.defaultZones.count {
+        let zoneCount = 4
+        for index in 0..<zoneCount {
             // SectorGeometry 用的是 AppKit 视图坐标（y 轴向上），与 DragReceivingView 一致。
             let offset = SectorGeometry.zoneCenter(
                 index: index,
-                zoneCount: DropZone.defaultZones.count,
+                zoneCount: zoneCount,
                 radius: resolved.radius
             )
             let probe = NSPoint(x: resolved.center.x + offset.x, y: resolved.center.y + offset.y)
@@ -148,7 +151,7 @@ struct LayoutTests {
                 SectorGeometry.zoneIndex(
                     for: probe,
                     center: resolved.center,
-                    zoneCount: DropZone.defaultZones.count
+                    zoneCount: zoneCount
                 ) == index
             )
         }

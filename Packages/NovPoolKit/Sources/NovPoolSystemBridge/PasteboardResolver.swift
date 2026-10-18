@@ -11,8 +11,17 @@ public struct PasteboardResolver: Sendable {
 
     public init() {}
 
-    public func resolve(from pasteboard: PasteboardReading) -> ResolvedDragContent? {
+    public func resolve(
+        from pasteboard: PasteboardReading,
+        preferWebLinksOverFiles: Bool = false
+    ) -> ResolvedDragContent? {
         let types = Set(pasteboard.availableTypeIdentifiers)
+
+        // 全局兜底拖网页标签时：拖拽粘贴板常残留上一次 Finder 文件。
+        // 若本次同时带了链接/正文，优先认链接，避免「拖标签却入库旧文档」。
+        if preferWebLinksOverFiles, let web = resolveWebOrText(from: pasteboard, types: types) {
+            return web
+        }
 
         if let files = fileURLs(in: pasteboard), !files.isEmpty {
             // 按第一个文件的扩展名判定资源类型；图片/视频文件同样走文件暂存，
@@ -29,6 +38,14 @@ public struct PasteboardResolver: Sendable {
             return image
         }
 
+        return resolveWebOrText(from: pasteboard, types: types)
+    }
+
+    /// 链接 / HTML / 纯文本分支（不含文件与内存位图）。
+    private func resolveWebOrText(
+        from pasteboard: PasteboardReading,
+        types: Set<String>
+    ) -> ResolvedDragContent? {
         let url = linkURL(in: pasteboard)
         let linkTitle = title(in: pasteboard)
         let html = pasteboard.string(forTypeIdentifier: PasteboardTypeID.html)

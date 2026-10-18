@@ -1,12 +1,61 @@
+# SwiftPM / Xcode build products
 .build/
 **/build/
 !build/screenshots/
 **/DerivedData/
-*.xcuserstate
-xcuserdata/
-.DS_Store
-*.app
-*.dSYM/
 .swiftpm/
 Packages/**/.build/
+*.o
+*.dylib
+*.so
+*.a
+
+# Apps & debug symbols (never commit local .app bundles)
+*.app
+*.app.*/
+*.dSYM/
+*.xcresult/
+
+# Xcode user state
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+
+# macOS junk
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor / agent local state
+.idea/
+.vscode/
+.cursor/
+*.swp
+*~
+
+# Env / secrets (credentials belong in Keychain, not the repo)
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.mobileprovision
+secrets/
+credentials/
+
+# Local runtime data & logs (Application Support copies, scratch)
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 /tmp/
+/private/tmp/novpool-build/
+*.log
+
+# Swift Package resolved may be committed for apps; keep ignore optional
+# Package.resolved is fine to track for reproducibility — do not ignore.

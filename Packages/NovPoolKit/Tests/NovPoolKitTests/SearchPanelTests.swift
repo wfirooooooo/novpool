@@ -398,6 +398,23 @@ struct SearchPanelLayoutTests {
         #expect(frame.midY > visible.midY)
     }
 
+    @Test("窗口尺寸可持久化，过小会被夹到最小尺寸")
+    func contentSizePersistence() {
+        let suite = "novpool.tests.searchPanel.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        #expect(SearchPanelLayout.resolvedContentSize(defaults: defaults) == SearchPanelLayout.contentSize)
+
+        SearchPanelLayout.persistContentSize(CGSize(width: 1000, height: 700), defaults: defaults)
+        #expect(SearchPanelLayout.resolvedContentSize(defaults: defaults) == CGSize(width: 1000, height: 700))
+
+        SearchPanelLayout.persistContentSize(CGSize(width: 100, height: 50), defaults: defaults)
+        let clamped = SearchPanelLayout.resolvedContentSize(defaults: defaults)
+        #expect(clamped.width == SearchPanelLayout.minimumContentSize.width)
+        #expect(clamped.height == SearchPanelLayout.minimumContentSize.height)
+    }
+
     @Test("多显示器：按鼠标所在屏幕弹出，找不到则退回首屏")
     func screenSelection() {
         let primary = NSRect(x: 0, y: 0, width: 1512, height: 900)

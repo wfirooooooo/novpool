@@ -19,7 +19,7 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
         search: @escaping @MainActor @Sendable (String) async throws -> [KnowledgeSearchResult],
         loadCategories: @escaping @MainActor @Sendable () async -> [String] = { [] },
         hotKeySpec: HotKeySpec = .default,
-        contentSize: CGSize = SearchPanel.defaultContentSize,
+        contentSize: CGSize = SearchPanelLayout.resolvedContentSize(),
         actions: SearchActions? = nil
     ) {
         self.panel = SearchPanel(contentSize: contentSize)
@@ -44,10 +44,12 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
             onDismiss: { [weak self] in self?.hide() }
         )
 
+        let resolvedSize = SearchPanelLayout.clamp(contentSize)
         let host = NSHostingView(rootView: SearchPanelView(viewModel: viewModel))
-        host.frame = NSRect(origin: .zero, size: contentSize)
+        host.frame = NSRect(origin: .zero, size: resolvedSize)
+        host.autoresizingMask = [.width, .height]
         panel.contentView = host
-        panel.setContentSize(contentSize)
+        panel.setContentSize(resolvedSize)
         panel.delegate = self
         panel.isReleasedWhenClosed = false
 
@@ -58,6 +60,16 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
 
     /// 快捷键是否注册成功（可能被系统或其他应用占用）。
     public var isHotKeyRegistered: Bool { hotKey != nil }
+
+    /// 设置热生效：释放旧热键并按新规格重新注册。
+    @discardableResult
+    public func updateHotKey(_ spec: HotKeySpec) -> Bool {
+        hotKey = nil
+        hotKey = GlobalHotKey(spec: spec) { [weak self] in
+            self?.toggle()
+        }
+        return hotKey != nil
+    }
 
     public var isVisible: Bool { panel.isVisible }
 
@@ -92,6 +104,11 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
     public func windowDidResignKey(_ notification: Notification) {
         guard panel.isVisible else { return }
         hide()
+    }
+
+    /// 用户拖完窗口边角后记住尺寸，下次呼出沿用。
+    public func windowDidEndLiveResize(_ notification: Notification) {
+        SearchPanelLayout.persistContentSize(panel.frame.size)
     }
 
     // MARK: - 真实动作实现

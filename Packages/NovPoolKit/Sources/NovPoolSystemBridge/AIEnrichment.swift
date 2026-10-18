@@ -76,16 +76,17 @@ public enum AIEnrichmentPrompt {
         maxSummaryCharacters: Int
     ) -> String {
         let categoryInstruction = categories.isEmpty
-            ? "category 字段请给出一个简洁的中文分类名。"
-            : "category 字段必须严格从以下列表中选一个（原样返回）：\(categories.joined(separator: "、"))。"
+            ? "category 是按正文主题/领域归类的中文名（如 技术、产品、生活、阅读），2～6 字；禁止用网页、图片、视频、PDF、文件、链接、文本等格式名。"
+            : "category 必须严格从以下主题列表中选一个（原样返回）：\(categories.joined(separator: "、"))。这是内容主题，不是文件格式。"
         return """
-        你是知识库助手，负责为一条刚从网页或文件捕获的资料生成结构化元数据。
+        你是知识库助手，负责为一条刚捕获的资料按「内容含义」整理元数据。
         只输出一个 JSON 对象，不要输出 Markdown 代码块、解释或多余文本。
         JSON 形状：\(jsonSchemaHint)
         要求：
         1. summary 为不超过 \(maxSummaryCharacters) 字的中文提炼，直击要点，不要「本文介绍了」这类套话。
-        2. tags 给出 1～\(maxTags) 个精炼标签，中英文均可，不要带 # 号。
+        2. tags 给出 1～\(maxTags) 个精炼标签，反映主题关键词，中英文均可，不要带 # 号。
         3. \(categoryInstruction)
+        4. 下方「资源形态」仅供参考（图片/PDF/网页等），分类必须依据正文讲了什么，绝不能把资源形态当作 category。
         """
     }
 
@@ -97,7 +98,7 @@ public enum AIEnrichmentPrompt {
         if let sourceTitle = request.sourceTitle, sourceTitle != request.title {
             lines.append("来源标题：\(sourceTitle)")
         }
-        lines.append("内容类型：\(request.contentType.rawValue)")
+        lines.append("资源形态（非分类）：\(request.contentType.rawValue)")
         lines.append("正文：")
         lines.append(String(request.text.prefix(maxInputCharacters)))
         return lines.joined(separator: "\n")
@@ -181,10 +182,19 @@ public enum AIEnrichmentParser {
         }
     }
 
-    /// 分类必须落在用户预设分类树内；未配置分类树时接受模型给出的自由分类。
+    /// 常见「资源形态」词：误当成主题分类时丢弃。
+    private static let rejectedFormatCategories: Set<String> = [
+        "网页", "图片", "视频", "文件", "文档", "链接", "文本", "纯文本", "附件",
+        "pdf", "image", "video", "file", "document", "weblink", "web", "link",
+        "plaintext", "richhtml", "genericfile", "documentpdf",
+    ]
+
+    /// 分类必须落在用户预设主题树内；未配置时接受自由主题名，但拒绝文件格式名。
     static func resolveCategory(_ raw: String?, categories: [String]) -> String? {
         guard let raw else { return nil }
-        guard !categories.isEmpty else { return raw }
+        guard !categories.isEmpty else {
+            return isFormatLikeCategory(raw) ? nil : raw
+        }
         if let exact = categories.first(where: { $0.caseInsensitiveCompare(raw) == .orderedSame }) {
             return exact
         }
@@ -197,6 +207,14 @@ public enum AIEnrichmentParser {
             }
         }
         return nil
+    }
+
+    static func isFormatLikeCategory(_ raw: String) -> Bool {
+        let normalized = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+        return rejectedFormatCategories.contains(normalized)
     }
 
     static func normalizeTags(_ any: Any?, maxTags: Int) -> [String] {

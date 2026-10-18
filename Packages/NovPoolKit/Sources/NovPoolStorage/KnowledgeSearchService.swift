@@ -31,7 +31,7 @@ public actor KnowledgeSearchService {
 
     private let repository: KnowledgeRepository
     private let staging: StagingStore?
-    private let embedder: (any QueryEmbeddingProviding)?
+    private var embedder: (any QueryEmbeddingProviding)?
     private let fileManager: FileManager
     public var configuration: Configuration
 
@@ -47,6 +47,10 @@ public actor KnowledgeSearchService {
         self.embedder = embedder
         self.configuration = configuration
         self.fileManager = fileManager
+    }
+
+    public func update(embedder: (any QueryEmbeddingProviding)?) {
+        self.embedder = embedder
     }
 
     /// 混合检索。空查询返回最近条目。
@@ -215,6 +219,9 @@ extension KnowledgeSearchResult {
     /// 复制到剪贴板的文本（Markdown 优先）。
     public var clipboardText: String {
         var parts: [String] = ["# \(title)"]
+        let tagLine = displayTags.map { "#\($0)" }.joined(separator: " ")
+        if !tagLine.isEmpty { parts.append(tagLine) }
+        if let category { parts.append("主题：\(category)") }
         if let summary { parts.append("> \(summary)") }
         if let sourceURL { parts.append(sourceURL.absoluteString) }
         if let previewBody { parts.append(previewBody) }

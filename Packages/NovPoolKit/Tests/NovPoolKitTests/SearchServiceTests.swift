@@ -299,20 +299,37 @@ struct SearchServiceTests {
         #expect(neither.defaultAction.isEnabled == false)
     }
 
-    @Test("复制到剪贴板时带上标题、摘要、来源与正文")
+    @Test("复制到剪贴板时带上标题、形态 tag、摘要、来源与正文")
     func clipboardText() {
         let result = KnowledgeSearchResult(
             id: UUID(),
             title: "多云知识路由中枢",
             summary: "一句话摘要",
+            category: "技术",
+            tags: ["路由", "Swift"],
             contentType: .webLink,
             sourceURL: URL(string: "https://example.com/a"),
             previewBody: "# 正文"
         )
         let text = result.clipboardText
         #expect(text.contains("# 多云知识路由中枢"))
+        #expect(text.contains("#网页"))
+        #expect(text.contains("#路由"))
+        #expect(text.contains("主题：技术"))
         #expect(text.contains("> 一句话摘要"))
         #expect(text.contains("https://example.com/a"))
         #expect(text.contains("# 正文"))
+    }
+
+    @Test("展示标签：资源形态在前，内容关键词在后，且不去重冲突")
+    func displayTagsPrecedeWithResourceType() {
+        let result = KnowledgeSearchResult(
+            id: UUID(),
+            title: "图",
+            tags: ["设计", "图片"],
+            contentType: .image
+        )
+        #expect(result.resourceTypeTag == "图片")
+        #expect(result.displayTags == ["图片", "设计"])
     }
 }

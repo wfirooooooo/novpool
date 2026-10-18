@@ -44,6 +44,35 @@ struct LocalLLMConfigurationTests {
         #expect(config.modelName == "Llama-3.2-3B-Instruct-Q5")
     }
 
+    @Test("可直接填写 Base URL；改端口可同步默认 URL")
+    func apiBaseURLOverrideAndSync() {
+        var config = LocalLLMConfiguration(apiBaseURL: "http://127.0.0.1:9090/v1", port: 8080)
+        #expect(config.baseURL.absoluteString == "http://127.0.0.1:9090/v1")
+        config.port = 9090
+        config.syncAPIBaseURLFromPort()
+        #expect(config.apiBaseURL == "http://127.0.0.1:9090/v1")
+        #expect(config.apiBaseURLValidationMessage == nil)
+        config.apiBaseURL = "not-a-url"
+        #expect(config.apiBaseURLValidationMessage != nil)
+    }
+
+    @Test("给出可复制的终端启动命令提示")
+    func suggestedLaunchCommand() {
+        let config = LocalLLMConfiguration(
+            binaryPath: "/opt/homebrew/bin/llama-server",
+            modelPath: "/models/qwen.gguf",
+            port: 8081,
+            contextSize: 4096,
+            extraArguments: "--n-gpu-layers 99"
+        )
+        let command = config.suggestedLaunchCommand
+        #expect(command.contains("/opt/homebrew/bin/llama-server"))
+        #expect(command.contains("--model /models/qwen.gguf"))
+        #expect(command.contains("--port 8081"))
+        #expect(command.contains("--ctx-size 4096"))
+        #expect(command.contains("--n-gpu-layers 99"))
+    }
+
     @Test("端口越界时回退默认值，不会生成非法参数")
     func portClamping() {
         var config = LocalLLMConfiguration(binaryPath: "/bin/x", modelPath: "/m.gguf", port: 0)

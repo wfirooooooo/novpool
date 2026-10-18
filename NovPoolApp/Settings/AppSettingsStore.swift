@@ -3,6 +3,7 @@ import NovPoolConnectors
 import NovPoolCore
 import NovPoolStorage
 import NovPoolUI
+import SwiftUI
 
 /// 设置中心的读写入口。
 ///
@@ -25,6 +26,8 @@ final class AppSettingsStore {
 
     var searchHotKey: String
     var isAIEnabled: Bool
+    var aiProvider: AIProvider
+    var uiLanguage: AppLanguage
     var categoriesText: String
     var chatModel: String
     var embeddingModel: String
@@ -34,6 +37,10 @@ final class AppSettingsStore {
     var isSyncEnabled: Bool
     var routeRulesJSON: String
     var defaultConnectorIDsText: String
+
+    func t(_ key: AppL10n.Key) -> String {
+        AppL10n.t(key, uiLanguage)
+    }
 
     private(set) var connectors: [ConnectorRecord] = []
     private(set) var queueCounts: [String: Int] = [:]
@@ -74,6 +81,8 @@ final class AppSettingsStore {
     var prefersLocalLLM: Bool
     /// 由 AppEnvironment 注入：批量重新总结尚无摘要的条目。
     var resummarizeMissingHandler: (@MainActor () async -> String)?
+    /// 由 AppEnvironment 注入：把已持久化的设置推到运行中的服务（快捷键 / 路由 / AI / 同步）。
+    var applyRuntimeHandler: (@MainActor () async -> String)?
     private(set) var isResummarizing = false
 
     init(
@@ -90,6 +99,8 @@ final class AppSettingsStore {
         let settings = NovPoolSettings.load(defaults, keychain: keychain)
         searchHotKey = defaults.string(forKey: "novpool.hotkey") ?? "cmd+shift+space"
         isAIEnabled = settings.isAIEnabled
+        aiProvider = settings.aiProvider
+        uiLanguage = settings.uiLanguage
         categoriesText = settings.categories.joined(separator: "、")
         chatModel = settings.chatModel
         embeddingModel = settings.embeddingModel
@@ -100,7 +111,7 @@ final class AppSettingsStore {
         routeRulesJSON = settings.routeRulesJSON
         defaultConnectorIDsText = settings.defaultConnectorIDs.joined(separator: ",")
         zoneDrafts = DropZoneConfiguration.zones(from: defaults.string(forKey: DropZoneConfiguration.defaultsKey))
-        prefersLocalLLM = defaults.bool(forKey: "novpool.llama.enabled")
+        prefersLocalLLM = settings.aiProvider == .localLlama || defaults.bool(forKey: "novpool.llama.enabled")
         driveClientID = defaults.string(forKey: "novpool.oauth.gdrive.clientID") ?? ""
         driveFolderID = defaults.string(forKey: "novpool.oauth.gdrive.folderID") ?? ""
         oneDriveClientID = defaults.string(forKey: "novpool.oauth.onedrive.clientID") ?? ""
@@ -153,6 +164,8 @@ final class AppSettingsStore {
     func save() {
         defaults.set(searchHotKey, forKey: "novpool.hotkey")
         defaults.set(isAIEnabled, forKey: "novpool.ai.enabled")
+        aiProvider.save(defaults)
+        uiLanguage.save(defaults)
         defaults.set(parseCategories(categoriesText), forKey: "novpool.ai.categories")
         defaults.set(chatModel, forKey: "novpool.ai.chatModel")
         defaults.set(embeddingModel, forKey: "novpool.ai.embeddingModel")
@@ -162,6 +175,7 @@ final class AppSettingsStore {
         } else {
             defaults.set(openAIBaseURL, forKey: "novpool.openai.baseURL")
         }
+        defaults.set(aiProvider == .localLlama, forKey: "novpool.llama.enabled")
         do {
             try NovPoolSettings.saveOpenAIAPIKey(openAIAPIKey, defaults: defaults, keychain: keychain)
         } catch {
@@ -178,7 +192,17 @@ final class AppSettingsStore {
             forKey: "novpool.connectors.default"
         )
         persistOAuthDrafts()
-        showStatus("已保存（快捷键、路由与连接器变更需要重启 NovPool 生效）")
+        Task { await applyRuntimeChanges() }
+    }
+
+    /// 持久化后热推到运行中的服务。
+    private func applyRuntimeChanges() async {
+        if let applyRuntimeHandler {
+            let message = await applyRuntimeHandler()
+            showStatus(message)
+        } else {
+            showStatus("已保存（部分项需重启生效）")
+        }
     }
 
     /// 持久化 OAuth 应用配置（Client ID 等非令牌字段），重启后仍可点「重新授权」。
@@ -517,36 +541,92 @@ final class AppSettingsStore {
         }
     }
 
+    // MARK: - AI 后端互斥
+
+    /// 开启某一个后端（关掉其它）；`nil` 表示全部关闭并停用 AI。
+    func selectAIProvider(_ provider: AIProvider?) {
+        if let provider {
+            if aiProvider == .localLlama, provider != .localLlama, localLLM.isRunning {
+                localLLM.stop()
+            }
+            aiProvider = provider
+            isAIEnabled = true
+            prefersLocalLLM = provider == .localLlama
+            if provider == .localLlama {
+                openAIBaseURL = localLLM.configuration.baseURL.absoluteString
+                if !localLLM.configuration.modelName.isEmpty {
+                    chatModel = localLLM.configuration.modelName
+                }
+            } else if provider == .ollama {
+                let localBase = localLLM.configuration.baseURL.absoluteString
+                if openAIBaseURL == localBase {
+                    openAIBaseURL = ""
+                }
+            }
+        } else {
+            if localLLM.isRunning { localLLM.stop() }
+            isAIEnabled = false
+            prefersLocalLLM = false
+        }
+        save()
+    }
+
+    /// 互斥开关绑定：打开当前项，或关掉当前项（停用 AI）。
+    func bindingForProvider(_ provider: AIProvider) -> Binding<Bool> {
+        Binding(
+            get: { self.isAIEnabled && self.aiProvider == provider },
+            set: { enabled in
+                if enabled {
+                    self.selectAIProvider(provider)
+                } else if self.aiProvider == provider {
+                    self.selectAIProvider(nil)
+                }
+            }
+        )
+    }
+
     // MARK: - 本机 llama.cpp
 
-    /// 启动本机模型；成功后把 AI 请求指向它（OpenAI 兼容接口，完全不出网）。
+    /// 启动本机模型；成功后把 AI 请求指向它的 Base URL（OpenAI 兼容，完全不出网）。
     func startLocalLLM() async {
+        selectAIProvider(.localLlama)
+        localLLM.configuration.syncAPIBaseURLFromPort()
         if let problem = localLLM.start() {
             showStatus(problem, isError: true)
             NovPoolLog.write("llama.cpp：启动失败 - \(problem)")
             return
         }
-        prefersLocalLLM = true
-        defaults.set(true, forKey: "novpool.llama.enabled")
-        defaults.set(localLLM.configuration.baseURL.absoluteString, forKey: "novpool.openai.baseURL")
-        defaults.set(localLLM.configuration.modelName, forKey: "novpool.ai.chatModel")
         openAIBaseURL = localLLM.configuration.baseURL.absoluteString
         chatModel = localLLM.configuration.modelName
+        defaults.set(openAIBaseURL, forKey: "novpool.openai.baseURL")
+        defaults.set(chatModel, forKey: "novpool.ai.chatModel")
         let detail = await localLLM.probe()
-        showStatus("已启动本机模型（\(localLLM.configuration.modelName)）：\(detail)")
+        let applied = await applyRuntimeHandler?() ?? "已保存"
+        showStatus("已启动本机模型（\(localLLM.configuration.modelName)）：\(detail)；\(applied)")
         NovPoolLog.write("llama.cpp：已启动，\(localLLM.configuration.baseURL.absoluteString) - \(detail)")
     }
 
     func stopLocalLLM() {
         localLLM.stop()
-        showStatus("已停止本机模型服务")
+        if aiProvider == .localLlama {
+            selectAIProvider(.ollama)
+        } else {
+            Task { await applyRuntimeChanges() }
+        }
         NovPoolLog.write("llama.cpp：已停止")
     }
 
     func testLocalLLM() async {
+        if let problem = localLLM.configuration.apiBaseURLValidationMessage {
+            showStatus(problem, isError: true)
+            return
+        }
+        // 测试连接时同步把运行中的 AI 指到该 URL。
+        openAIBaseURL = localLLM.configuration.baseURL.absoluteString
+        selectAIProvider(.localLlama)
         let detail = await localLLM.probe()
         showStatus(detail)
-        NovPoolLog.write("llama.cpp：探测 - \(detail)")
+        NovPoolLog.write("llama.cpp：探测 \(localLLM.configuration.baseURL.absoluteString) - \(detail)")
     }
 
     // MARK: - 扇区槽位
@@ -555,13 +635,19 @@ final class AppSettingsStore {
         let sanitized = DropZoneConfiguration.sanitize(zoneDrafts)
         zoneDrafts = sanitized
         defaults.set(DropZoneConfiguration.encode(sanitized), forKey: DropZoneConfiguration.defaultsKey)
-        showStatus("已保存 \(sanitized.count) 个扇区槽位（重启 NovPool 后生效）")
+        Task {
+            let applied = await applyRuntimeHandler?() ?? "已保存"
+            showStatus("已保存 \(sanitized.count) 个扇区槽位；\(applied)")
+        }
     }
 
     func resetZones() {
         zoneDrafts = DropZone.defaultZones
         defaults.removeObject(forKey: DropZoneConfiguration.defaultsKey)
-        showStatus("已恢复默认扇区槽位（重启 NovPool 后生效）")
+        Task {
+            let applied = await applyRuntimeHandler?() ?? "已保存"
+            showStatus("已恢复默认扇区槽位（本机入库）；\(applied)")
+        }
     }
 
     func pruneFinishedJobs(olderThanDays days: Int = 7) async {

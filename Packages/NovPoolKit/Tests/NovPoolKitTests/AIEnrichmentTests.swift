@@ -9,19 +9,22 @@ struct AIEnrichmentTests {
 
     // MARK: - Prompt
 
-    @Test("System Prompt 带上分类树、标签上限与 JSON 形状")
+    @Test("System Prompt 带上主题分类树、标签上限与 JSON 形状")
     func systemPromptContent() {
         let prompt = AIEnrichmentPrompt.systemPrompt(categories: categories, maxTags: 4, maxSummaryCharacters: 80)
         #expect(prompt.contains("技术、产品、阅读"))
+        #expect(prompt.contains("内容主题"))
         #expect(prompt.contains("不超过 80 字"))
         #expect(prompt.contains("1～4 个精炼标签"))
         #expect(prompt.contains("\"summary\""))
+        #expect(prompt.contains("绝不能把资源形态当作 category"))
     }
 
-    @Test("未配置分类树时允许自由分类")
+    @Test("未配置分类树时要求按主题归类并禁止格式名")
     func systemPromptWithoutCategories() {
         let prompt = AIEnrichmentPrompt.systemPrompt(categories: [], maxTags: 5, maxSummaryCharacters: 100)
-        #expect(prompt.contains("简洁的中文分类名"))
+        #expect(prompt.contains("主题"))
+        #expect(prompt.contains("禁止用网页、图片"))
     }
 
     @Test("User Prompt 截断正文并带上来源")
@@ -65,7 +68,7 @@ struct AIEnrichmentTests {
         #expect(enrichment?.tags == ["a", "b"])
     }
 
-    @Test("分类必须落在预设分类树内，自由发挥的分类被丢弃")
+    @Test("分类必须落在预设主题树内，自由发挥的分类被丢弃")
     func categoryValidation() {
         let raw = #"{"summary":"摘要","category":"玄学"}"#
         let enrichment = AIEnrichmentParser.parse(raw, categories: categories)
@@ -73,8 +76,20 @@ struct AIEnrichmentTests {
         // 多选输出取第一个命中项
         let multi = #"{"summary":"摘要","category":"技术 / 编程"}"#
         #expect(AIEnrichmentParser.parse(multi, categories: categories)?.category == "技术")
-        // 未配置分类树时保留原样
+        // 未配置分类树时保留主题名
         #expect(AIEnrichmentParser.parse(raw, categories: [])?.category == "玄学")
+    }
+
+    @Test("自由分类时拒绝把资源形态当成主题")
+    func rejectsFormatAsCategory() {
+        let asImage = #"{"summary":"摘要","category":"图片"}"#
+        #expect(AIEnrichmentParser.parse(asImage, categories: [])?.category == nil)
+        let asPDF = #"{"summary":"摘要","category":"PDF"}"#
+        #expect(AIEnrichmentParser.parse(asPDF, categories: [])?.category == nil)
+        let asWeb = #"{"summary":"摘要","category":"网页"}"#
+        #expect(AIEnrichmentParser.parse(asWeb, categories: [])?.category == nil)
+        let topic = #"{"summary":"摘要","category":"设计"}"#
+        #expect(AIEnrichmentParser.parse(topic, categories: [])?.category == "设计")
     }
 
     @Test("标签去重、去 # 号、限长限量，也接受逗号分隔字符串")
@@ -138,6 +153,23 @@ struct AIEnrichmentTests {
         } else {
             Issue.record("应返回未配置模型的失败原因")
         }
+    }
+
+    @Test("热切换 completer 后可立即总结，无需重建服务")
+    func updateProvidersHotSwap() async throws {
+        let service = AIEnhancementService(completer: nil, embedder: FakeEmbedder(vector: [1]))
+        #expect(await service.isEnabled == false)
+
+        let completer = FakeCompleter(output: #"{"summary":"热切换摘要","category":"技术","tags":["hot"]}"#)
+        await service.updateProviders(
+            completer: completer,
+            embedder: FakeEmbedder(vector: [0.5]),
+            configuration: .init(isEnabled: true, categories: categories)
+        )
+        #expect(await service.isEnabled == true)
+        let enrichment = try #require(await service.enrich(Self.request(categories: categories)))
+        #expect(enrichment.summary == "热切换摘要")
+        #expect(await completer.calls == 1)
     }
 
     @Test("模型报错时返回 nil，并给出可读失败原因")

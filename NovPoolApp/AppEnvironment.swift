@@ -19,6 +19,9 @@ final class AppEnvironment {
     let globalDragMonitor: GlobalDragMonitor
     let searchPanelController: SearchPanelController
     let dataDirectory: URL
+    let aiService: AIEnhancementService
+    let enrichmentPipeline: EnrichmentPipeline
+    let searchService: KnowledgeSearchService
 
     private(set) var statusSummary: String = "就绪"
 
@@ -32,7 +35,10 @@ final class AppEnvironment {
         panelController: PanelController,
         globalDragMonitor: GlobalDragMonitor,
         searchPanelController: SearchPanelController,
-        dataDirectory: URL
+        dataDirectory: URL,
+        aiService: AIEnhancementService,
+        enrichmentPipeline: EnrichmentPipeline,
+        searchService: KnowledgeSearchService
     ) {
         self.database = database
         self.staging = staging
@@ -44,6 +50,9 @@ final class AppEnvironment {
         self.globalDragMonitor = globalDragMonitor
         self.searchPanelController = searchPanelController
         self.dataDirectory = dataDirectory
+        self.aiService = aiService
+        self.enrichmentPipeline = enrichmentPipeline
+        self.searchService = searchService
     }
 
     static func bootstrap() async throws -> AppEnvironment {
@@ -156,7 +165,14 @@ final class AppEnvironment {
                 try await searchService.search(query, limit: 40)
             },
             loadCategories: {
-                (try? await searchService.distinctCategories()) ?? []
+                // 设置里的主题树 + 库里已出现过的主题，合并去重（树优先）。
+                let tree = NovPoolSettings.load().categories
+                let used = (try? await searchService.distinctCategories()) ?? []
+                var ordered: [String] = []
+                for name in tree + used where !ordered.contains(name) {
+                    ordered.append(name)
+                }
+                return ordered
             },
             hotKeySpec: settings.searchHotKey,
             actions: SearchPanelController.liveActions(
@@ -192,14 +208,52 @@ final class AppEnvironment {
             panelController: panelController,
             globalDragMonitor: globalDragMonitor,
             searchPanelController: searchPanelController,
-            dataDirectory: dataDirectory
+            dataDirectory: dataDirectory,
+            aiService: aiService,
+            enrichmentPipeline: enrichmentPipeline,
+            searchService: searchService
         )
+        settingsStore.applyRuntimeHandler = { [weak environment] in
+            guard let environment else { return "环境未就绪" }
+            return await environment.applyRuntimeSettings()
+        }
         let hotKeyLabel = settings.searchHotKey.displayName
         environment.statusSummary = searchPanelController.isHotKeyRegistered
-            ? "已收录 \(itemCount) 条 · 拖拽归档 · \(hotKeyLabel) 搜索"
+            ? "已收录 \(itemCount) 条 · 拖到悬浮图标入库 · \(hotKeyLabel) 搜索"
             : "已收录 \(itemCount) 条 · 快捷键被占用，请从菜单打开搜索"
         environment.wireGlobalDragCapture(viewModel: viewModel)
         return environment
+    }
+
+    /// 设置保存后热生效：快捷键、扇区、路由、同步开关、AI 模型。
+    @discardableResult
+    func applyRuntimeSettings() async -> String {
+        let settings = NovPoolSettings.load()
+        await orchestrator.update(routeEvaluator: settings.routeEvaluator)
+        panelController.updateZones(settings.zones)
+        let hotKeyOK = searchPanelController.updateHotKey(settings.searchHotKey)
+        await outboxWorker.update(configuration: .init(isEnabled: settings.isSyncEnabled))
+        await enrichmentPipeline.update(
+            configuration: .init(categories: settings.categories)
+        )
+        let completer = settings.makeCompleter()
+        let embedder = settings.makeEmbedder()
+        await aiService.updateProviders(
+            completer: completer,
+            embedder: embedder,
+            configuration: .init(isEnabled: settings.isAIEnabled, categories: settings.categories)
+        )
+        await searchService.update(embedder: embedder)
+
+        let itemCount = (try? await KnowledgeRepository(database: database).count()) ?? 0
+        let hotKeyLabel = settings.searchHotKey.displayName
+        statusSummary = hotKeyOK
+            ? "已收录 \(itemCount) 条 · 拖到悬浮图标入库 · \(hotKeyLabel) 搜索"
+            : "已收录 \(itemCount) 条 · 快捷键被占用，请从菜单打开搜索"
+        if hotKeyOK {
+            return "已保存并立即生效"
+        }
+        return "已保存；快捷键未被系统接受，请换一组或从菜单打开搜索"
     }
 
     func start() {

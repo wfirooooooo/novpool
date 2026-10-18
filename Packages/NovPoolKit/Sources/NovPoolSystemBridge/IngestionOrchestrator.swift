@@ -96,6 +96,10 @@ public actor IngestionOrchestrator {
         self.enricher = enricher
     }
 
+    public func update(routeEvaluator: RouteEvaluator) {
+        self.routeEvaluator = routeEvaluator
+    }
+
     public func ingest(
         _ content: ResolvedDragContent,
         forcedZone: DropZone? = nil

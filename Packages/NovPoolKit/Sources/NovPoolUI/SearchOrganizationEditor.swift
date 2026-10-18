@@ -1,7 +1,7 @@
 import NovPoolStorage
 import SwiftUI
 
-/// 检索详情里的人工整理表单：分类、标签、置顶、收藏。
+/// 检索详情里的人工整理表单：主题分类、标签、置顶、收藏。
 @MainActor
 struct SearchOrganizationEditor: View {
     let result: KnowledgeSearchResult
@@ -47,14 +47,15 @@ struct SearchOrganizationEditor: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 8) {
-                TextField("分类", text: $categoryText)
+                TextField("主题分类", text: $categoryText)
                     .textFieldStyle(.roundedBorder)
+                    .help("按内容主题归类，例如技术/产品/生活；不要填图片、PDF 等格式名")
                 if !availableCategories.isEmpty {
                     Picker("选用", selection: Binding(
                         get: { categoryText },
                         set: { categoryText = $0 }
                     )) {
-                        Text("选用已有…").tag("")
+                        Text("选用主题…").tag("")
                         ForEach(availableCategories, id: \.self) { name in
                             Text(name).tag(name)
                         }
@@ -64,7 +65,7 @@ struct SearchOrganizationEditor: View {
                 }
             }
 
-            TextField("标签（逗号分隔）", text: $tagsText)
+            TextField("标签（逗号分隔，内容关键词）", text: $tagsText)
                 .textFieldStyle(.roundedBorder)
 
             HStack(spacing: 14) {

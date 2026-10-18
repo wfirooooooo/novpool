@@ -86,6 +86,56 @@ struct PhaseADragTests {
         #expect(decision?.content.text == "最后才用选中文字")
     }
 
+    @Test("拖拽粘贴板残留旧文件时，有浏览器标签则改用标签")
+    func fallbackSkipsStaleFileWhenBrowserTabAvailable() {
+        let drag = FakePasteboard(strings: [
+            (PasteboardTypeID.fileURL, URL(fileURLWithPath: "/tmp/old-doc.pdf").absoluteString),
+        ])
+        let decision = FallbackCaptureResolver.resolve(
+            dragPasteboard: drag,
+            generalPasteboard: nil,
+            browser: .init(pageURL: URL(string: "https://example.com/tab"), pageTitle: "当前标签"),
+            selectedText: nil,
+            fileExists: { _ in true }
+        )
+        #expect(decision?.source == "浏览器标签")
+        #expect(decision?.content.contentType == .webLink)
+        #expect(decision?.content.pageURL?.absoluteString == "https://example.com/tab")
+    }
+
+    @Test("拖拽粘贴板同时有旧文件与新链接时，优先用链接")
+    func fallbackPrefersLinkOverStaleFileOnSamePasteboard() {
+        let drag = FakePasteboard(strings: [
+            (PasteboardTypeID.fileURL, URL(fileURLWithPath: "/tmp/old-doc.pdf").absoluteString),
+            (PasteboardTypeID.url, "https://example.com/from-drag"),
+        ])
+        let decision = FallbackCaptureResolver.resolve(
+            dragPasteboard: drag,
+            generalPasteboard: nil,
+            browser: .init(pageURL: URL(string: "https://example.com/active-tab"), pageTitle: "标签"),
+            selectedText: nil,
+            fileExists: { _ in true }
+        )
+        #expect(decision?.source == "拖拽粘贴板")
+        #expect(decision?.content.pageURL?.absoluteString == "https://example.com/from-drag")
+    }
+
+    @Test("无浏览器标签时仍接受拖拽粘贴板文件")
+    func fallbackKeepsFileWhenNoBrowserTab() {
+        let drag = FakePasteboard(strings: [
+            (PasteboardTypeID.fileURL, URL(fileURLWithPath: "/tmp/report.pdf").absoluteString),
+        ])
+        let decision = FallbackCaptureResolver.resolve(
+            dragPasteboard: drag,
+            generalPasteboard: nil,
+            browser: .init(pageURL: nil, pageTitle: nil),
+            selectedText: nil,
+            fileExists: { _ in true }
+        )
+        #expect(decision?.source == "拖拽粘贴板")
+        #expect(decision?.content.contentType == .documentPDF)
+    }
+
     // MARK: - 多文件展开
 
     @Test("多文件拆成各自类型的独立条目")

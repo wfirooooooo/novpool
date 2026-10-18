@@ -1,10 +1,12 @@
 import Foundation
 
-/// 本机 llama.cpp（`llama-server`）的启动配置。
+/// 本机 llama.cpp（`llama-server`）的配置。
 ///
-/// `llama-server` 暴露 OpenAI 兼容接口（`/v1/chat/completions`），因此启动成功后
-/// 只要把 AI 的 base URL 指向它，摘要/分类/标签这条链路就完全跑在本机，不出网。
+/// 主路径与 Ollama 一致：填写 OpenAI 兼容 **Base URL**（默认 `http://127.0.0.1:8080/v1`）。
+/// 可选：由 NovPool 代为启动 `llama-server`，或按提示在终端自行启动。
 public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
+    /// OpenAI 兼容接口地址，例如 `http://127.0.0.1:8080/v1`。
+    public var apiBaseURL: String
     public var binaryPath: String
     public var modelPath: String
     public var port: Int
@@ -14,10 +16,11 @@ public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
     public var extraArguments: String
 
     public static let defaultPort = 8080
+    public static let defaultAPIBaseURL = "http://127.0.0.1:8080/v1"
 
-    /// 设置面板提示：默认本机路径约定。
+    /// 设置面板提示：安装与目录约定。
     public static let setupHint =
-        "常见安装：brew install llama.cpp 后二进制多在 /opt/homebrew/bin/llama-server；.gguf 模型可放在 ~/Models/"
+        "常见安装：brew install llama.cpp → /opt/homebrew/bin/llama-server；.gguf 可放在 ~/Models/。也可用下方命令自行启动，再把 Base URL 指过去。"
 
     /// 常见 llama-server 路径（按优先级）。
     public static let commonBinaryCandidates: [String] = [
@@ -48,12 +51,14 @@ public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
     }
 
     public init(
+        apiBaseURL: String = LocalLLMConfiguration.defaultAPIBaseURL,
         binaryPath: String = "",
         modelPath: String = "",
         port: Int = LocalLLMConfiguration.defaultPort,
         contextSize: Int = 0,
         extraArguments: String = ""
     ) {
+        self.apiBaseURL = apiBaseURL
         self.binaryPath = binaryPath
         self.modelPath = modelPath
         self.port = port
@@ -61,8 +66,37 @@ public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
         self.extraArguments = extraArguments
     }
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        binaryPath = try container.decodeIfPresent(String.self, forKey: .binaryPath) ?? ""
+        modelPath = try container.decodeIfPresent(String.self, forKey: .modelPath) ?? ""
+        port = try container.decodeIfPresent(Int.self, forKey: .port) ?? Self.defaultPort
+        contextSize = try container.decodeIfPresent(Int.self, forKey: .contextSize) ?? 0
+        extraArguments = try container.decodeIfPresent(String.self, forKey: .extraArguments) ?? ""
+        if let stored = try container.decodeIfPresent(String.self, forKey: .apiBaseURL),
+           !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            apiBaseURL = stored
+        } else {
+            apiBaseURL = "http://127.0.0.1:\((1...65535).contains(port) ? port : Self.defaultPort)/v1"
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case apiBaseURL, binaryPath, modelPath, port, contextSize, extraArguments
+    }
+
+    /// 请求用的 OpenAI 兼容根地址。
     public var baseURL: URL {
-        URL(string: "http://127.0.0.1:\(clampedPort)/v1")!
+        let trimmed = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: trimmed), url.scheme != nil, url.host != nil {
+            return url
+        }
+        return URL(string: "http://127.0.0.1:\(clampedPort)/v1")!
+    }
+
+    /// 按当前端口刷新默认形态的 Base URL（用户改端口后同步）。
+    public mutating func syncAPIBaseURLFromPort() {
+        apiBaseURL = "http://127.0.0.1:\(clampedPort)/v1"
     }
 
     /// 请求里使用的模型名：llama-server 只服务已加载的模型，用文件名即可。
@@ -75,10 +109,10 @@ public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
         (1...65535).contains(port) ? port : Self.defaultPort
     }
 
-    /// 能否启动：两个路径都不能空。
+    /// 能否由 NovPool 代为启动：两个路径都不能空。
     public var validationMessage: String? {
         if binaryPath.trimmingCharacters(in: .whitespaces).isEmpty {
-            return "请选择 llama-server 可执行文件路径"
+            return "请选择 llama-server 可执行文件路径（或仅填写 Base URL，在终端自行启动）"
         }
         if modelPath.trimmingCharacters(in: .whitespaces).isEmpty {
             return "请选择 .gguf 模型文件"
@@ -90,6 +124,16 @@ public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
     }
 
     public var isValid: Bool { validationMessage == nil }
+
+    /// 仅校验 Base URL 是否可连（不要求本机二进制）。
+    public var apiBaseURLValidationMessage: String? {
+        let trimmed = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "请填写 Base URL，例如 \(Self.defaultAPIBaseURL)" }
+        guard let url = URL(string: trimmed), url.scheme == "http" || url.scheme == "https", url.host != nil else {
+            return "Base URL 无效，示例：\(Self.defaultAPIBaseURL)"
+        }
+        return nil
+    }
 
     /// 组装 llama-server 启动参数。
     public func arguments() -> [String] {
@@ -106,5 +150,33 @@ public struct LocalLLMConfiguration: Sendable, Equatable, Codable {
             .map(String.init)
             .filter { !$0.isEmpty }
         return result + extra
+    }
+
+    /// 终端启动命令提示（可复制）。路径含空格时加引号。
+    public var suggestedLaunchCommand: String {
+        let binary = shellQuote(binaryPath.isEmpty ? "/opt/homebrew/bin/llama-server" : binaryPath)
+        let model = shellQuote(modelPath.isEmpty ? "~/Models/your-model.gguf" : modelPath)
+        var parts = [
+            binary,
+            "--model", model,
+            "--host", "127.0.0.1",
+            "--port", String(clampedPort),
+        ]
+        if contextSize > 0 {
+            parts.append(contentsOf: ["--ctx-size", String(contextSize)])
+        }
+        let extra = extraArguments.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !extra.isEmpty {
+            parts.append(extra)
+        }
+        return parts.joined(separator: " ")
+    }
+
+    private func shellQuote(_ path: String) -> String {
+        if path.contains(" ") || path.contains("'") {
+            let escaped = path.replacingOccurrences(of: "'", with: "'\\''")
+            return "'\(escaped)'"
+        }
+        return path
     }
 }

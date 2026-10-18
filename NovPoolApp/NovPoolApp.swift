@@ -58,7 +58,7 @@ struct SettingsSceneRoot: View {
             )
         } else {
             ProgressView("正在启动…")
-                .frame(width: 640, height: 480)
+                .frame(width: 720, height: 520)
         }
     }
 }
@@ -89,23 +89,24 @@ struct MenuBarContent: View {
         // 同样在这里读环境：菜单内容在启动瞬间会被构建一次，只有读到 @Observable 容器
         // 才能在环境就绪后刷新出真正的菜单项。
         if let environment = delegate.holder.environment {
+            let lang = environment.settingsStore.uiLanguage
             Text(environment.statusSummary)
             Divider()
-            Button("搜索知识库…") { environment.toggleSearchPanel() }
+            Button(AppL10n.t(.menuSearch, lang)) { environment.toggleSearchPanel() }
                 .keyboardShortcut(.space, modifiers: [.command, .shift])
-            SettingsLink { Text("设置…") }
+            SettingsLink { Text(AppL10n.t(.menuSettings, lang)) }
                 .keyboardShortcut(",", modifiers: .command)
-            Button("显示悬浮窗") { environment.showPanel() }
-            Button("隐藏悬浮窗") { environment.hidePanel() }
-            Button("重置悬浮窗位置") { environment.resetPanelPosition() }
+            Button(AppL10n.t(.menuShowPanel, lang)) { environment.showPanel() }
+            Button(AppL10n.t(.menuHidePanel, lang)) { environment.hidePanel() }
+            Button(AppL10n.t(.menuResetPanel, lang)) { environment.resetPanelPosition() }
             Divider()
-            Button("打开知识库数据目录") { environment.revealDataDirectory() }
-            Button("打开归档目录") { environment.revealArchiveDirectory() }
+            Button(AppL10n.t(.menuDataDir, lang)) { environment.revealDataDirectory() }
+            Button(AppL10n.t(.menuArchiveDir, lang)) { environment.revealArchiveDirectory() }
         } else {
-            Text("正在启动…")
+            Text(AppL10n.t(.menuStarting, AppLanguage.load()))
         }
         Divider()
-        Button("退出 NovPool") { NSApp.terminate(nil) }
+        Button(AppL10n.t(.menuQuit, AppLanguage.load())) { NSApp.terminate(nil) }
             .keyboardShortcut("q")
     }
 }

@@ -1,8 +1,9 @@
 import Foundation
 
-// MARK: - 拖拽内容分类
+// MARK: - 拖拽资源形态
 
-/// 一次拖拽被归一化后的内容类别。决定后续清洗流水线走哪条分支。
+/// 一次拖拽被归一化后的资源形态（网页 / 图片 / PDF…）。
+/// 决定清洗流水线分支；在 UI 里作为固定 tag 跟随条目显示，不等于主题分类。
 public enum ContentType: String, Codable, Sendable, CaseIterable {
     case plainText
     case richHTML
@@ -11,6 +12,19 @@ public enum ContentType: String, Codable, Sendable, CaseIterable {
     case video
     case documentPDF
     case genericFile
+
+    /// 跟随资源显示的形态 tag（中文短标签）。
+    public var displayTag: String {
+        switch self {
+        case .webLink: "网页"
+        case .image: "图片"
+        case .video: "视频"
+        case .documentPDF: "PDF"
+        case .plainText: "文本"
+        case .richHTML: "富文本"
+        case .genericFile: "文件"
+        }
+    }
 }
 
 /// 按扩展名归类文件资源。拖拽进来的文件要先分清是图片、视频、PDF 还是普通文件，
@@ -154,12 +168,9 @@ public struct DropZone: Codable, Sendable, Identifiable, Equatable {
 
     public var isSmartRoute: Bool { connectorID == nil }
 
-    /// 产品规格中的默认四槽位。
+    /// 本地优先默认槽位：只本机入库。云端扇区可在设置里自行添加。
     public static let defaultZones: [DropZone] = [
-        DropZone(id: "smart", title: "智能路由", systemImage: "wand.and.stars"),
-        DropZone(id: "notion", title: "Notion", systemImage: "doc.richtext", connectorID: "notion"),
-        DropZone(id: "gdrive", title: "Google Drive", systemImage: "externaldrive.badge.icloud", connectorID: "gdrive"),
-        DropZone(id: "onedrive", title: "OneDrive", systemImage: "cloud", connectorID: "onedrive"),
+        DropZone(id: "local", title: "本机入库", systemImage: "internaldrive"),
     ]
 }
 

@@ -1,9 +1,10 @@
 import AppKit
 import NovPoolCore
+import NovPoolStorage
 import NovPoolUI
 import SwiftUI
 
-/// 设置中心：连接器、路由与同步、检索与 AI、维护。
+/// 设置中心：本机知识库优先；云端目标可选。
 struct SettingsView: View {
     @Bindable var store: AppSettingsStore
     var onRunSyncNow: () async -> String
@@ -11,24 +12,36 @@ struct SettingsView: View {
     var onRevealDataDirectory: () -> Void
     var logPath: String
 
-    @State private var selectedTab = Tab.connectors
+    @State private var selectedTab = Tab.library
     @State private var newNamingTemplate = "{Category}/{YYYY}-{MM}/{Title}.{ext}"
     @State private var isChoosingDirectory = false
+    @State private var showCloudTargets = false
 
     private enum Tab: String, CaseIterable, Identifiable {
-        case connectors = "连接器"
-        case routing = "路由与同步"
-        case intelligence = "检索与 AI"
-        case maintenance = "维护"
+        case library
+        case intelligence
+        case routing
+        case cloud
+        case maintenance
 
         var id: String { rawValue }
+
+        func title(_ language: AppLanguage) -> String {
+            switch self {
+            case .library: AppL10n.t(.tabLibrary, language)
+            case .intelligence: AppL10n.t(.tabIntelligence, language)
+            case .routing: AppL10n.t(.tabRouting, language)
+            case .cloud: AppL10n.t(.tabCloud, language)
+            case .maintenance: AppL10n.t(.tabMaintenance, language)
+            }
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Picker("", selection: $selectedTab) {
                 ForEach(Tab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    Text(tab.title(store.uiLanguage)).tag(tab)
                 }
             }
             .pickerStyle(.segmented)
@@ -37,9 +50,10 @@ struct SettingsView: View {
 
             Form {
                 switch selectedTab {
-                case .connectors: connectorsTab
-                case .routing: routingTab
+                case .library: libraryTab
                 case .intelligence: intelligenceTab
+                case .routing: routingTab
+                case .cloud: cloudTab
                 case .maintenance: maintenanceTab
                 }
             }
@@ -47,7 +61,7 @@ struct SettingsView: View {
 
             statusBar
         }
-        .frame(width: 640, height: 480)
+        .frame(width: 720, height: 520)
         .background(SettingsWindowConfigurator())
         .task {
             await store.reloadConnectors()
@@ -71,13 +85,64 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - 连接器
+    // MARK: - 本机知识库
 
     @ViewBuilder
-    private var connectorsTab: some View {
+    private var libraryTab: some View {
+        Section("怎么用") {
+            Text("把文件、图片、链接或文字拖到桌面悬浮图标 → 本机自动入库 → ⇧⌘Space 搜索。入库后按「内容主题」归类（不是按文件类型），并可改标签、摘要；云端推送是可选能力。")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            HStack {
+                Button("在访达中打开知识库目录") { onRevealDataDirectory() }
+                Button("保存设置") { store.save() }
+                    .keyboardShortcut("s", modifiers: .command)
+            }
+        }
+
+        Section("添加本地归档目录（可选复制一份到文件夹）") {
+            TextField("命名模板", text: $newNamingTemplate)
+                .font(.system(size: 11, design: .monospaced))
+            Button("选择目录…") { chooseDirectory() }
+                .disabled(isChoosingDirectory)
+            Text("拖入默认已写入 Application Support；这里再选一个目录（如 Obsidian 库），可作为额外落盘目标，绑定到下方扇区即可。")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+
+        localConnectorsSection
+        zonesSection
+    }
+
+    @ViewBuilder
+    private var localConnectorsSection: some View {
         Section("已配置的目标端") {
-            if store.connectors.isEmpty {
-                Text("还没有目标端。至少添加一个本地归档目录就能开始同步。")
+            let locals = store.connectors.filter { $0.connectorType == "local_mount" }
+            if locals.isEmpty {
+                Text("尚未添加本地归档目录。不添加也能用：拖入资源会进入本机知识库并可搜索。")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(locals) { connector in
+                connectorRow(connector)
+            }
+        }
+    }
+
+    // MARK: - 云端（可选）
+
+    @ViewBuilder
+    private var cloudTab: some View {
+        Section("说明") {
+            Text("云端连接暂缓优先开发。以下配置保留可用；日常本机入库不依赖它们。")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Toggle("显示云端授权表单", isOn: $showCloudTargets)
+        }
+
+        Section("已配置的云端目标") {
+            let clouds = store.connectors.filter { $0.connectorType != "local_mount" }
+            if clouds.isEmpty {
+                Text("还没有云端目标。需要时再授权 Notion / Drive / OneDrive。")
                     .foregroundStyle(.secondary)
             }
             HStack {
@@ -85,68 +150,63 @@ struct SettingsView: View {
                     Task { await store.refreshAuthStatuses() }
                 }
                 .disabled(store.isProbingAuth)
-                Text("云连接器失效时会提示「需重新授权」，发件箱遇到授权错误会直接停止重试。")
+                Text("失效时会提示重新授权；发件箱遇授权错误会停止重试。")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
-
-            ForEach(store.connectors) { connector in
-                HStack(spacing: 10) {
-                    Image(systemName: icon(for: connector.connectorType))
-                        .frame(width: 18)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(connector.name)
-                        Text("\(connector.connectorType) · \(connector.id)")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                        if let status = store.authStatuses[connector.id] {
-                            Text(status.detail.map { "\(status.title)：\($0)" } ?? status.title)
-                                .font(.system(size: 10))
-                                .foregroundStyle(status.needsAttention ? Color.orange : Color.secondary)
-                                .lineLimit(2)
-                        }
-                    }
-                    Spacer()
-                    if store.authStatuses[connector.id]?.needsAttention == true {
-                        Button("重新授权") {
-                            Task { await store.reauthorize(connectorID: connector.id) }
-                        }
-                        .disabled(store.isAuthorizing)
-                    }
-                    Toggle("启用", isOn: Binding(
-                        get: { connector.isEnabled },
-                        set: { value in
-                            Task { await store.setEnabled(value, connectorID: connector.id) }
-                        }
-                    ))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-
-                    Button(role: .destructive) {
-                        Task { await store.delete(connectorID: connector.id) }
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("删除该连接器（同时清除钥匙串凭据）")
-                }
+            ForEach(clouds) { connector in
+                connectorRow(connector)
             }
         }
 
-        Section("添加本地归档目录（不需要授权，落盘即同步）") {
-            TextField("命名模板", text: $newNamingTemplate)
-                .font(.system(size: 11, design: .monospaced))
-            Button("选择目录…") { chooseDirectory() }
-                .disabled(isChoosingDirectory)
-            Text("可选 Google Drive / OneDrive 的本地挂载目录（~/Library/CloudStorage）、iCloud 云盘，或任意 Obsidian 库。访问权限用安全作用域书签持久化。")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+        if showCloudTargets {
+            notionSection
+            driveSection
+            oneDriveSection
         }
+    }
 
-        notionSection
-        driveSection
-        oneDriveSection
-        zonesSection
+    @ViewBuilder
+    private func connectorRow(_ connector: ConnectorRecord) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon(for: connector.connectorType))
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(connector.name)
+                Text("\(connector.connectorType) · \(connector.id)")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                if let status = store.authStatuses[connector.id] {
+                    Text(status.detail.map { "\(status.title)：\($0)" } ?? status.title)
+                        .font(.system(size: 10))
+                        .foregroundStyle(status.needsAttention ? Color.orange : Color.secondary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer()
+            if store.authStatuses[connector.id]?.needsAttention == true {
+                Button("重新授权") {
+                    Task { await store.reauthorize(connectorID: connector.id) }
+                }
+                .disabled(store.isAuthorizing)
+            }
+            Toggle("启用", isOn: Binding(
+                get: { connector.isEnabled },
+                set: { value in
+                    Task { await store.setEnabled(value, connectorID: connector.id) }
+                }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+
+            Button(role: .destructive) {
+                Task { await store.delete(connectorID: connector.id) }
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .help("删除该连接器（同时清除钥匙串凭据）")
+        }
     }
 
     // MARK: - 云端连接器表单
@@ -246,7 +306,7 @@ struct SettingsView: View {
             HStack {
                 Button("保存槽位") { store.saveZones() }
                 Button("恢复默认") { store.resetZones() }
-                Text("智能路由 = 交给路由规则决定；绑定连接器 = 拖到该槽位强制送往它。")
+                Text("默认「本机入库」不推云端。绑定连接器 = 拖到该槽位强制送往它（含本地归档目录）。")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
@@ -279,12 +339,15 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - 路由与同步
+    // MARK: - 路由
 
     @ViewBuilder
     private var routingTab: some View {
-        Section("同步") {
+        Section("同步（默认关闭：只本机入库）") {
             Toggle("启用后台同步（发件箱工作器）", isOn: $store.isSyncEnabled)
+            Text("关闭时拖入只进本地知识库。开启且路由命中连接器时，才会推送本地归档目录或云端。")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
             HStack {
                 Button("立即同步一轮") {
                     Task {
@@ -293,6 +356,7 @@ struct SettingsView: View {
                         await store.reloadQueue()
                     }
                 }
+                .disabled(!store.isSyncEnabled)
                 Spacer()
                 Text(queueSummary)
                     .font(.system(size: 11))
@@ -300,8 +364,8 @@ struct SettingsView: View {
             }
         }
 
-        Section("默认目标端") {
-            TextField("连接器 ID，逗号分隔（无规则命中时使用）", text: $store.defaultConnectorIDsText)
+        Section("默认目标端（可留空）") {
+            TextField("连接器 ID，逗号分隔（无规则命中时使用；本地优先请留空）", text: $store.defaultConnectorIDsText)
                 .font(.system(size: 11, design: .monospaced))
         }
 
@@ -367,114 +431,208 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var intelligenceTab: some View {
-        Section("全局快捷键") {
-            TextField("例如 cmd+shift+space", text: $store.searchHotKey)
+        Section(store.t(.hotkey)) {
+            TextField("cmd+shift+space", text: $store.searchHotKey)
                 .font(.system(size: 11, design: .monospaced))
-            Text(validHotKey ? "写法可用" : "写法无效：需要「修饰键+主键」，例如 cmd+shift+space")
+            Text(validHotKey ? store.t(.hotkeyValid) : store.t(.hotkeyInvalid))
                 .font(.system(size: 10))
                 .foregroundStyle(validHotKey ? Color.secondary : Color.red)
         }
 
-        Section("AI 增强") {
-            Toggle("启用摘要 / 分类 / 标签 / 向量", isOn: $store.isAIEnabled)
-            TextField("分类树（顿号分隔，限定 category 取值范围）", text: $store.categoriesText)
-            TextField("对话模型", text: $store.chatModel)
-            TextField("向量模型", text: $store.embeddingModel)
-            TextField("Ollama 地址", text: $store.ollamaBaseURL)
+        Section {
+            Toggle(store.t(.aiMaster), isOn: Binding(
+                get: { store.isAIEnabled },
+                set: { enabled in
+                    if enabled {
+                        store.selectAIProvider(store.aiProvider)
+                    } else {
+                        store.selectAIProvider(nil)
+                    }
+                }
+            ))
+            Text(store.t(.aiProviderHint))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+
+            ForEach(AIProvider.allCases) { provider in
+                Toggle(provider.title(language: store.uiLanguage), isOn: store.bindingForProvider(provider))
+            }
+        } header: {
+            Text(store.uiLanguage == .zh ? "AI 后端（互斥）" : "AI backend (one at a time)")
+        }
+
+        Section {
+            TextField(store.t(.aiCategories), text: $store.categoriesText)
+            Text(store.t(.aiCategoriesHint))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            TextField(store.t(.aiChatModel), text: $store.chatModel)
+            TextField(store.t(.aiEmbeddingModel), text: $store.embeddingModel)
             HStack(spacing: 8) {
-                Button(store.isResummarizing ? "正在总结…" : "重新总结缺失摘要") {
+                Button(store.isResummarizing
+                       ? (store.uiLanguage == .zh ? "正在总结…" : "Working…")
+                       : store.t(.aiResummarize)) {
                     Task { await store.resummarizeMissingSummaries() }
                 }
                 .disabled(store.isResummarizing || !store.isAIEnabled)
-                Text("对尚无摘要、但已有正文的条目再跑一轮 AI；失败原因见下方状态。")
+                Text(store.t(.aiResummarizeHint))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
+        } header: {
+            Text(store.uiLanguage == .zh ? "AI 增强" : "AI enrichment")
         }
 
-        Section("OpenAI 兼容接口（留空则用本地 Ollama）") {
-            TextField("Base URL", text: $store.openAIBaseURL)
-            SecureField("API Key（保存在本机钥匙串）", text: $store.openAIAPIKey)
+        if store.aiProvider == .ollama {
+            Section("Ollama") {
+                TextField(store.t(.aiOllamaURL), text: $store.ollamaBaseURL)
+                    .font(.system(size: 11, design: .monospaced))
+            }
         }
 
-        localLLMSection
+        if store.aiProvider == .openAICompatible {
+            Section(AIProvider.openAICompatible.title(language: store.uiLanguage)) {
+                TextField(store.t(.aiOpenAIBase), text: $store.openAIBaseURL)
+                    .font(.system(size: 11, design: .monospaced))
+                SecureField(store.t(.aiOpenAIKey), text: $store.openAIAPIKey)
+            }
+        }
+
+        if store.aiProvider == .localLlama {
+            localLLMSection
+        }
 
         Section {
-            Button("保存设置") { store.save() }
+            Button(store.t(.saveSettings)) { store.save() }
         }
     }
 
-    /// 本机 llama.cpp：选择 llama-server 与 .gguf，一键拉起（OpenAI 兼容，完全不出网）。
+    /// 本机 llama.cpp：以 Base URL 为主（同 Ollama）；可选代启或按命令自行启动。
     @ViewBuilder
     private var localLLMSection: some View {
-        Section("本机 llama.cpp 模型") {
-            HStack(spacing: 8) {
-                TextField("llama-server 可执行文件", text: Binding(
-                    get: { store.localLLM.configuration.binaryPath },
-                    set: { store.localLLM.configuration.binaryPath = $0 }
-                ))
-                .font(.system(size: 11, design: .monospaced))
-                Button("选择…") { chooseFile { store.localLLM.configuration.binaryPath = $0.path } }
-            }
-            HStack(spacing: 8) {
-                TextField("模型文件（.gguf）", text: Binding(
-                    get: { store.localLLM.configuration.modelPath },
-                    set: { store.localLLM.configuration.modelPath = $0 }
-                ))
-                .font(.system(size: 11, design: .monospaced))
-                Button("选择…") { chooseFile { store.localLLM.configuration.modelPath = $0.path } }
-            }
-            HStack(spacing: 8) {
-                TextField("端口", value: Binding(
-                    get: { store.localLLM.configuration.port },
-                    set: { store.localLLM.configuration.port = $0 }
-                ), format: .number)
-                .frame(width: 80)
-                TextField("上下文长度（0 = 默认）", value: Binding(
-                    get: { store.localLLM.configuration.contextSize },
-                    set: { store.localLLM.configuration.contextSize = $0 }
-                ), format: .number)
-                .frame(width: 120)
-                TextField("额外参数（如 --threads 8 --n-gpu-layers 99）", text: Binding(
-                    get: { store.localLLM.configuration.extraArguments },
-                    set: { store.localLLM.configuration.extraArguments = $0 }
-                ))
-                .font(.system(size: 11, design: .monospaced))
-            }
-            HStack(spacing: 8) {
-                Button(store.localLLM.isRunning ? "停止服务" : "启动模型") {
-                    Task {
-                        if store.localLLM.isRunning {
-                            store.stopLocalLLM()
-                        } else {
-                            await store.startLocalLLM()
-                        }
-                    }
-                }
-                Button("测试连接") { Task { await store.testLocalLLM() } }
-                Button("填充已探测路径") { store.fillDetectedLocalLLMPaths() }
-                Text(store.localLLM.isRunning ? "运行中 · \(store.localLLM.configuration.baseURL.absoluteString)" : "未运行")
+        Section(AIProvider.localLlama.title(language: store.uiLanguage)) {
+            TextField(store.t(.aiLocalURL), text: Binding(
+                get: { store.localLLM.configuration.apiBaseURL },
+                set: { store.localLLM.configuration.apiBaseURL = $0 }
+            ))
+            .font(.system(size: 11, design: .monospaced))
+            Text(store.t(.aiLocalURLHint))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            if let urlProblem = store.localLLM.configuration.apiBaseURLValidationMessage {
+                Text(urlProblem)
                     .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+            }
+
+            HStack(spacing: 8) {
+                Button(store.t(.aiTest)) { Task { await store.testLocalLLM() } }
+                Button(store.t(.saveSettings)) {
+                    store.openAIBaseURL = store.localLLM.configuration.baseURL.absoluteString
+                    store.save()
+                }
+                Text(store.localLLM.configuration.baseURL.absoluteString)
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Text(store.t(.aiLocalCommandHint))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 8) {
+                Text(store.localLLM.configuration.suggestedLaunchCommand)
+                    .font(.system(size: 10, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button(store.t(.aiCopyCommand)) {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(store.localLLM.configuration.suggestedLaunchCommand, forType: .string)
+                    store.showStatus(store.uiLanguage == .zh ? "已复制启动命令" : "Launch command copied")
+                }
             }
             Text(LocalLLMConfiguration.setupHint)
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
-            if let problem = store.localLLM.configuration.validationMessage {
-                Text(problem)
+
+            DisclosureGroup(store.t(.aiLocalLaunchOptional)) {
+                HStack(spacing: 8) {
+                    TextField(store.t(.aiLocalBinary), text: Binding(
+                        get: { store.localLLM.configuration.binaryPath },
+                        set: { store.localLLM.configuration.binaryPath = $0 }
+                    ))
+                    .font(.system(size: 11, design: .monospaced))
+                    Button(store.uiLanguage == .zh ? "选择…" : "Choose…") {
+                        chooseFile { store.localLLM.configuration.binaryPath = $0.path }
+                    }
+                }
+                HStack(spacing: 8) {
+                    TextField(store.t(.aiLocalModel), text: Binding(
+                        get: { store.localLLM.configuration.modelPath },
+                        set: { store.localLLM.configuration.modelPath = $0 }
+                    ))
+                    .font(.system(size: 11, design: .monospaced))
+                    Button(store.uiLanguage == .zh ? "选择…" : "Choose…") {
+                        chooseFile { store.localLLM.configuration.modelPath = $0.path }
+                    }
+                }
+                HStack(spacing: 8) {
+                    TextField(store.t(.aiLocalPort), value: Binding(
+                        get: { store.localLLM.configuration.port },
+                        set: {
+                            store.localLLM.configuration.port = $0
+                            store.localLLM.configuration.syncAPIBaseURLFromPort()
+                        }
+                    ), format: .number)
+                    .frame(width: 80)
+                    TextField(store.t(.aiLocalContext), value: Binding(
+                        get: { store.localLLM.configuration.contextSize },
+                        set: { store.localLLM.configuration.contextSize = $0 }
+                    ), format: .number)
+                    .frame(width: 120)
+                    TextField(store.t(.aiLocalExtra), text: Binding(
+                        get: { store.localLLM.configuration.extraArguments },
+                        set: { store.localLLM.configuration.extraArguments = $0 }
+                    ))
+                    .font(.system(size: 11, design: .monospaced))
+                }
+                HStack(spacing: 8) {
+                    Button(store.localLLM.isRunning ? store.t(.aiStop) : store.t(.aiStart)) {
+                        Task {
+                            if store.localLLM.isRunning {
+                                store.stopLocalLLM()
+                            } else {
+                                await store.startLocalLLM()
+                            }
+                        }
+                    }
+                    Button(store.t(.aiFillPaths)) { store.fillDetectedLocalLLMPaths() }
+                    Text(
+                        store.localLLM.isRunning
+                            ? "\(store.t(.aiRunning)) · \(store.localLLM.configuration.baseURL.absoluteString)"
+                            : store.t(.aiNotRunning)
+                    )
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
-            }
-            if !store.localLLM.recentOutput.isEmpty {
-                ScrollView {
-                    Text(store.localLLM.recentOutput.joined(separator: "\n"))
-                        .font(.system(size: 9.5, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(height: 80)
+                if let problem = store.localLLM.configuration.validationMessage {
+                    Text(problem)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                if !store.localLLM.recentOutput.isEmpty {
+                    ScrollView {
+                        Text(store.localLLM.recentOutput.joined(separator: "\n"))
+                            .font(.system(size: 9.5, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(height: 80)
+                }
             }
-            Text("启动成功后 AI 请求会自动指向本机服务（模型名用文件名），摘要与标签完全离线生成。")
+
+            Text(store.t(.aiLocalHint))
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
@@ -498,18 +656,36 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var maintenanceTab: some View {
-        Section("悬浮窗") {
-            Button("重置悬浮窗位置") { onResetPanelPosition() }
+        Section(store.t(.language)) {
+            Picker(store.t(.language), selection: $store.uiLanguage) {
+                ForEach(AppLanguage.allCases) { language in
+                    Text(language.displayName).tag(language)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: store.uiLanguage) { _, language in
+                language.save()
+                store.showStatus(
+                    language == .zh ? "界面语言已切换为中文" : "Language switched to English"
+                )
+            }
+            Text(store.t(.languageHint))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
         }
-        Section("数据") {
-            Button("在访达中打开知识库目录") { onRevealDataDirectory() }
-            Text("启动日志：\(logPath)")
+
+        Section(store.t(.maintenancePanel)) {
+            Button(store.t(.maintenanceResetPanel)) { onResetPanelPosition() }
+        }
+        Section(store.t(.maintenanceData)) {
+            Button(store.t(.maintenanceReveal)) { onRevealDataDirectory() }
+            Text("\(store.t(.maintenanceLog))：\(logPath)")
                 .font(.system(size: 10, design: .monospaced))
                 .textSelection(.enabled)
                 .foregroundStyle(.secondary)
         }
-        Section("缓存清理") {
-            Button("清理 7 天前已完成的同步任务") {
+        Section(store.t(.maintenanceCache)) {
+            Button(store.t(.maintenancePrune)) {
                 Task { await store.pruneFinishedJobs(olderThanDays: 7) }
             }
         }

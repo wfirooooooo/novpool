@@ -81,6 +81,18 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
 
     public var hasLocalFile: Bool { localFileURL != nil }
 
+    /// 资源形态 tag（网页 / 图片 / PDF…），始终跟随条目。
+    public var resourceTypeTag: String { contentType.displayTag }
+
+    /// 展示用标签：形态 tag 在前，其后是内容关键词 tag（去重）。
+    public var displayTags: [String] {
+        var ordered: [String] = [resourceTypeTag]
+        for tag in tags where ordered.allSatisfy({ $0.caseInsensitiveCompare(tag) != .orderedSame }) {
+            ordered.append(tag)
+        }
+        return ordered
+    }
+
     /// 回车时的默认动作。
     public var defaultAction: SearchResultAction {
         if let sourceURL, Self.isWebURL(sourceURL) { return .openURL(sourceURL) }

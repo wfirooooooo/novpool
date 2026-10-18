@@ -91,7 +91,13 @@ public actor OutboxSyncWorker {
     }
 
     public func update(configuration: Configuration) {
+        let wasEnabled = self.configuration.isEnabled
         self.configuration = configuration
+        if configuration.isEnabled, !wasEnabled {
+            start()
+        } else if !configuration.isEnabled, wasEnabled {
+            stop()
+        }
     }
 
     public func addObserver(_ observer: @escaping @Sendable (OutboxSyncEvent) -> Void) {

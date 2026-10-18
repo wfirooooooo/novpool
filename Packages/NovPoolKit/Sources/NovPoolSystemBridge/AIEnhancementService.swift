@@ -32,8 +32,8 @@ public actor AIEnhancementService {
         }
     }
 
-    private let completer: (any LLMCompleting)?
-    private let embedder: (any EmbeddingProviding)?
+    private var completer: (any LLMCompleting)?
+    private var embedder: (any EmbeddingProviding)?
     private var configuration: Configuration
 
     public init(
@@ -50,6 +50,19 @@ public actor AIEnhancementService {
 
     public func update(configuration: Configuration) {
         self.configuration = configuration
+    }
+
+    /// 设置保存或本机模型启停后热切换，无需重启进程。
+    public func updateProviders(
+        completer: (any LLMCompleting)?,
+        embedder: (any EmbeddingProviding)?,
+        configuration: Configuration? = nil
+    ) {
+        self.completer = completer
+        self.embedder = embedder
+        if let configuration {
+            self.configuration = configuration
+        }
     }
 
     public func enrichDetailed(_ request: AIEnrichmentRequest) async -> AIEnrichmentOutcome {

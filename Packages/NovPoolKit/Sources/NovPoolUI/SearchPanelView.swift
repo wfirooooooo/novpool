@@ -1,8 +1,9 @@
+import AppKit
 import NovPoolCore
 import NovPoolStorage
 import SwiftUI
 
-/// 检索面板内容视图：左侧列表 + 右侧详情。
+/// 检索面板内容视图：左侧列表 + 右侧详情（`HSplitView` 可拖动分栏）。
 @MainActor
 public struct SearchPanelView: View {
     private let viewModel: SearchViewModel
@@ -17,19 +18,21 @@ public struct SearchPanelView: View {
     }
 
     private func render(_ snapshot: SearchSnapshot) -> some View {
-        HStack(spacing: 0) {
+        HSplitView {
             listColumn(snapshot)
-                .frame(minWidth: 420)
-            Divider()
+                .frame(minWidth: SearchPanelLayout.minimumListColumnWidth)
+                .layoutPriority(1)
+
             previewColumn(snapshot)
-                .frame(width: 320)
+                .frame(minWidth: SearchPanelLayout.minimumPreviewColumnWidth)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        // 与设置 Form 一致：系统窗口底色，而不是半透明毛玻璃。
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
     }
 
@@ -73,8 +76,12 @@ public struct SearchPanelView: View {
 
     private func filterBar(_ snapshot: SearchSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+            // 资源形态筛选（网页/图/视频…）≠ 主题分类
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
+                    Text("形态")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
                     ForEach(SearchContentKindFilter.allCases) { kind in
                         filterChip(
                             kind.title,
@@ -104,7 +111,7 @@ public struct SearchPanelView: View {
                 .frame(width: 110)
 
                 Picker(
-                    "分类",
+                    "主题",
                     selection: Binding(
                         get: { snapshot.filter.category ?? "" },
                         set: { [viewModel] value in
@@ -112,7 +119,7 @@ public struct SearchPanelView: View {
                         }
                     )
                 ) {
-                    Text("全部分类").tag("")
+                    Text("全部主题").tag("")
                     ForEach(snapshot.availableCategories, id: \.self) { category in
                         Text(category).tag(category)
                     }
@@ -120,6 +127,7 @@ public struct SearchPanelView: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(maxWidth: 140)
+                .help("按内容主题筛选，不是按文件类型")
 
                 filterChip(
                     "收藏",
@@ -284,12 +292,12 @@ public struct SearchPanelView: View {
                         chip("收藏", tint: .pink)
                     }
                     chip(result.matchLabel, tint: result.isSemanticMatch ? .indigo : .accentColor)
-                    chip(contentTypeLabel(result.contentType), tint: .secondary)
                     if let category = result.category {
                         chip(category, tint: .blue)
                     }
-                    ForEach(result.tags.prefix(3), id: \.self) { tag in
-                        chip(tag, tint: .gray)
+                    // 形态 tag 固定跟随；其后是内容关键词 tag
+                    ForEach(Array(result.displayTags.prefix(5).enumerated()), id: \.offset) { index, tag in
+                        chip(tag, tint: index == 0 ? Color.teal : .gray)
                     }
                 }
 
@@ -383,18 +391,6 @@ public struct SearchPanelView: View {
         return "（该条目还没有正文内容）"
     }
 
-    private func contentTypeLabel(_ type: ContentType) -> String {
-        switch type {
-        case .webLink: "网页"
-        case .image: "图片"
-        case .video: "视频"
-        case .documentPDF: "PDF"
-        case .plainText: "文本"
-        case .richHTML: "富文本"
-        case .genericFile: "文件"
-        }
-    }
-
     private func chip(_ text: String, tint: Color) -> some View {
         Text(text)
             .font(.system(size: 9.5, weight: .medium))
@@ -438,24 +434,36 @@ struct SearchResultRow: View {
             } else {
                 Image(systemName: iconName)
                     .font(.system(size: 13))
-                    .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                    .foregroundStyle(Color.secondary)
                     .frame(width: 36, height: 36)
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(highlighted(result.title))
                     .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Color.primary)
                     .lineLimit(1)
                 if let snippet = result.snippet ?? result.summary, !snippet.isEmpty {
                     Text(highlighted(snippet))
                         .font(.system(size: 10.5))
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
+                        .foregroundStyle(Color.secondary)
                         .lineLimit(2)
                 }
-                Text(metaSummary)
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(isSelected ? Color.white.opacity(0.7) : Color.secondary.opacity(0.75))
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(result.resourceTypeTag)
+                        .font(.system(size: 9, weight: .semibold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.teal.opacity(0.16))
+                        )
+                        .foregroundStyle(Color.teal)
+                    Text(metaSummary)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Color.secondary.opacity(0.85))
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -463,7 +471,7 @@ struct SearchResultRow: View {
         .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(isSelected ? Color.accentColor : Color.clear)
+                .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
         )
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
@@ -491,6 +499,7 @@ struct SearchResultRow: View {
         if result.isPinned { parts.append("置顶") }
         if result.isFavorite { parts.append("收藏") }
         if let category = result.category { parts.append(category) }
+        // 内容关键词（形态 tag 已单独芯片展示）
         if !result.tags.isEmpty {
             parts.append(result.tags.prefix(3).joined(separator: " "))
         }
@@ -498,15 +507,13 @@ struct SearchResultRow: View {
         return parts.joined(separator: " · ")
     }
 
-    /// 选中行底色偏亮时用更醒目的高亮，避免黄底被 accent 淹没。
+    /// 选中行为浅色 accent 底，关键词高亮保持黄底可读。
     private func highlighted(_ text: String) -> AttributedString {
         SearchHighlight.attributed(
             text,
             query: query,
-            highlightBackground: isSelected
-                ? Color.white.opacity(0.35)
-                : Color.yellow.opacity(0.45),
-            highlightForeground: isSelected ? .white : nil
+            highlightBackground: Color.yellow.opacity(0.45),
+            highlightForeground: nil
         )
     }
 }

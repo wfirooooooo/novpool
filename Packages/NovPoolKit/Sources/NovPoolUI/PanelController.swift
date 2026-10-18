@@ -94,6 +94,13 @@ public final class PanelController: NSObject, NSWindowDelegate, DragTargetProvid
         panel.orderOut(nil)
     }
 
+    /// 设置热生效：更新扇区槽位并同步拖拽命中几何。
+    public func updateZones(_ zones: [DropZone]) {
+        viewModel.zones = zones
+        bridge.zoneCount = zones.count
+        updateRingLayout()
+    }
+
     /// 主图标在屏幕坐标系里的矩形（全局拖拽兜底通路用它判断松手位置）。
     public var iconScreenRect: CGRect {
         let icon = PassthroughHostingView<PanelRootView>.iconRect(canvasSize: panel.frame.size)

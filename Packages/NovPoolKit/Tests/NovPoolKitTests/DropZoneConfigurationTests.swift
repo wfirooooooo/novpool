@@ -5,8 +5,11 @@ import Testing
 
 @Suite("扇区槽位配置")
 struct DropZoneConfigurationTests {
-    @Test("未配置时回退到内置默认槽位")
+    @Test("未配置时回退到本机入库默认槽位")
     func defaultsWhenEmpty() {
+        #expect(DropZone.defaultZones.count == 1)
+        #expect(DropZone.defaultZones[0].isSmartRoute)
+        #expect(DropZone.defaultZones[0].title == "本机入库")
         #expect(DropZoneConfiguration.zones(from: nil) == DropZone.defaultZones)
         #expect(DropZoneConfiguration.zones(from: "") == DropZone.defaultZones)
         #expect(DropZoneConfiguration.zones(from: "{ 不是 JSON") == DropZone.defaultZones)

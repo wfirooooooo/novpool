@@ -66,11 +66,14 @@ struct DragIntegrationTests {
     /// 走完整的接收链路：draggingEntered → prepare → performDragOperation。
     private func runDrop(
         pasteboard: NSPasteboard,
-        location: NSPoint
+        location: NSPoint,
+        zoneCount: Int = 4
     ) -> (content: ResolvedDragContent?, zone: Int?, accepted: Bool) {
         let view = DragReceivingView(frame: NSRect(x: 0, y: 0, width: 440, height: 440))
         let bridge = DragCaptureBridge()
         bridge.hoverDelay = .zero
+        // 几何用例固定 4 槽；与产品默认「本机单槽」解耦。
+        bridge.zoneCount = zoneCount
         var captured: ResolvedDragContent?
         var capturedZone: Int?
         bridge.onDrop = { content, zone in
