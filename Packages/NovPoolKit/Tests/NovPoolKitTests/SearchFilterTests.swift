@@ -25,6 +25,8 @@ struct SearchFilterTests {
         #expect(SearchContentKindFilter.web.matches(.webLink))
         #expect(SearchContentKindFilter.text.matches(.plainText))
         #expect(SearchContentKindFilter.text.matches(.richHTML))
+        #expect(SearchContentKindFilter.digest.matches(.digest))
+        #expect(!SearchContentKindFilter.digest.matches(.plainText))
         #expect(!SearchContentKindFilter.image.matches(.video))
     }
 

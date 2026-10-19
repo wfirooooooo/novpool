@@ -3,6 +3,7 @@ import Carbon.HIToolbox
 import Foundation
 import NovPoolCore
 import NovPoolStorage
+import NovPoolSystemBridge
 import Testing
 @testable import NovPoolUI
 
@@ -16,8 +17,15 @@ final class SpyActions {
     private(set) var quickLookedFiles: [URL] = []
     private(set) var organizations: [(UUID, KnowledgeOrganization)] = []
     private(set) var resummarizedIDs: [UUID] = []
+    private(set) var digestRequests: [[DigestSource]] = []
+    private(set) var savedDigests: [DigestDraft] = []
+    private(set) var loadedItemIDs: [UUID] = []
+    var loadableItems: [UUID: KnowledgeSearchResult] = [:]
     var resummarizeMessage = "Re-summarized (AI tags)"
     var resummarizeOutcome: ResummarizeFeedback.Outcome = .updated
+    var digestOutcome: DigestOutcome = .failure("Digest not configured for this test")
+    var saveDigestID = UUID()
+    var saveDigestError: Error?
     private(set) var dismissCount = 0
 
     func make() -> SearchActions {
@@ -36,6 +44,19 @@ final class SpyActions {
             resummarizeItem: { [self] id in
                 resummarizedIDs.append(id)
                 return ResummarizeFeedback(outcome: resummarizeOutcome, message: resummarizeMessage)
+            },
+            digestItems: { [self] sources in
+                digestRequests.append(sources)
+                return digestOutcome
+            },
+            saveDigest: { [self] draft in
+                if let saveDigestError { throw saveDigestError }
+                savedDigests.append(draft)
+                return saveDigestID
+            },
+            loadItem: { [self] id in
+                loadedItemIDs.append(id)
+                return loadableItems[id]
             }
         )
     }
@@ -63,13 +84,15 @@ struct SearchPanelTests {
     private func makeViewModel(
         search: SpySearch = SpySearch(),
         actions: SpyActions = SpyActions(),
-        onDismiss: @escaping @MainActor () -> Void = {}
+        onDismiss: @escaping @MainActor () -> Void = {},
+        digestLimit: Int = DigestLimits.defaultMaxItems
     ) -> (SearchViewModel, SpySearch, SpyActions) {
         let viewModel = SearchViewModel(
             search: search.make(),
             actions: actions.make(),
             onDismiss: onDismiss,
-            debounce: .zero
+            debounce: .zero,
+            digestLimit: digestLimit
         )
         return (viewModel, search, actions)
     }
@@ -449,6 +472,200 @@ struct SearchPanelTests {
         )
         await settle()
         #expect(viewModel.results.isEmpty)
+    }
+
+    // MARK: - Digest
+
+    @Test("Digest uses the current filter set when nothing is explicitly selected")
+    func digestUsesFilteredScope() async {
+        let search = SpySearch()
+        search.results = [
+            KnowledgeSearchResult(id: UUID(), title: "Tech A", category: "Technology", contentType: .webLink),
+            KnowledgeSearchResult(id: UUID(), title: "Tech B", category: "Technology", contentType: .webLink),
+            KnowledgeSearchResult(id: UUID(), title: "Life A", category: "Life", contentType: .webLink),
+        ]
+        let actions = SpyActions()
+        actions.digestOutcome = .success(
+            DigestDraft(
+                title: "Tech digest",
+                overview: "Two technology items.",
+                citations: [
+                    DigestCitation(sourceID: search.results[0].id, title: "Tech A"),
+                    DigestCitation(sourceID: search.results[1].id, title: "Tech B"),
+                ]
+            )
+        )
+        let (viewModel, _, _) = makeViewModel(search: search, actions: actions)
+        viewModel.activate()
+        await settle()
+        viewModel.setCategoryFilter("Technology")
+
+        viewModel.requestDigest()
+        await settle()
+        await settle()
+
+        #expect(actions.digestRequests.count == 1)
+        #expect(actions.digestRequests[0].map(\.title) == ["Tech A", "Tech B"])
+        if case .ready(let draft) = viewModel.digestPhase {
+            #expect(draft.citations.count == 2)
+        } else {
+            Issue.record("Expected a ready digest")
+        }
+    }
+
+    @Test("Explicit multiselect wins over the filtered scope")
+    func digestSelectionWins() async {
+        let search = SpySearch()
+        search.results = [
+            sample(title: "First"),
+            sample(title: "Second"),
+            sample(title: "Third"),
+        ]
+        let actions = SpyActions()
+        let (viewModel, _, _) = makeViewModel(search: search, actions: actions)
+        viewModel.activate()
+        await settle()
+
+        viewModel.toggleDigestSelection(search.results[2].id)
+        #expect(viewModel.digestScope.map(\.title) == ["Third"])
+
+        viewModel.requestDigest()
+        await settle()
+        #expect(actions.digestRequests.first?.map(\.title) == ["Third"])
+    }
+
+    @Test("Over the limit reports the exact count and never calls the model")
+    func digestLimitIsReported() async {
+        let search = SpySearch()
+        search.results = (0..<11).map { sample(title: "Item \($0)") }
+        let actions = SpyActions()
+        let (viewModel, _, _) = makeViewModel(search: search, actions: actions, digestLimit: 10)
+        viewModel.activate()
+        await settle()
+
+        viewModel.requestDigest()
+        await settle()
+
+        #expect(actions.digestRequests.isEmpty)
+        #expect(viewModel.digestPhase == .limitExceeded(count: 11, limit: 10))
+        #expect(viewModel.statusMessage?.contains("Digest limit") == true)
+    }
+
+    @Test("A failed digest keeps the readable reason")
+    func digestFailureReason() async {
+        let search = SpySearch()
+        search.results = [sample(title: "Only item")]
+        let actions = SpyActions()
+        actions.digestOutcome = .failure("Model request failed: test offline")
+        let (viewModel, _, _) = makeViewModel(search: search, actions: actions)
+        viewModel.activate()
+        await settle()
+
+        viewModel.requestDigest()
+        await settle()
+        await settle()
+
+        #expect(viewModel.digestPhase == .failed("Model request failed: test offline"))
+        #expect(viewModel.statusMessage == "Model request failed: test offline")
+    }
+
+    @Test("Citation click returns to the source detail")
+    func digestCitationNavigation() async {
+        let search = SpySearch()
+        let first = sample(title: "First source")
+        let second = sample(title: "Second source")
+        search.results = [first, second]
+        let actions = SpyActions()
+        actions.digestOutcome = .success(
+            DigestDraft(
+                title: "Two sources",
+                overview: "Overview",
+                citations: [
+                    DigestCitation(sourceID: first.id, title: first.title),
+                    DigestCitation(sourceID: second.id, title: second.title),
+                ]
+            )
+        )
+        let (viewModel, _, _) = makeViewModel(search: search, actions: actions)
+        viewModel.activate()
+        await settle()
+
+        viewModel.requestDigest()
+        await settle()
+        await settle()
+        #expect(viewModel.digestPhase != .idle)
+
+        viewModel.openCitation(second.id)
+        #expect(viewModel.digestPhase == .idle)
+        #expect(viewModel.selectedResult?.id == second.id)
+        #expect(viewModel.canReopenLastDigest)
+    }
+
+    @Test("Save to knowledge base persists once and marks the draft saved")
+    func saveDigestOnce() async {
+        let search = SpySearch()
+        let item = sample(title: "Source")
+        search.results = [item]
+        let actions = SpyActions()
+        let savedID = UUID()
+        actions.saveDigestID = savedID
+        actions.digestOutcome = .success(
+            DigestDraft(
+                title: "Saved digest",
+                overview: "Overview",
+                citations: [DigestCitation(sourceID: item.id, title: item.title)]
+            )
+        )
+        let (viewModel, _, _) = makeViewModel(search: search, actions: actions)
+        viewModel.activate()
+        await settle()
+
+        viewModel.requestDigest()
+        await settle()
+        await settle()
+        viewModel.saveDigest()
+        await settle()
+        await settle()
+
+        #expect(actions.savedDigests.count == 1)
+        guard case .ready(let draft) = viewModel.digestPhase else {
+            Issue.record("Expected the digest to stay open after saving")
+            return
+        }
+        #expect(draft.savedItemID == savedID)
+        #expect(viewModel.statusMessage == "Saved to knowledge base")
+
+        viewModel.saveDigest()
+        await settle()
+        #expect(actions.savedDigests.count == 1)
+    }
+
+    @Test("Saved digest citations can load a source outside the current results")
+    func savedDigestCitationLoadsSource() async {
+        let source = sample(title: "Older source")
+        let digest = KnowledgeSearchResult(
+            id: UUID(),
+            title: "Saved digest",
+            contentType: .digest,
+            previewBody: "## Sources\n1. Older source",
+            digestSourceIDs: [source.id]
+        )
+        let search = SpySearch()
+        search.results = [digest]
+        let actions = SpyActions()
+        actions.loadableItems[source.id] = source
+        let (viewModel, _, _) = makeViewModel(search: search, actions: actions)
+        viewModel.activate()
+        await settle()
+
+        viewModel.openCitation(source.id)
+        await settle()
+        await settle()
+
+        #expect(actions.loadedItemIDs == [source.id])
+        #expect(viewModel.selectedResult?.id == source.id)
+        #expect(viewModel.results.first?.id == source.id)
+        #expect(viewModel.statusMessage == nil)
     }
 }
 
