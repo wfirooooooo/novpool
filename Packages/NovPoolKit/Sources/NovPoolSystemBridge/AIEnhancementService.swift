@@ -93,7 +93,9 @@ public actor AIEnhancementService {
                 maxSummaryCharacters: configuration.maxSummaryCharacters
             )
             if enrichment == nil {
-                return .failure("Model response could not be parsed as summary JSON")
+                let reason = AIEnrichmentParser.rejectionReason(for: raw)
+                    ?? "Model response could not be parsed as summary JSON"
+                return .failure(reason)
             }
         } catch {
             return .failure("Model request failed: \(error.localizedDescription)")
@@ -102,6 +104,10 @@ public actor AIEnhancementService {
         guard var result = enrichment else {
             return .failure("Model response could not be parsed as summary JSON")
         }
+        result = AIEnrichmentQuality.sanitize(
+            result,
+            maxTags: configuration.maxTags
+        )
         result.embedding = await embedding(for: request, enrichment: result)
         return .success(result)
     }

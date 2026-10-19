@@ -23,6 +23,8 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
     public var localFileURL: URL?
     public var isPinned: Bool
     public var isFavorite: Bool
+    /// Last summarize failure, when the item still has no usable summary.
+    public var aiFailureReason: String?
 
     public init(
         id: UUID,
@@ -40,7 +42,8 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
         isSemanticMatch: Bool = false,
         localFileURL: URL? = nil,
         isPinned: Bool = false,
-        isFavorite: Bool = false
+        isFavorite: Bool = false,
+        aiFailureReason: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -58,6 +61,13 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
         self.localFileURL = localFileURL
         self.isPinned = isPinned
         self.isFavorite = isFavorite
+        self.aiFailureReason = aiFailureReason
+    }
+
+    /// Non-empty summary already stored. Re-running it replaces that summary.
+    public var hasExistingSummary: Bool {
+        guard let summary else { return false }
+        return !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     public var organization: KnowledgeOrganization {

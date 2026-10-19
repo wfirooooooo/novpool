@@ -10,8 +10,8 @@ public struct SearchActions: Sendable {
     public var deleteItem: @MainActor @Sendable (UUID) async throws -> Bool
     public var quickLookFile: @MainActor @Sendable (URL) -> Void
     public var updateOrganization: @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void
-    /// Return user-facing status text (reason for success or failure).
-    public var resummarizeItem: @MainActor @Sendable (UUID) async -> String
+    /// Return whether the write succeeded, plus user-facing status text.
+    public var resummarizeItem: @MainActor @Sendable (UUID) async -> ResummarizeFeedback
 
     public init(
         openURL: @escaping @MainActor @Sendable (URL) -> Void,
@@ -20,7 +20,7 @@ public struct SearchActions: Sendable {
         deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool = { _ in false },
         quickLookFile: @escaping @MainActor @Sendable (URL) -> Void = { _ in },
         updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in },
-        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> String = { _ in "Not wired" }
+        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> ResummarizeFeedback = { _ in .notWired }
     ) {
         self.openURL = openURL
         self.revealFile = revealFile
@@ -32,10 +32,37 @@ public struct SearchActions: Sendable {
     }
 }
 
+/// Outcome of one single-item summarize call. The panel does not sniff message prefixes.
+public struct ResummarizeFeedback: Sendable, Equatable {
+    public enum Outcome: Sendable, Equatable {
+        case updated
+        case failed
+    }
+
+    public var outcome: Outcome
+    public var message: String
+
+    public init(outcome: Outcome, message: String) {
+        self.outcome = outcome
+        self.message = message
+    }
+
+    public static let notWired = ResummarizeFeedback(outcome: .failed, message: "Not wired")
+}
+
 /// Retrieval panel status model.
 @MainActor
 @Observable
 public final class SearchViewModel {
+    /// Single-item summarize. Force-replacing an existing summary stays in `needsForceConfirm` until the user agrees.
+    public enum SummarizePhase: Equatable, Sendable {
+        case idle
+        case needsForceConfirm(UUID)
+        case running(UUID)
+        case succeeded(UUID, String)
+        case failed(UUID, String)
+    }
+
     public enum Phase: Equatable {
         case idle
         case searching
@@ -54,6 +81,7 @@ public final class SearchViewModel {
     public private(set) var filter = SearchFilterState()
     public private(set) var availableCategories: [String] = []
     public private(set) var statusMessage: String?
+    public private(set) var summarizePhase: SummarizePhase = .idle
 
     private let search: @MainActor @Sendable (String) async throws -> [KnowledgeSearchResult]
     private let loadCategories: @MainActor @Sendable () async -> [String]
@@ -90,6 +118,7 @@ public final class SearchViewModel {
         selectedIndex = 0
         focusToken += 1
         statusMessage = nil
+        summarizePhase = .idle
         phase = .searching
         isBusy = true
         searchTask = Task { [weak self] in
@@ -151,13 +180,17 @@ public final class SearchViewModel {
 
     public func moveSelection(by delta: Int) {
         guard !results.isEmpty else { return }
+        let previousID = selectedResult?.id
         let next = min(max(selectedIndex + delta, 0), results.count - 1)
         selectedIndex = next
+        resetSummarizeChromeIfSelectionChanged(from: previousID)
     }
 
     public func select(_ index: Int) {
         guard results.indices.contains(index) else { return }
+        let previousID = selectedResult?.id
         selectedIndex = index
+        resetSummarizeChromeIfSelectionChanged(from: previousID)
     }
 
     // MARK: - Actions
@@ -219,22 +252,72 @@ public final class SearchViewModel {
         }
     }
 
+    public var isSummarizing: Bool {
+        if case .running = summarizePhase { return true }
+        return false
+    }
+
+    /// Fill a missing summary immediately. Replacing an existing summary waits for `confirmForceResummarize()`.
     public func resummarizeSelection() {
         guard let result = selectedResult else { return }
-        let id = result.id
-        isBusy = true
-        statusMessage = "Re-summarizing…"
+        guard !isSummarizing else { return }
+        if case .failed(let id, _) = summarizePhase, id == result.id {
+            startResummarize(id: id)
+            return
+        }
+        if result.hasExistingSummary {
+            summarizePhase = .needsForceConfirm(result.id)
+            statusMessage = "This item already has a summary. Confirm to replace it."
+            return
+        }
+        startResummarize(id: result.id)
+    }
+
+    public func confirmForceResummarize() {
+        guard case .needsForceConfirm(let id) = summarizePhase else { return }
+        guard selectedResult?.id == id else {
+            summarizePhase = .idle
+            statusMessage = nil
+            return
+        }
+        startResummarize(id: id)
+    }
+
+    public func cancelForceResummarize() {
+        guard case .needsForceConfirm = summarizePhase else { return }
+        summarizePhase = .idle
+        statusMessage = nil
+    }
+
+    private func startResummarize(id: UUID) {
+        summarizePhase = .running(id)
+        statusMessage = "Summarizing…"
         Task { [weak self] in
             guard let self else { return }
-            let message = await actions.resummarizeItem(id)
-            isBusy = false
-            statusMessage = message
-            // On success, refresh the current query so the new summary appears.
-            if message.hasPrefix("Re-summarized") {
-                await runSearch(for: query)
+            let feedback = await actions.resummarizeItem(id)
+            statusMessage = feedback.message
+            switch feedback.outcome {
+            case .updated:
+                summarizePhase = .succeeded(id, feedback.message)
+            case .failed:
+                summarizePhase = .failed(id, feedback.message)
             }
-            clearStatusLater()
+            // FTS updates from the row trigger; reload so summary, topic, tags, and failure text match the write.
+            await runSearch(for: query)
+            if let index = results.firstIndex(where: { $0.id == id }) {
+                selectedIndex = index
+            }
+            if case .updated = feedback.outcome {
+                await refreshCategories()
+            }
         }
+    }
+
+    private func resetSummarizeChromeIfSelectionChanged(from previousID: UUID?) {
+        guard previousID != selectedResult?.id else { return }
+        if case .running = summarizePhase { return }
+        summarizePhase = .idle
+        statusMessage = nil
     }
 
     public func deleteSelection() {

@@ -139,8 +139,10 @@ public actor EnrichmentPipeline: ContentEnriching {
         }
 
         if configuration.runAI {
-            if analysisText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                result.aiFailureReason = "No body text available for summarizing"
+            let body = analysisText.trimmingCharacters(in: .whitespacesAndNewlines)
+            // File-info cards are previews, not source text. Same rule for ingest, re-summarize, and fill-missing.
+            if body.isEmpty || FileInfoStub.isOnlyStub(body) {
+                result.aiFailureReason = AIEnrichmentQuality.noBodyReason
             } else {
                 let request = AIEnrichmentRequest(
                     title: result.title ?? record.title,
@@ -152,15 +154,7 @@ public actor EnrichmentPipeline: ContentEnriching {
                 )
                 switch await ai.enrichDetailed(request) {
                 case .success(let enrichment):
-                    result.aiSummary = enrichment.summary
-                    result.aiCategory = enrichment.category
-                    result.aiTags = enrichment.tags.isEmpty ? nil : enrichment.tags
-                    result.embedding = enrichment.embedding
-                    if result.title == nil,
-                       let extracted = enrichment.title,
-                       TitleAdoption.shouldAdopt(current: record.title) {
-                        result.title = extracted
-                    }
+                    applyModelResult(enrichment, to: &result, record: record)
                 case .failure(let reason):
                     result.aiFailureReason = reason
                 }
@@ -168,6 +162,29 @@ public actor EnrichmentPipeline: ContentEnriching {
         }
 
         return result
+    }
+
+    /// Writes summary / topic / tags, or a readable failure when the model only returned a file type.
+    private func applyModelResult(
+        _ enrichment: AIEnrichment,
+        to result: inout ContentEnrichment,
+        record: KnowledgeItemRecord
+    ) {
+        let cleaned = AIEnrichmentQuality.sanitize(enrichment)
+        let hasTopicFields = cleaned.summary != nil || cleaned.category != nil || !cleaned.tags.isEmpty
+        guard hasTopicFields else {
+            result.aiFailureReason = AIEnrichmentQuality.fileTypeCategoryReason
+            return
+        }
+        result.aiSummary = cleaned.summary
+        result.aiCategory = cleaned.category
+        result.aiTags = cleaned.tags.isEmpty ? nil : cleaned.tags
+        result.embedding = cleaned.embedding
+        if result.title == nil,
+           let extracted = cleaned.title,
+           TitleAdoption.shouldAdopt(current: record.title) {
+            result.title = extracted
+        }
     }
 
     private func enrichPDF(

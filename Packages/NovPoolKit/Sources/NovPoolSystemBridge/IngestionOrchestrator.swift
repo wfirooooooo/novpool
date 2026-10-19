@@ -225,7 +225,8 @@ public actor IngestionOrchestrator {
     public func enrichAfterIngest(itemID: UUID) async -> ContentEnrichment? {
         guard let enricher, let record = try? await repository.fetch(id: itemID) else { return nil }
         let enrichment = await enricher.enrich(record: record)
-        guard !enrichment.isEmpty else { return nil }
+        // A failure reason alone is worth storing so the detail pane can show why there is no summary.
+        guard !enrichment.isEmpty || enrichment.aiFailureReason != nil else { return nil }
         do {
             try await persist(enrichment: enrichment, itemID: itemID)
         } catch {
@@ -243,16 +244,21 @@ public actor IngestionOrchestrator {
             return .notFound(itemID)
         }
         let enrichment = await enricher.enrich(record: record)
-        if enrichment.isEmpty {
-            let reason = enrichment.aiFailureReason ?? "No enrichment result to write"
+        let hadSummary = !(record.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        // Sticky failure text belongs on items that still have no summary. If a previous summary
+        // remains, keep the row and surface the attempt failure in the status / Retry chrome only.
+        if let reason = enrichment.aiFailureReason, !enrichment.hasAIFields, hadSummary {
             return .failed(id: itemID, title: record.title, reason: reason)
+        }
+        let shouldPersist = !enrichment.isEmpty || enrichment.aiFailureReason != nil
+        guard shouldPersist else {
+            return .failed(id: itemID, title: record.title, reason: "No enrichment result to write")
         }
         do {
             try await persist(enrichment: enrichment, itemID: itemID)
         } catch {
             return .failed(id: itemID, title: record.title, reason: "Write failed: \(error.localizedDescription)")
         }
-        // Re-summarize based on the AI field; when only OCR/Body is available, it is also considered partially successful, but it still indicates an AI-related reason.
         if enrichment.hasAIFields {
             return .updated(enrichment)
         }
@@ -271,7 +277,9 @@ public actor IngestionOrchestrator {
             aiCategory: enrichment.aiCategory,
             aiTags: enrichment.aiTags,
             embedding: enrichment.embedding,
-            title: enrichment.title
+            title: enrichment.title,
+            aiFailureReason: enrichment.aiFailureReason,
+            writeAIFailureReason: enrichment.aiFailureReason != nil || enrichment.hasAIFields
         )
     }
 

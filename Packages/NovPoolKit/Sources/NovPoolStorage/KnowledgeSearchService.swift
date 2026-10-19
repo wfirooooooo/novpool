@@ -148,7 +148,8 @@ public actor KnowledgeSearchService {
                     isSemanticMatch: vectorIDs.contains(id),
                     localFileURL: fileURL,
                     isPinned: record.isPinned,
-                    isFavorite: record.isFavorite
+                    isFavorite: record.isFavorite,
+                    aiFailureReason: record.aiFailureReason
                 )
             )
         }

@@ -10,7 +10,7 @@ public struct KnowledgeRepository: Sendable {
     }
 
     private static let columns = """
-        id, contentType, title, markdownBody, ocrText, aiSummary, aiCategory, aiTagsJSON, \
+        id, contentType, title, markdownBody, ocrText, aiSummary, aiCategory, aiTagsJSON, aiFailureReason, \
         sourceApp, sourceURL, sourceTitle, fileHashSHA256, localRelativePath, embeddingBlob, \
         isPinned, isFavorite, createdAt, updatedAt
         """
@@ -21,7 +21,7 @@ public struct KnowledgeRepository: Sendable {
         try await database.execute(
             """
             INSERT INTO knowledge_items (\(Self.columns))
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             Self.bindings(for: record)
         )
@@ -36,7 +36,9 @@ public struct KnowledgeRepository: Sendable {
         aiCategory: String? = nil,
         aiTags: [String]? = nil,
         embedding: [Float]? = nil,
-        title: String? = nil
+        title: String? = nil,
+        aiFailureReason: String? = nil,
+        writeAIFailureReason: Bool = false
     ) async throws {
         var assignments: [String] = []
         var arguments: [SQLValue] = []
@@ -57,6 +59,9 @@ public struct KnowledgeRepository: Sendable {
         }
         if let embedding {
             set("embeddingBlob", .blob(VectorMath.encode(embedding)))
+        }
+        if writeAIFailureReason {
+            set("aiFailureReason", aiFailureReason.map { SQLValue.text($0) } ?? .null)
         }
         guard !assignments.isEmpty else { return }
         assignments.append("updatedAt = ?")
@@ -251,13 +256,19 @@ public struct KnowledgeRepository: Sendable {
             SELECT \(Self.columns) FROM knowledge_items
             WHERE (aiSummary IS NULL OR TRIM(aiSummary) = '')
               AND (
-                (markdownBody IS NOT NULL AND TRIM(markdownBody) != '')
+                (
+                  markdownBody IS NOT NULL AND TRIM(markdownBody) != ''
+                  AND NOT (
+                    length(markdownBody) < 600
+                    AND instr(markdownBody, ?) > 0
+                  )
+                )
                 OR (ocrText IS NOT NULL AND TRIM(ocrText) != '')
               )
             ORDER BY isPinned DESC, createdAt DESC
             LIMIT ?
             """,
-            [.integer(Int64(limit))]
+            [.text(FileInfoStub.marker), .integer(Int64(limit))]
         )
         return try rows.map(Self.decode)
     }
@@ -289,6 +300,7 @@ public struct KnowledgeRepository: Sendable {
             record.aiSummary.map { SQLValue.text($0) } ?? .null,
             record.aiCategory.map { SQLValue.text($0) } ?? .null,
             .text(record.tagsJSON),
+            record.aiFailureReason.map { SQLValue.text($0) } ?? .null,
             record.sourceApp.map { SQLValue.text($0) } ?? .null,
             record.sourceURL.map { SQLValue.text($0) } ?? .null,
             record.sourceTitle.map { SQLValue.text($0) } ?? .null,
@@ -323,6 +335,7 @@ public struct KnowledgeRepository: Sendable {
             aiSummary: row.text("aiSummary"),
             aiCategory: row.text("aiCategory"),
             aiTags: tags,
+            aiFailureReason: row.text("aiFailureReason"),
             sourceApp: row.text("sourceApp"),
             sourceURL: row.text("sourceURL"),
             sourceTitle: row.text("sourceTitle"),
