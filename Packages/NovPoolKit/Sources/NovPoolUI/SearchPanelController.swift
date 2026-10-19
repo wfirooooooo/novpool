@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import NovPoolStorage
+import NovPoolSystemBridge
 import SwiftUI
 
 /// Search panel controller: builds the panel, registers the global hotkey, restores focus.
@@ -20,7 +21,8 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
         loadCategories: @escaping @MainActor @Sendable () async -> [String] = { [] },
         hotKeySpec: HotKeySpec = .default,
         contentSize: CGSize = SearchPanelLayout.resolvedContentSize(),
-        actions: SearchActions? = nil
+        actions: SearchActions? = nil,
+        maxDigestItems: Int = DigestLimits.defaultMaxItems
     ) {
         self.panel = SearchPanel(contentSize: contentSize)
         super.init()
@@ -35,13 +37,17 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
             deleteItem: base.deleteItem,
             quickLookFile: { url in quickLook.present(url: url) },
             updateOrganization: base.updateOrganization,
-            resummarizeItem: base.resummarizeItem
+            resummarizeItem: base.resummarizeItem,
+            digestItems: base.digestItems,
+            saveDigest: base.saveDigest,
+            loadItem: base.loadItem
         )
         self.viewModel = SearchViewModel(
             search: search,
             loadCategories: loadCategories,
             actions: resolvedActions,
-            onDismiss: { [weak self] in self?.hide() }
+            onDismiss: { [weak self] in self?.hide() },
+            digestLimit: maxDigestItems
         )
 
         let resolvedSize = SearchPanelLayout.clamp(contentSize)
@@ -60,6 +66,11 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
 
     /// Whether the hotkey registered (may be taken by the system or another app).
     public var isHotKeyRegistered: Bool { hotKey != nil }
+
+    /// Apply a saved Settings change without rebuilding the panel.
+    public func updateDigestLimit(_ value: Int) {
+        viewModel.updateDigestLimit(value)
+    }
 
     /// Apply settings live: release the old hotkey and re-register with the new spec.
     @discardableResult
@@ -116,7 +127,14 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
     public static func liveActions(
         deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool,
         updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in },
-        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> ResummarizeFeedback = { _ in .notWired }
+        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> ResummarizeFeedback = { _ in .notWired },
+        digestItems: @escaping @MainActor @Sendable ([DigestSource]) async -> DigestOutcome = { _ in
+            .failure("Digest is not wired")
+        },
+        saveDigest: @escaping @MainActor @Sendable (DigestDraft) async throws -> UUID = { _ in
+            throw SearchActionError.notWired
+        },
+        loadItem: @escaping @MainActor @Sendable (UUID) async -> KnowledgeSearchResult? = { _ in nil }
     ) -> SearchActions {
         SearchActions(
             openURL: { url in NSWorkspace.shared.open(url) },
@@ -128,7 +146,10 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
             },
             deleteItem: deleteItem,
             updateOrganization: updateOrganization,
-            resummarizeItem: resummarizeItem
+            resummarizeItem: resummarizeItem,
+            digestItems: digestItems,
+            saveDigest: saveDigest,
+            loadItem: loadItem
         )
     }
 }

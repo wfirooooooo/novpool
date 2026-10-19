@@ -12,6 +12,8 @@ public enum ContentType: String, Codable, Sendable, CaseIterable {
     case video
     case documentPDF
     case genericFile
+    /// A generated cross-item digest. Never produced by ingestion; saved from the search panel.
+    case digest
 
     /// Short type tag shown with the item.
     public var displayTag: String {
@@ -23,6 +25,7 @@ public enum ContentType: String, Codable, Sendable, CaseIterable {
         case .plainText: "Text"
         case .richHTML: "Rich text"
         case .genericFile: "File"
+        case .digest: "Digest"
         }
     }
 }

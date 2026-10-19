@@ -25,6 +25,8 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
     public var isFavorite: Bool
     /// Last summarize failure, when the item still has no usable summary.
     public var aiFailureReason: String?
+    /// Source item IDs when this result is a saved digest.
+    public var digestSourceIDs: [UUID]
 
     public init(
         id: UUID,
@@ -43,7 +45,8 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
         localFileURL: URL? = nil,
         isPinned: Bool = false,
         isFavorite: Bool = false,
-        aiFailureReason: String? = nil
+        aiFailureReason: String? = nil,
+        digestSourceIDs: [UUID] = []
     ) {
         self.id = id
         self.title = title
@@ -62,6 +65,7 @@ public struct KnowledgeSearchResult: Sendable, Equatable, Identifiable {
         self.isPinned = isPinned
         self.isFavorite = isFavorite
         self.aiFailureReason = aiFailureReason
+        self.digestSourceIDs = digestSourceIDs
     }
 
     /// Non-empty summary already stored. Re-running it replaces that summary.

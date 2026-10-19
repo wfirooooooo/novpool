@@ -12,7 +12,7 @@ public enum SchemaMigration {
         }
     }
 
-    public static let all: [Migration] = [SchemaMigration.v1, SchemaMigration.v2, SchemaMigration.v3]
+    public static let all: [Migration] = [SchemaMigration.v1, SchemaMigration.v2, SchemaMigration.v3, SchemaMigration.v4]
 
     public static let v1 = Migration(
         name: "v1_initial_schema",
@@ -124,6 +124,14 @@ public enum SchemaMigration {
         name: "v3_ai_failure_reason",
         statements: [
             "ALTER TABLE knowledge_items ADD COLUMN aiFailureReason TEXT",
+        ]
+    )
+
+    /// L8: source item IDs for a saved cross-item digest, so citations stay navigable.
+    public static let v4 = Migration(
+        name: "v4_digest_source_ids",
+        statements: [
+            "ALTER TABLE knowledge_items ADD COLUMN digestSourceIDsJSON TEXT",
         ]
     )
 }

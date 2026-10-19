@@ -12,7 +12,7 @@ public struct KnowledgeRepository: Sendable {
     private static let columns = """
         id, contentType, title, markdownBody, ocrText, aiSummary, aiCategory, aiTagsJSON, aiFailureReason, \
         sourceApp, sourceURL, sourceTitle, fileHashSHA256, localRelativePath, embeddingBlob, \
-        isPinned, isFavorite, createdAt, updatedAt
+        digestSourceIDsJSON, isPinned, isFavorite, createdAt, updatedAt
         """
 
     // MARK: - write
@@ -21,7 +21,7 @@ public struct KnowledgeRepository: Sendable {
         try await database.execute(
             """
             INSERT INTO knowledge_items (\(Self.columns))
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             Self.bindings(for: record)
         )
@@ -307,6 +307,7 @@ public struct KnowledgeRepository: Sendable {
             record.fileHashSHA256.map { SQLValue.text($0) } ?? .null,
             record.localRelativePath.map { SQLValue.text($0) } ?? .null,
             record.embedding.map { SQLValue.blob(VectorMath.encode($0)) } ?? .null,
+            .text(record.digestSourceIDsJSON),
             .integer(record.isPinned ? 1 : 0),
             .integer(record.isFavorite ? 1 : 0),
             .date(record.createdAt),
@@ -325,6 +326,10 @@ public struct KnowledgeRepository: Sendable {
         let tags = row.text("aiTagsJSON")
             .flatMap { Data($0.utf8) }
             .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+        let digestSourceIDs = row.text("digestSourceIDsJSON")
+            .flatMap { Data($0.utf8) }
+            .flatMap { try? JSONDecoder().decode([String].self, from: $0) }
+            .map { $0.compactMap { UUID(uuidString: $0) } } ?? []
 
         return KnowledgeItemRecord(
             id: id,
@@ -342,6 +347,7 @@ public struct KnowledgeRepository: Sendable {
             fileHashSHA256: row.text("fileHashSHA256"),
             localRelativePath: row.text("localRelativePath"),
             embedding: row.blob("embeddingBlob").map(VectorMath.decode),
+            digestSourceIDs: digestSourceIDs,
             isPinned: (row.int("isPinned") ?? 0) != 0,
             isFavorite: (row.int("isFavorite") ?? 0) != 0,
             createdAt: row.date("createdAt") ?? Date(),

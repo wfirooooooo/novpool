@@ -29,7 +29,7 @@ public enum SearchPreviewKind: String, Sendable, Equatable {
             return .pdf
         case .video:
             return .video
-        case .genericFile, .plainText, .richHTML, .webLink:
+        case .genericFile, .plainText, .richHTML, .webLink, .digest:
             switch kind {
             case .image: return .image
             case .pdf: return .pdf

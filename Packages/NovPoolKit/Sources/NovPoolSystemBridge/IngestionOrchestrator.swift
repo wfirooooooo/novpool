@@ -365,7 +365,7 @@ public enum TitleBuilder {
             if let host = content.pageURL?.host() {
                 return host
             }
-        case .richHTML, .plainText:
+        case .richHTML, .plainText, .digest:
             if let firstLine = firstMeaningfulLine(of: content.text ?? content.html) {
                 return clamp(firstLine)
             }
@@ -401,7 +401,7 @@ public enum BodyBuilder {
             return content.text ?? content.html
         case .webLink:
             return nil
-        case .image, .genericFile, .documentPDF:
+        case .image, .genericFile, .documentPDF, .digest:
             return nil
         case .video:
             return nil

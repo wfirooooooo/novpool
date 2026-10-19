@@ -1,5 +1,6 @@
 import Foundation
 import NovPoolStorage
+import NovPoolSystemBridge
 import Observation
 
 /// Actions that the panel can perform, with injections of implementations for unit testing (real implementations use `NSWorkspace` / `NSPasteboard` / Quick Look).
@@ -12,6 +13,12 @@ public struct SearchActions: Sendable {
     public var updateOrganization: @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void
     /// Return whether the write succeeded, plus user-facing status text.
     public var resummarizeItem: @MainActor @Sendable (UUID) async -> ResummarizeFeedback
+    /// Generate one cross-item digest from the supplied summaries.
+    public var digestItems: @MainActor @Sendable ([DigestSource]) async -> DigestOutcome
+    /// Persist a successful digest and return the new knowledge item ID.
+    public var saveDigest: @MainActor @Sendable (DigestDraft) async throws -> UUID
+    /// Load a source item that is not in the current result list (saved digest citations).
+    public var loadItem: @MainActor @Sendable (UUID) async -> KnowledgeSearchResult?
 
     public init(
         openURL: @escaping @MainActor @Sendable (URL) -> Void,
@@ -20,7 +27,14 @@ public struct SearchActions: Sendable {
         deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool = { _ in false },
         quickLookFile: @escaping @MainActor @Sendable (URL) -> Void = { _ in },
         updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in },
-        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> ResummarizeFeedback = { _ in .notWired }
+        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> ResummarizeFeedback = { _ in .notWired },
+        digestItems: @escaping @MainActor @Sendable ([DigestSource]) async -> DigestOutcome = { _ in
+            .failure("Digest is not wired")
+        },
+        saveDigest: @escaping @MainActor @Sendable (DigestDraft) async throws -> UUID = { _ in
+            throw SearchActionError.notWired
+        },
+        loadItem: @escaping @MainActor @Sendable (UUID) async -> KnowledgeSearchResult? = { _ in nil }
     ) {
         self.openURL = openURL
         self.revealFile = revealFile
@@ -29,7 +43,16 @@ public struct SearchActions: Sendable {
         self.quickLookFile = quickLookFile
         self.updateOrganization = updateOrganization
         self.resummarizeItem = resummarizeItem
+        self.digestItems = digestItems
+        self.saveDigest = saveDigest
+        self.loadItem = loadItem
     }
+}
+
+public enum SearchActionError: LocalizedError {
+    case notWired
+
+    public var errorDescription: String? { "Saving digests is not wired" }
 }
 
 /// Outcome of one single-item summarize call. The panel does not sniff message prefixes.
@@ -71,6 +94,15 @@ public final class SearchViewModel {
         case failed(String)
     }
 
+    /// Digest lifecycle. The generated draft stays view-only until the user saves it.
+    public enum DigestPhase: Equatable, Sendable {
+        case idle
+        case running
+        case ready(DigestDraft)
+        case limitExceeded(count: Int, limit: Int)
+        case failed(String)
+    }
+
     public private(set) var query: String = ""
     public private(set) var results: [KnowledgeSearchResult] = []
     public private(set) var phase: Phase = .idle
@@ -82,6 +114,12 @@ public final class SearchViewModel {
     public private(set) var availableCategories: [String] = []
     public private(set) var statusMessage: String?
     public private(set) var summarizePhase: SummarizePhase = .idle
+    public private(set) var digestPhase: DigestPhase = .idle
+    /// Explicit multi-select for digest input. Empty means "use the current filtered results".
+    public private(set) var digestSelection: Set<UUID> = []
+    public private(set) var lastDigest: DigestDraft?
+    public private(set) var isSavingDigest = false
+    public private(set) var digestLimit: Int
 
     private let search: @MainActor @Sendable (String) async throws -> [KnowledgeSearchResult]
     private let loadCategories: @MainActor @Sendable () async -> [String]
@@ -89,6 +127,7 @@ public final class SearchViewModel {
     private let onDismiss: @MainActor () -> Void
     private let debounce: Duration
     private var searchTask: Task<Void, Never>?
+    private var digestTask: Task<Void, Never>?
     private var unfilteredResults: [KnowledgeSearchResult] = []
 
     public init(
@@ -96,17 +135,44 @@ public final class SearchViewModel {
         loadCategories: @escaping @MainActor @Sendable () async -> [String] = { [] },
         actions: SearchActions,
         onDismiss: @escaping @MainActor () -> Void,
-        debounce: Duration = .milliseconds(120)
+        debounce: Duration = .milliseconds(120),
+        digestLimit: Int = DigestLimits.defaultMaxItems
     ) {
         self.search = search
         self.loadCategories = loadCategories
         self.actions = actions
         self.onDismiss = onDismiss
         self.debounce = debounce
+        self.digestLimit = DigestLimits.clamp(digestLimit)
     }
 
     public var selectedResult: KnowledgeSearchResult? {
         results.indices.contains(selectedIndex) ? results[selectedIndex] : nil
+    }
+
+    public func updateDigestLimit(_ value: Int) {
+        digestLimit = DigestLimits.clamp(value)
+    }
+
+    /// Explicitly selected items still visible in the current results.
+    public var selectedDigestResults: [KnowledgeSearchResult] {
+        guard !digestSelection.isEmpty else { return [] }
+        return results.filter { digestSelection.contains($0.id) }
+    }
+
+    /// Selection wins; otherwise the current filter set is the digest scope.
+    public var digestScope: [KnowledgeSearchResult] {
+        let selected = selectedDigestResults
+        return selected.isEmpty ? results : selected
+    }
+
+    public var isDigesting: Bool {
+        if case .running = digestPhase { return true }
+        return false
+    }
+
+    public var canReopenLastDigest: Bool {
+        lastDigest != nil && digestPhase == .idle
     }
 
     // MARK: - Lifecycle
@@ -114,11 +180,15 @@ public final class SearchViewModel {
     /// The panel displays: clear the query, focus on the input box, and first show Recent items.
     public func activate() {
         searchTask?.cancel()
+        digestTask?.cancel()
+        digestTask = nil
         query = ""
         selectedIndex = 0
         focusToken += 1
         statusMessage = nil
         summarizePhase = .idle
+        digestPhase = .idle
+        digestSelection = []
         phase = .searching
         isBusy = true
         searchTask = Task { [weak self] in
@@ -130,6 +200,7 @@ public final class SearchViewModel {
     public func updateQuery(_ value: String) {
         guard value != query else { return }
         query = value
+        digestSelection = []
         scheduleSearch()
     }
 
@@ -176,10 +247,136 @@ public final class SearchViewModel {
         applyFilter()
     }
 
+    // MARK: - Digest
+
+    public func toggleDigestSelection(_ id: UUID) {
+        guard results.contains(where: { $0.id == id }) else { return }
+        if digestSelection.contains(id) {
+            digestSelection.remove(id)
+        } else {
+            digestSelection.insert(id)
+        }
+    }
+
+    public func clearDigestSelection() {
+        digestSelection = []
+    }
+
+    /// Build a digest from explicit selections, or from the current filtered result set.
+    public func requestDigest() {
+        guard !isDigesting else { return }
+        let scope = digestScope
+        guard !scope.isEmpty else {
+            statusMessage = "Nothing to digest"
+            clearStatusLater()
+            return
+        }
+        let limit = digestLimit
+        guard scope.count <= limit else {
+            digestPhase = .limitExceeded(count: scope.count, limit: limit)
+            statusMessage = "Digest limit: \(limit) items (this scope has \(scope.count))"
+            return
+        }
+
+        let sources = scope.map {
+            DigestSource(id: $0.id, title: $0.title, summary: $0.summary, bodyExcerpt: $0.previewBody)
+        }
+        digestPhase = .running
+        statusMessage = "Writing digest…"
+        digestTask?.cancel()
+        digestTask = Task { [weak self] in
+            guard let self else { return }
+            let outcome = await actions.digestItems(sources)
+            guard !Task.isCancelled else { return }
+            switch outcome {
+            case .success(let draft):
+                digestPhase = .ready(draft)
+                lastDigest = draft
+                statusMessage = "Digest ready (\(draft.citations.count) sources)"
+            case .failure(let reason):
+                digestPhase = .failed(reason)
+                statusMessage = reason
+            }
+        }
+    }
+
+    public func closeDigest() {
+        digestTask?.cancel()
+        digestTask = nil
+        if case .ready(let draft) = digestPhase {
+            lastDigest = draft
+        }
+        digestPhase = .idle
+    }
+
+    public func reopenLastDigest() {
+        guard let lastDigest else { return }
+        digestPhase = .ready(lastDigest)
+    }
+
+    public func saveDigest() {
+        guard case .ready(let draft) = digestPhase,
+              draft.savedItemID == nil,
+              !isSavingDigest else { return }
+        isSavingDigest = true
+        let original = draft
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isSavingDigest = false }
+            do {
+                let id = try await actions.saveDigest(draft)
+                var savedDraft = original
+                savedDraft.savedItemID = id
+                lastDigest = savedDraft
+                if case .ready(let current) = digestPhase, current == original {
+                    digestPhase = .ready(savedDraft)
+                }
+                statusMessage = "Saved to knowledge base"
+                // Refresh so the new digest is searchable immediately.
+                await runSearch(for: query)
+            } catch {
+                statusMessage = "Save failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Citation click: close the digest and show that source item.
+    public func openCitation(_ sourceID: UUID) {
+        if let index = results.firstIndex(where: { $0.id == sourceID }) {
+            finishCitationNavigation(index: index)
+            return
+        }
+        statusMessage = "Loading source…"
+        Task { [weak self] in
+            guard let self else { return }
+            guard let item = await actions.loadItem(sourceID) else {
+                statusMessage = "Source item is no longer in the library."
+                clearStatusLater()
+                return
+            }
+            // Keep the source visible even when the active filters would hide it.
+            if !unfilteredResults.contains(where: { $0.id == sourceID }) {
+                unfilteredResults.insert(item, at: 0)
+            }
+            results.insert(item, at: 0)
+            finishCitationNavigation(index: 0)
+        }
+    }
+
+    private func finishCitationNavigation(index: Int) {
+        if case .ready(let draft) = digestPhase {
+            lastDigest = draft
+        }
+        digestPhase = .idle
+        selectedIndex = index
+        statusMessage = nil
+    }
+
     // MARK: - Select
 
     public func moveSelection(by delta: Int) {
         guard !results.isEmpty else { return }
+        if digestPhase != .idle { closeDigest() }
         let previousID = selectedResult?.id
         let next = min(max(selectedIndex + delta, 0), results.count - 1)
         selectedIndex = next
@@ -188,6 +385,7 @@ public final class SearchViewModel {
 
     public func select(_ index: Int) {
         guard results.indices.contains(index) else { return }
+        if digestPhase != .idle { closeDigest() }
         let previousID = selectedResult?.id
         selectedIndex = index
         resetSummarizeChromeIfSelectionChanged(from: previousID)
@@ -376,6 +574,7 @@ public final class SearchViewModel {
     private func applyFilter() {
         let filtered = filter.applying(to: unfilteredResults)
         results = filtered
+        digestSelection.formIntersection(Set(filtered.map(\.id)))
         if selectedIndex >= filtered.count {
             selectedIndex = max(filtered.count - 1, 0)
         }

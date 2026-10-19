@@ -93,6 +93,16 @@ public actor KnowledgeSearchService {
         )
     }
 
+    /// Load one item by ID for citation navigation (the source may be outside the current results).
+    public func item(id: UUID) async throws -> KnowledgeSearchResult? {
+        try await assemble(
+            ids: [id],
+            snippetByID: [:],
+            textIDs: [],
+            vectorIDs: []
+        ).first
+    }
+
     /// Semantic recall: Calculate the cosine similarity between the query embedding and each embedding in the database matrix one by one.
     private func vectorRanking(for query: String, limit: Int) async -> [UUID] {
         guard let embedder,
@@ -149,7 +159,8 @@ public actor KnowledgeSearchService {
                     localFileURL: fileURL,
                     isPinned: record.isPinned,
                     isFavorite: record.isFavorite,
-                    aiFailureReason: record.aiFailureReason
+                    aiFailureReason: record.aiFailureReason,
+                    digestSourceIDs: record.digestSourceIDs
                 )
             )
         }

@@ -1,6 +1,7 @@
 import AppKit
 import NovPoolCore
 import NovPoolStorage
+import NovPoolSystemBridge
 import SwiftUI
 
 /// Search panel content: list on the left, detail on the right (`HSplitView` resizable).
@@ -23,7 +24,7 @@ public struct SearchPanelView: View {
                 .frame(minWidth: SearchPanelLayout.minimumListColumnWidth)
                 .layoutPriority(1)
 
-            previewColumn(snapshot)
+            detailColumn(snapshot)
                 .frame(minWidth: SearchPanelLayout.minimumPreviewColumnWidth)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -55,7 +56,7 @@ public struct SearchPanelView: View {
                     onCancel: { [viewModel] in viewModel.dismiss() }
                 )
                 .frame(height: 26)
-                if snapshot.isBusy || snapshot.isSummarizing {
+                if snapshot.isBusy || snapshot.isSummarizing || snapshot.isDigesting {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -201,7 +202,9 @@ public struct SearchPanelView: View {
                                     result: result,
                                     query: snapshot.query,
                                     isSelected: index == snapshot.selectedIndex,
+                                    isDigestSelected: snapshot.digestSelection.contains(result.id),
                                     onSelect: { [viewModel] in viewModel.select(index) },
+                                    onToggleDigest: { [viewModel] in viewModel.toggleDigestSelection(result.id) },
                                     onOpen: { [viewModel] in
                                         viewModel.select(index)
                                         viewModel.confirmSelection()
@@ -242,7 +245,27 @@ public struct SearchPanelView: View {
             hint("↑↓", "Select")
             hint("↩", "Open")
             hint("esc", "Close")
+            if !snapshot.digestSelection.isEmpty {
+                Button("Clear selection") { [viewModel] in
+                    viewModel.clearDigestSelection()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            }
             Spacer()
+            if snapshot.canReopenLastDigest {
+                Button("View digest") { [viewModel] in
+                    viewModel.reopenLastDigest()
+                }
+                .controlSize(.small)
+            }
+            Button(digestButtonTitle(snapshot)) { [viewModel] in
+                viewModel.requestDigest()
+            }
+            .controlSize(.small)
+            .disabled(snapshot.results.isEmpty || snapshot.isDigesting)
+            .help("Summarize the selected items, or the current filter set, into one digest")
             if let status = snapshot.statusMessage {
                 Text(status)
                     .font(.system(size: 10))
@@ -255,6 +278,16 @@ public struct SearchPanelView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+
+    private func digestButtonTitle(_ snapshot: SearchSnapshot) -> String {
+        if !snapshot.digestSelection.isEmpty {
+            return "Digest selected (\(snapshot.digestScopeCount))"
+        }
+        if snapshot.filter.isActive {
+            return "Digest filtered (\(snapshot.digestScopeCount))"
+        }
+        return "Digest results (\(snapshot.digestScopeCount))"
     }
 
     private func hint(_ key: String, _ label: String) -> some View {
@@ -274,6 +307,184 @@ public struct SearchPanelView: View {
     }
 
     // MARK: - Right column (detail)
+
+    @ViewBuilder
+    private func detailColumn(_ snapshot: SearchSnapshot) -> some View {
+        if snapshot.digestPhase == .idle {
+            previewColumn(snapshot)
+        } else {
+            digestColumn(snapshot)
+        }
+    }
+
+    @ViewBuilder
+    private func digestColumn(_ snapshot: SearchSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                chip("Digest", tint: .purple)
+                Spacer()
+                Button { [viewModel] in viewModel.closeDigest() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .help("Close digest")
+            }
+
+            switch snapshot.digestPhase {
+            case .idle:
+                EmptyView()
+            case .running:
+                VStack(alignment: .leading, spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Writing digest from item summaries…")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                }
+            case .limitExceeded(let count, let limit):
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("This digest would include \(count) items; the limit is \(limit).")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Narrow the filters or deselect some items, then run Digest again. Nothing was summarized or saved.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        if !snapshot.digestSelection.isEmpty {
+                            Button("Clear selection") { [viewModel] in
+                                viewModel.clearDigestSelection()
+                            }
+                        }
+                        Button("Close") { [viewModel] in
+                            viewModel.closeDigest()
+                        }
+                    }
+                    .controlSize(.small)
+                }
+            case .failed(let reason):
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Digest failed")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.red)
+                    Text(reason)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.red)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Button("Try again") { [viewModel] in
+                            viewModel.requestDigest()
+                        }
+                        Button("Close") { [viewModel] in
+                            viewModel.closeDigest()
+                        }
+                    }
+                    .controlSize(.small)
+                }
+            case .ready(let draft):
+                digestDraftView(snapshot, draft: draft)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private func digestDraftView(_ snapshot: SearchSnapshot, draft: DigestDraft) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(draft.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !draft.overview.isEmpty {
+                    Text(draft.overview)
+                        .font(.system(size: 11.5))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !draft.keyPoints.isEmpty {
+                    digestSection("Key points", items: draft.keyPoints)
+                }
+                if !draft.openQuestions.isEmpty {
+                    digestSection("Open questions", items: draft.openQuestions)
+                }
+
+                if !draft.citations.isEmpty {
+                    Divider()
+                    Text("Sources")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(Array(draft.citations.enumerated()), id: \.element.id) { index, citation in
+                        Button { [viewModel] in
+                            viewModel.openCitation(citation.sourceID)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("\(index + 1).")
+                                    .foregroundStyle(.tertiary)
+                                Text(citation.title)
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                Image(systemName: "arrow.up.forward")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .font(.system(size: 11))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open this source item")
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        Divider()
+
+        HStack(spacing: 8) {
+            Button(saveDigestTitle(snapshot, draft: draft)) { [viewModel] in
+                viewModel.saveDigest()
+            }
+            .disabled(draft.savedItemID != nil || snapshot.isSavingDigest)
+            if draft.savedItemID == nil {
+                Text("View-only until saved")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+        }
+        .controlSize(.small)
+    }
+
+    private func saveDigestTitle(_ snapshot: SearchSnapshot, draft: DigestDraft) -> String {
+        if draft.savedItemID != nil { return "Saved" }
+        return snapshot.isSavingDigest ? "Saving…" : "Save to knowledge base"
+    }
+
+    private func digestSection(_ title: String, items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .top, spacing: 6) {
+                    Text("•")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Text(item)
+                        .font(.system(size: 11.5))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
 
     @ViewBuilder
     private func previewColumn(_ snapshot: SearchSnapshot) -> some View {
@@ -321,6 +532,10 @@ public struct SearchPanelView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(Color.red)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !result.digestSourceIDs.isEmpty {
+                    savedDigestSources(result, snapshot)
                 }
 
                 SearchOrganizationEditor(
@@ -440,6 +655,51 @@ public struct SearchPanelView: View {
         return "(This item has no body content yet)"
     }
 
+    /// Saved digests keep source IDs in their own column; titles come from the generated Sources section.
+    @ViewBuilder
+    private func savedDigestSources(_ result: KnowledgeSearchResult, _ snapshot: SearchSnapshot) -> some View {
+        let titles = savedSourceTitles(result.previewBody)
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Sources")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            ForEach(Array(result.digestSourceIDs.enumerated()), id: \.element) { index, id in
+                let currentTitle = snapshot.results.first(where: { $0.id == id })?.title
+                let title = currentTitle
+                    ?? (index < titles.count ? titles[index] : "Source \(index + 1)")
+                Button { [viewModel] in
+                    viewModel.openCitation(id)
+                } label: {
+                    HStack(spacing: 5) {
+                        Text("\(index + 1).")
+                            .foregroundStyle(.tertiary)
+                        Text(title)
+                            .lineLimit(1)
+                        Image(systemName: "arrow.up.forward")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .font(.system(size: 10.5))
+                }
+                .buttonStyle(.plain)
+                .help("Open this source item")
+            }
+        }
+    }
+
+    private func savedSourceTitles(_ body: String?) -> [String] {
+        guard let body, let range = body.range(of: "## Sources") else { return [] }
+        return body[range.upperBound...].split(separator: "\n").compactMap { raw in
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty,
+                  let dot = line.firstIndex(of: "."),
+                  line[..<dot].allSatisfy(\.isNumber) else { return nil }
+            let title = String(line[line.index(after: dot)...])
+                .trimmingCharacters(in: .whitespaces)
+            return title.isEmpty ? nil : title
+        }
+    }
+
     private func chip(_ text: String, tint: Color) -> some View {
         Text(text)
             .font(.system(size: 9.5, weight: .medium))
@@ -471,11 +731,23 @@ struct SearchResultRow: View {
     let result: KnowledgeSearchResult
     let query: String
     let isSelected: Bool
+    let isDigestSelected: Bool
     let onSelect: @MainActor () -> Void
+    let onToggleDigest: @MainActor () -> Void
     let onOpen: @MainActor () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
+            Button(action: { Task { @MainActor in onToggleDigest() } }) {
+                Image(systemName: isDigestSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(isDigestSelected ? Color.accentColor : Color.secondary.opacity(0.55))
+                    .frame(width: 18, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isDigestSelected ? "Remove from digest selection" : "Add to digest selection")
+
             let previewKind = SearchPreviewKind.resolve(result)
             if previewKind.showsMediaPane, result.localFileURL != nil {
                 SearchResultThumbnail(kind: previewKind, fileURL: result.localFileURL)
@@ -540,6 +812,7 @@ struct SearchResultRow: View {
         case .richHTML: "text.alignleft"
         case .plainText: "text.quote"
         case .genericFile: "doc"
+        case .digest: "sparkles"
         }
     }
 

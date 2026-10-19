@@ -86,7 +86,7 @@ public struct LocalCloudMountConnector: DestinationConnector, @unchecked Sendabl
         case .image: fallbackURL?.pathExtension.isEmpty == false ? fallbackURL!.pathExtension : "png"
         case .video: fallbackURL?.pathExtension.isEmpty == false ? fallbackURL!.pathExtension : "mp4"
         case .genericFile: fallbackURL?.pathExtension.isEmpty == false ? fallbackURL!.pathExtension : "dat"
-        case .richHTML, .plainText, .webLink: "md"
+        case .richHTML, .plainText, .webLink, .digest: "md"
         }
     }
 
