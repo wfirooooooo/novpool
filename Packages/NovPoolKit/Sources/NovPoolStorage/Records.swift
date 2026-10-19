@@ -19,6 +19,8 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
     public var fileHashSHA256: String?
     public var localRelativePath: String?
     public var embedding: [Float]?
+    /// Source item IDs for a saved digest. Empty for ordinary items.
+    public var digestSourceIDs: [UUID]
     /// Manually Pinned: Prioritized display in the Recent list and search results.
     public var isPinned: Bool
     /// Manual Favorite: You can filter by Favorite on the search panel.
@@ -42,6 +44,7 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
         fileHashSHA256: String? = nil,
         localRelativePath: String? = nil,
         embedding: [Float]? = nil,
+        digestSourceIDs: [UUID] = [],
         isPinned: Bool = false,
         isFavorite: Bool = false,
         createdAt: Date = Date(),
@@ -62,6 +65,7 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
         self.fileHashSHA256 = fileHashSHA256
         self.localRelativePath = localRelativePath
         self.embedding = embedding
+        self.digestSourceIDs = digestSourceIDs
         self.isPinned = isPinned
         self.isFavorite = isFavorite
         self.createdAt = createdAt
@@ -114,6 +118,11 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
 
     public var tagsJSON: String {
         (try? String(decoding: JSONEncoder().encode(aiTags), as: UTF8.self)) ?? "[]"
+    }
+
+    public var digestSourceIDsJSON: String {
+        let values = digestSourceIDs.map(\.uuidString)
+        return (try? String(decoding: JSONEncoder().encode(values), as: UTF8.self)) ?? "[]"
     }
 }
 

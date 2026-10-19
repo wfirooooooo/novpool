@@ -474,6 +474,12 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
             TextField(store.t(.aiChatModel), text: $store.chatModel)
             TextField(store.t(.aiEmbeddingModel), text: $store.embeddingModel)
+            Stepper(value: $store.digestMaxItems, in: 10...50) {
+                Text("\(store.t(.aiDigestLimit)): \(store.digestMaxItems)")
+            }
+            Text(store.t(.aiDigestLimitHint))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 Button(store.isResummarizing ? store.t(.working) : store.t(.aiResummarize)) {
                     Task { await store.resummarizeMissingSummaries() }

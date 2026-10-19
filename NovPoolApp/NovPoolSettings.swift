@@ -17,6 +17,8 @@ struct NovPoolSettings: Sendable {
     var chatModel: String
     var embeddingModel: String
     var categories: [String]
+    /// Maximum items in one cross-item digest (10–50).
+    var digestMaxItems: Int
     /// OpenAI-compatible config (used when `aiProvider` is `.openAICompatible` or local llama).
     var openAIBaseURL: URL?
     var openAIAPIKey: String?
@@ -40,6 +42,7 @@ struct NovPoolSettings: Sendable {
         embeddingModel: "bge-m3",
         // Topic tree (by meaning, not file type). Editable in Settings.
         categories: ["Tech", "Product", "Life", "Reading", "Work", "Other"],
+        digestMaxItems: 30,
         openAIBaseURL: nil,
         openAIAPIKey: nil,
         uiLanguage: .en,
@@ -63,6 +66,7 @@ struct NovPoolSettings: Sendable {
             chatModel: defaults.string(forKey: "novpool.ai.chatModel") ?? settings.chatModel,
             embeddingModel: defaults.string(forKey: "novpool.ai.embeddingModel") ?? settings.embeddingModel,
             categories: defaults.stringArray(forKey: "novpool.ai.categories") ?? settings.categories,
+            digestMaxItems: clampedDigestItems(defaults.object(forKey: "novpool.digest.maxItems") as? Int),
             openAIBaseURL: defaults.string(forKey: "novpool.openai.baseURL").flatMap(URL.init(string:)),
             openAIAPIKey: loadOpenAIAPIKey(defaults: defaults, keychain: keychain),
             uiLanguage: AppLanguage.load(defaults),
@@ -74,6 +78,10 @@ struct NovPoolSettings: Sendable {
                 ?? settings.defaultConnectorIDs,
             zones: DropZoneConfiguration.zones(from: defaults.string(forKey: DropZoneConfiguration.defaultsKey))
         )
+    }
+
+    static func clampedDigestItems(_ value: Int?) -> Int {
+        DigestLimits.clamp(value ?? DigestLimits.defaultMaxItems)
     }
 
     /// Keychain first; migrate a legacy UserDefaults plaintext value if present, then remove it.

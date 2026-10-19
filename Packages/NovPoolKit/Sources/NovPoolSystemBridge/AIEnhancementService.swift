@@ -117,6 +117,32 @@ public actor AIEnhancementService {
         await enrichDetailed(request).enrichment
     }
 
+    /// Generate one cross-item digest through the same configured chat backend as item summaries.
+    public func digest(_ sources: [DigestSource], maxInputCharacters: Int = 12_000) async -> DigestOutcome {
+        guard configuration.isEnabled else {
+            return .failure("AI enrichment is off (Settings → Search & AI)")
+        }
+        guard let completer else {
+            return .failure("No usable chat model configured (Ollama / OpenAI-compatible / local llama-server)")
+        }
+        guard !sources.isEmpty else {
+            return .failure("No items selected for digest")
+        }
+
+        do {
+            let raw = try await completer.completeJSON(
+                systemPrompt: DigestPrompt.systemPrompt,
+                userPrompt: DigestPrompt.userPrompt(sources: sources, maxInputCharacters: maxInputCharacters)
+            )
+            guard let draft = DigestParser.parse(raw, sources: sources) else {
+                return .failure("Model response could not be parsed as a digest")
+            }
+            return .success(draft)
+        } catch {
+            return .failure("Model request failed: \(error.localizedDescription)")
+        }
+    }
+
     private func embedding(for request: AIEnrichmentRequest, enrichment: AIEnrichment) async -> [Float]? {
         guard let embedder else { return nil }
         let text: String

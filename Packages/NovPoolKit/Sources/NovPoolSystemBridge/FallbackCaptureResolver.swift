@@ -112,7 +112,7 @@ public enum FallbackCaptureResolver: Sendable {
         switch content.contentType {
         case .image, .video, .documentPDF, .genericFile:
             return true
-        case .webLink, .plainText, .richHTML:
+        case .webLink, .plainText, .richHTML, .digest:
             return false
         }
     }

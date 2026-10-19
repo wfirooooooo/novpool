@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import NovPoolCore
 import NovPoolStorage
+import NovPoolSystemBridge
 import SwiftUI
 import Testing
 @testable import NovPoolUI
@@ -86,5 +87,71 @@ struct ViewRenderProbeTests {
         try? await Task.sleep(for: .milliseconds(60))
         host.layoutSubtreeIfNeeded()
         print("=== Failure state evaluation of the search panel completed")
+    }
+
+    @Test("Digest ready / over-limit / saved-source views can be evaluated")
+    func digestViewsEvaluate() async {
+        let search = SpySearch()
+        let source = KnowledgeSearchResult(
+            id: UUID(),
+            title: "Source item",
+            summary: "Source summary",
+            contentType: .webLink,
+            previewBody: "Body"
+        )
+        search.results = [source]
+
+        let actions = SpyActions()
+        actions.digestOutcome = .success(
+            DigestDraft(
+                title: "Probe digest",
+                overview: "Two items about local knowledge.",
+                keyPoints: ["Offline", "Searchable"],
+                openQuestions: ["Next step?"],
+                citations: [DigestCitation(sourceID: source.id, title: source.title)]
+            )
+        )
+        let viewModel = SearchViewModel(
+            search: search.make(),
+            actions: actions.make(),
+            onDismiss: {},
+            debounce: .zero,
+            digestLimit: 10
+        )
+        let host = NSHostingView(rootView: SearchPanelView(viewModel: viewModel))
+        host.frame = NSRect(origin: .zero, size: SearchPanelLayout.contentSize)
+
+        viewModel.activate()
+        try? await Task.sleep(for: .milliseconds(60))
+        viewModel.requestDigest()
+        try? await Task.sleep(for: .milliseconds(60))
+        host.layoutSubtreeIfNeeded()
+        print("=== Digest ready view evaluation completed")
+
+        viewModel.closeDigest()
+        search.results = (0..<11).map {
+            KnowledgeSearchResult(id: UUID(), title: "Over \($0)", contentType: .plainText)
+        }
+        viewModel.updateQuery("over")
+        try? await Task.sleep(for: .milliseconds(60))
+        viewModel.requestDigest()
+        host.layoutSubtreeIfNeeded()
+        print("=== Digest limit view evaluation completed")
+
+        viewModel.closeDigest()
+        let saved = KnowledgeSearchResult(
+            id: UUID(),
+            title: "Saved digest",
+            summary: "Overview",
+            contentType: .digest,
+            snippet: "Overview",
+            previewBody: "## Overview\nText\n\n## Sources\n1. Source item",
+            digestSourceIDs: [source.id]
+        )
+        search.results = [saved]
+        viewModel.updateQuery("saved")
+        try? await Task.sleep(for: .milliseconds(60))
+        host.layoutSubtreeIfNeeded()
+        print("=== Saved digest detail view evaluation completed")
     }
 }

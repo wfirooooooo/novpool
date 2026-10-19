@@ -121,7 +121,7 @@ public actor EnrichmentPipeline: ContentEnriching {
         case .genericFile:
             await enrichLocalFile(record: record, result: &result, analysisText: &analysisText)
 
-        case .richHTML, .plainText:
+        case .richHTML, .plainText, .digest:
             break
         }
 

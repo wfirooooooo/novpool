@@ -11,6 +11,7 @@ public enum SearchContentKindFilter: String, Sendable, CaseIterable, Identifiabl
     case document
     case text
     case file
+    case digest
 
     public var id: String { rawValue }
 
@@ -23,6 +24,7 @@ public enum SearchContentKindFilter: String, Sendable, CaseIterable, Identifiabl
         case .document: "PDF"
         case .text: "Text"
         case .file: "File"
+        case .digest: "Digest"
         }
     }
 
@@ -35,6 +37,7 @@ public enum SearchContentKindFilter: String, Sendable, CaseIterable, Identifiabl
         case .document: type == .documentPDF
         case .text: type == .plainText || type == .richHTML
         case .file: type == .genericFile
+        case .digest: type == .digest
         }
     }
 }

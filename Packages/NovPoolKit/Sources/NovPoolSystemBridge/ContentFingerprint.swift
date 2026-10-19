@@ -34,7 +34,7 @@ public enum ContentFingerprint: Sendable {
             }
             return sha256Hex(Data("richhtml\n\(body)".utf8))
 
-        case .image, .video, .documentPDF, .genericFile:
+        case .image, .video, .documentPDF, .genericFile, .digest:
             // These types should go to Staging; failure to temporarily store without hash explanation makes deduplication impossible.
             return nil
         }
