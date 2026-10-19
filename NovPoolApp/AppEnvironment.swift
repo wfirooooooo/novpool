@@ -190,8 +190,20 @@ final class AppEnvironment {
                     case .failed, .notFound:
                         return ResummarizeFeedback(outcome: .failed, message: result.statusMessage)
                     }
+                },
+                digestItems: { sources in
+                    await aiService.digest(sources)
+                },
+                saveDigest: { draft in
+                    let record = draft.makeRecord()
+                    try await repository.insert(record)
+                    return record.id
+                },
+                loadItem: { id in
+                    try? await searchService.item(id: id)
                 }
-            )
+            ),
+            maxDigestItems: settings.digestMaxItems
         )
         NovPoolLog.write(
             "Search panel ready (hotkey registered=\(searchPanelController.isHotKeyRegistered))"
@@ -240,6 +252,7 @@ final class AppEnvironment {
         await orchestrator.update(routeEvaluator: settings.routeEvaluator)
         panelController.updateZones(settings.zones)
         let hotKeyOK = searchPanelController.updateHotKey(settings.searchHotKey)
+        searchPanelController.updateDigestLimit(settings.digestMaxItems)
         await outboxWorker.update(configuration: .init(isEnabled: settings.isSyncEnabled))
         await enrichmentPipeline.update(
             configuration: .init(categories: settings.categories)

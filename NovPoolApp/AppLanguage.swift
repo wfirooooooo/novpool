@@ -85,6 +85,7 @@ enum AppL10n {
         case aiMaster, aiProviderHint, aiBackendHeader, aiEnrichmentHeader
         case aiCategories, aiCategoriesHint
         case aiChatModel, aiEmbeddingModel
+        case aiDigestLimit, aiDigestLimitHint
         case aiOllamaURL, aiOpenAIBase, aiOpenAIKey
         case aiResummarize, aiResummarizeHint, working
         case aiLocalURL, aiLocalURLHint
@@ -136,6 +137,10 @@ enum AppL10n {
         case (.aiChatModel, .en): "Chat model"
         case (.aiEmbeddingModel, .zh): "向量模型"
         case (.aiEmbeddingModel, .en): "Embedding model"
+        case (.aiDigestLimit, .zh): "单次归纳条目上限"
+        case (.aiDigestLimit, .en): "Digest item limit"
+        case (.aiDigestLimitHint, .zh): "在检索里选中条目或按当前筛选归纳时，最多纳入这么多条；超出会提示，不会静默截断。"
+        case (.aiDigestLimitHint, .en): "Maximum items in one digest from selected items or the current filter set. Over-limit requests are reported, never silently truncated."
         case (.aiOllamaURL, .zh): "Ollama 地址"
         case (.aiOllamaURL, .en): "Ollama base URL"
         case (.aiOpenAIBase, .zh): "Base URL"

@@ -30,6 +30,7 @@ final class AppSettingsStore {
     var aiProvider: AIProvider
     var uiLanguage: AppLanguage
     var categoriesText: String
+    var digestMaxItems: Int
     var chatModel: String
     var embeddingModel: String
     var ollamaBaseURL: String
@@ -103,6 +104,7 @@ final class AppSettingsStore {
         aiProvider = settings.aiProvider
         uiLanguage = settings.uiLanguage
         categoriesText = settings.categories.joined(separator: ", ")
+        digestMaxItems = settings.digestMaxItems
         chatModel = settings.chatModel
         embeddingModel = settings.embeddingModel
         ollamaBaseURL = settings.ollamaBaseURL.absoluteString
@@ -168,6 +170,8 @@ final class AppSettingsStore {
         aiProvider.save(defaults)
         uiLanguage.save(defaults)
         defaults.set(parseCategories(categoriesText), forKey: "novpool.ai.categories")
+        digestMaxItems = NovPoolSettings.clampedDigestItems(digestMaxItems)
+        defaults.set(digestMaxItems, forKey: "novpool.digest.maxItems")
         defaults.set(chatModel, forKey: "novpool.ai.chatModel")
         defaults.set(embeddingModel, forKey: "novpool.ai.embeddingModel")
         defaults.set(ollamaBaseURL, forKey: "novpool.ollama.baseURL")
