@@ -55,7 +55,7 @@ public struct SearchPanelView: View {
                     onCancel: { [viewModel] in viewModel.dismiss() }
                 )
                 .frame(height: 26)
-                if snapshot.isBusy {
+                if snapshot.isBusy || snapshot.isSummarizing {
                     ProgressView()
                         .controlSize(.small)
                 }

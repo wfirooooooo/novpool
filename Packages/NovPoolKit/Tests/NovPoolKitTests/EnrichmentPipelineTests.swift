@@ -308,6 +308,41 @@ struct EnrichmentPipelineTests {
         } else {
             Issue.record("Expected a visible no-body failure")
         }
+        let stored = try #require(try await harness.repository.fetch(id: ingested.record.id))
+        #expect(stored.aiFailureReason == AIEnrichmentQuality.noBodyReason)
+        #expect(stored.aiSummary == nil)
+    }
+
+    @Test("Model failure on a missing summary is stored; failure on an existing summary stays in status only")
+    func resummarizePersistsModelFailureReason() async throws {
+        let ai = ScriptedAI(next: .failure("Model request failed: unavailable"))
+        let harness = try await makeHarness(ai: ai)
+        let missing = try await harness.orchestrator.ingestAndEnrich(
+            ResolvedDragContent(contentType: .plainText, text: "A note about harbor lights and fog."),
+            sourceContext: SourceContext(appBundleID: "com.apple.TextEdit")
+        )
+        #expect(missing.record.aiSummary == nil)
+        #expect(missing.record.aiFailureReason == "Model request failed: unavailable")
+
+        ai.next = .success(AIEnrichment(summary: "first summary", category: "Technology", tags: ["ok"]))
+        let filled = await harness.orchestrator.resummarize(itemID: missing.record.id)
+        guard case .updated = filled else {
+            Issue.record("Expected a successful fill")
+            return
+        }
+        #expect(try await harness.repository.fetch(id: missing.record.id)?.aiSummary == "first summary")
+        #expect(try await harness.repository.fetch(id: missing.record.id)?.aiFailureReason == nil)
+
+        ai.next = .failure("Model request failed: still down")
+        let again = await harness.orchestrator.resummarize(itemID: missing.record.id)
+        if case .failed(_, _, let reason) = again {
+            #expect(reason.contains("still down"))
+        } else {
+            Issue.record("Expected a failed re-summarize")
+        }
+        let stored = try #require(try await harness.repository.fetch(id: missing.record.id))
+        #expect(stored.aiSummary == "first summary")
+        #expect(stored.aiFailureReason == nil)
     }
 
     @Test("Re-summarize replaces summary, topic, and tags, and the full-text index follows")
