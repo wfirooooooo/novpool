@@ -310,6 +310,19 @@ public struct SearchPanelView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if let banner = summarizeBanner(snapshot, itemID: result.id) {
+                    Text(banner.text)
+                        .font(.system(size: 11))
+                        .foregroundStyle(banner.isError ? Color.red : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let reason = result.aiFailureReason,
+                          !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(reason)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 SearchOrganizationEditor(
                     result: result,
                     availableCategories: snapshot.availableCategories,
@@ -348,10 +361,20 @@ public struct SearchPanelView: View {
                         Task { @MainActor in viewModel.copySelection() }
                     }
 
-                    Button("Re-summarize") { [viewModel] in
-                        Task { @MainActor in viewModel.resummarizeSelection() }
+                    if case .needsForceConfirm(let itemID) = snapshot.summarizePhase, itemID == result.id {
+                        Button("Replace summary") { [viewModel] in
+                            Task { @MainActor in viewModel.confirmForceResummarize() }
+                        }
+                        .disabled(snapshot.isSummarizing)
+                        Button("Cancel") { [viewModel] in
+                            Task { @MainActor in viewModel.cancelForceResummarize() }
+                        }
+                    } else {
+                        Button(resummarizeButtonTitle(snapshot, itemID: result.id)) { [viewModel] in
+                            Task { @MainActor in viewModel.resummarizeSelection() }
+                        }
+                        .disabled(snapshot.isBusy || snapshot.isSummarizing)
                     }
-                    .disabled(snapshot.isBusy)
 
                     if result.hasLocalFile {
                         Button("Preview") { [viewModel] in
@@ -374,6 +397,32 @@ public struct SearchPanelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             placeholder(icon: "text.magnifyingglass", text: "Select an item to see details here")
+        }
+    }
+
+    private func resummarizeButtonTitle(_ snapshot: SearchSnapshot, itemID: UUID) -> String {
+        switch snapshot.summarizePhase {
+        case .running(let id) where id == itemID:
+            "Summarizing…"
+        case .failed(let id, _) where id == itemID:
+            "Retry"
+        default:
+            "Re-summarize"
+        }
+    }
+
+    private func summarizeBanner(_ snapshot: SearchSnapshot, itemID: UUID) -> (text: String, isError: Bool)? {
+        switch snapshot.summarizePhase {
+        case .needsForceConfirm(let id) where id == itemID:
+            ("This item already has a summary. Replace it? This does not re-run the rest of the library.", false)
+        case .running(let id) where id == itemID:
+            ("Summarizing…", false)
+        case .succeeded(let id, let message) where id == itemID:
+            (message, false)
+        case .failed(let id, let message) where id == itemID:
+            (message, true)
+        default:
+            nil
         }
     }
 

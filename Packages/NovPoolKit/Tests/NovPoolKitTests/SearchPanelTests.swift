@@ -17,6 +17,7 @@ final class SpyActions {
     private(set) var organizations: [(UUID, KnowledgeOrganization)] = []
     private(set) var resummarizedIDs: [UUID] = []
     var resummarizeMessage = "Re-summarized (AI tags)"
+    var resummarizeOutcome: ResummarizeFeedback.Outcome = .updated
     private(set) var dismissCount = 0
 
     func make() -> SearchActions {
@@ -34,7 +35,7 @@ final class SpyActions {
             },
             resummarizeItem: { [self] id in
                 resummarizedIDs.append(id)
-                return resummarizeMessage
+                return ResummarizeFeedback(outcome: resummarizeOutcome, message: resummarizeMessage)
             }
         )
     }
@@ -341,6 +342,72 @@ struct SearchPanelTests {
 
         #expect(actions.resummarizedIDs == [item.id])
         #expect(viewModel.statusMessage?.contains("Re-summarize") == true)
+        if case .succeeded(let id, _) = viewModel.summarizePhase {
+            #expect(id == item.id)
+        } else {
+            Issue.record("Expected a finished summarize state")
+        }
+    }
+
+    @Test("Replacing an existing summary waits for confirmation")
+    func forceResummarizeRequiresConfirmation() async {
+        let search = SpySearch()
+        let item = sample(title: "Already summarized", summary: "Old summary")
+        search.results = [item]
+        let actions = SpyActions()
+        let (viewModel, _, _) = makeViewModel(search: search, actions: actions)
+        viewModel.activate()
+        await settle()
+
+        viewModel.resummarizeSelection()
+        await settle()
+        #expect(actions.resummarizedIDs.isEmpty)
+        if case .needsForceConfirm(let id) = viewModel.summarizePhase {
+            #expect(id == item.id)
+        } else {
+            Issue.record("Expected a confirmation state")
+        }
+
+        viewModel.cancelForceResummarize()
+        #expect(actions.resummarizedIDs.isEmpty)
+        if case .idle = viewModel.summarizePhase {} else {
+            Issue.record("Cancel should return to idle")
+        }
+
+        viewModel.resummarizeSelection()
+        viewModel.confirmForceResummarize()
+        await settle()
+        await settle()
+        #expect(actions.resummarizedIDs == [item.id])
+    }
+
+    @Test("A failed summarize stays visible and Retry runs it again")
+    func failedSummarizeCanRetry() async {
+        let search = SpySearch()
+        let item = sample(title: "Needs a summary")
+        search.results = [item]
+        let actions = SpyActions()
+        actions.resummarizeOutcome = .failed
+        actions.resummarizeMessage = "Summarize failed: model unavailable"
+        let (viewModel, _, _) = makeViewModel(search: search, actions: actions)
+        viewModel.activate()
+        await settle()
+
+        viewModel.resummarizeSelection()
+        await settle()
+        await settle()
+        #expect(actions.resummarizedIDs == [item.id])
+        if case .failed(let id, let message) = viewModel.summarizePhase {
+            #expect(id == item.id)
+            #expect(message.contains("model unavailable"))
+        } else {
+            Issue.record("Expected a failed summarize state")
+        }
+
+        viewModel.resummarizeSelection()
+        await settle()
+        await settle()
+        #expect(actions.resummarizedIDs == [item.id, item.id])
     }
 
     @Test("Update the results after SaveOrganize and support Favorite filtering")

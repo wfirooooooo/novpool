@@ -1,4 +1,5 @@
 import Foundation
+import NovPoolCore
 
 /// UI language (Chinese / English in Settings).
 enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
@@ -65,6 +66,14 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
 
     func save(_ defaults: UserDefaults = .standard) {
         defaults.set(rawValue, forKey: Self.defaultsKey)
+    }
+
+    var summarizeRouteKind: SummarizeRouteKind {
+        switch self {
+        case .ollama: .ollama
+        case .openAICompatible: .openAICompatible
+        case .localLlama: .localLlama
+        }
     }
 }
 
@@ -135,10 +144,10 @@ enum AppL10n {
         case (.aiOpenAIKey, .en): "API Key (stored in Keychain)"
         case (.aiResummarize, .zh): "重新总结缺失摘要"
         case (.aiResummarize, .en): "Re-summarize missing"
-        case (.aiResummarizeHint, .zh): "对尚无摘要、但已有正文的条目再跑一轮 AI。"
-        case (.aiResummarizeHint, .en): "Re-run AI for items that have body text but no summary yet."
+        case (.aiResummarizeHint, .zh): "只补已有正文、但还没有摘要的条目，不会覆盖已有摘要，也不会重跑全库。要替换某一条，在检索里对该条点 Re-summarize，确认后再跑。"
+        case (.aiResummarizeHint, .en): "Fills items that have body text but no summary. Does not replace existing summaries or scan the whole library. To redo one item, use Re-summarize in search — you’ll be asked to confirm."
         case (.working, .zh): "正在总结…"
-        case (.working, .en): "Working…"
+        case (.working, .en): "Summarizing…"
         case (.aiLocalURL, .zh): "Base URL（OpenAI 兼容）"
         case (.aiLocalURL, .en): "Base URL (OpenAI-compatible)"
         case (.aiLocalURLHint, .zh): "与 Ollama 一样填接口地址，默认 http://127.0.0.1:8080/v1。服务可由下方代启，或按命令自行启动。"

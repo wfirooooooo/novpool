@@ -85,8 +85,8 @@ public enum AIEnrichmentPrompt {
         Requirements:
         1. summary is a concise distillation of at most \(maxSummaryCharacters) characters; hit the point; avoid boilerplate like "This article introduces…". Match the body's language when helpful.
         2. tags: 1–\(maxTags) refined labels reflecting topic keywords (any language); no leading #.
-        3. \(categoryInstruction)
-        4. The "resource kind" below is for reference only (Image/PDF/Web, etc.). category must reflect what the body is about — never use the resource kind as category.
+        3. \(categoryInstruction) If the topic is unclear, use \(AIEnrichmentQuality.uncategorized).
+        4. The "resource kind" below is for reference only (Image/PDF/Web, etc.). category must reflect what the body is about — never use the resource kind, a file extension, or a format name as category.
         """
     }
 
@@ -123,11 +123,34 @@ public enum AIEnrichmentParser {
 
         let title = string(object["title"]).map { clamp($0, to: 120) }
         let summary = string(object["summary"]).map { clamp($0, to: maxSummaryCharacters) }
-        let category = resolveCategory(string(object["category"]), categories: categories)
+        let rawCategory = string(object["category"])
+        var category = resolveCategory(rawCategory, categories: categories)
         let tags = normalizeTags(object["tags"], maxTags: maxTags)
+        if let rawCategory, AIEnrichmentQuality.isFormatLikeCategory(rawCategory) {
+            // A file-type answer is not a topic. Keep a usable summary, and label the topic unclassified.
+            category = (summary != nil || !tags.isEmpty) ? AIEnrichmentQuality.uncategorized : nil
+        }
 
         guard title != nil || summary != nil || category != nil || !tags.isEmpty else { return nil }
         return AIEnrichment(title: title, summary: summary, category: category, tags: tags)
+    }
+
+    /// When `parse` returns nil, a file-type-only payload gets a specific reason; other garbage stays nil.
+    static func rejectionReason(for raw: String) -> String? {
+        guard let jsonText = extractJSONObject(from: raw),
+              let data = jsonText.data(using: .utf8),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return nil
+        }
+        let summary = string(object["summary"])
+        let title = string(object["title"])
+        let tags = normalizeTags(object["tags"], maxTags: 8)
+        guard summary == nil, title == nil, tags.isEmpty,
+              let category = string(object["category"]),
+              AIEnrichmentQuality.isFormatLikeCategory(category) else {
+            return nil
+        }
+        return AIEnrichmentQuality.fileTypeCategoryReason
     }
 
     /// Extract the first complete JSON object from possibly fenced / padded model output.
@@ -182,21 +205,11 @@ public enum AIEnrichmentParser {
         }
     }
 
-    /// Common resource-kind words: drop them if the model mistakes them for a topic category.
-    private static let rejectedFormatCategories: Set<String> = [
-        "Web", "Image", "Video", "File", "Document", "Link", "Text", "PlainText", "Attachment",
-        "pdf", "image", "video", "file", "document", "weblink", "web", "link",
-        "plaintext", "richhtml", "genericfile", "documentpdf",
-        // Chinese format words still rejected when used as free-form categories.
-        "图片", "网页", "视频", "文件", "文档", "链接", "文本", "附件",
-    ]
-
     /// Category must land in the user's topic tree; with no tree, accept free topics but reject format names.
     static func resolveCategory(_ raw: String?, categories: [String]) -> String? {
         guard let raw else { return nil }
-        guard !categories.isEmpty else {
-            return isFormatLikeCategory(raw) ? nil : raw
-        }
+        if AIEnrichmentQuality.isFormatLikeCategory(raw) { return nil }
+        guard !categories.isEmpty else { return raw }
         if let exact = categories.first(where: { $0.caseInsensitiveCompare(raw) == .orderedSame }) {
             return exact
         }
@@ -211,12 +224,8 @@ public enum AIEnrichmentParser {
         return nil
     }
 
-    static func isFormatLikeCategory(_ raw: String) -> Bool {
-        let normalized = raw
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "")
-        return rejectedFormatCategories.contains(normalized)
+    static func normalizeTagList(_ tags: [String], maxTags: Int) -> [String] {
+        normalizeTags(tags, maxTags: maxTags)
     }
 
     static func normalizeTags(_ any: Any?, maxTags: Int) -> [String] {
@@ -237,7 +246,7 @@ public enum AIEnrichmentParser {
             var tag = HTMLText.collapseWhitespace(raw).trimmingCharacters(in: .whitespacesAndNewlines)
             while tag.hasPrefix("#") { tag.removeFirst() }
             tag = clamp(tag, to: 24)
-            guard !tag.isEmpty else { continue }
+            guard AIEnrichmentQuality.isMeaningfulTag(tag) else { continue }
             guard seen.insert(tag.lowercased()).inserted else { continue }
             result.append(tag)
             if result.count >= maxTags { break }

@@ -116,7 +116,7 @@ public final class SearchPanelController: NSObject, NSWindowDelegate {
     public static func liveActions(
         deleteItem: @escaping @MainActor @Sendable (UUID) async throws -> Bool,
         updateOrganization: @escaping @MainActor @Sendable (UUID, KnowledgeOrganization) async throws -> Void = { _, _ in },
-        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> String = { _ in "Not wired" }
+        resummarizeItem: @escaping @MainActor @Sendable (UUID) async -> ResummarizeFeedback = { _ in .notWired }
     ) -> SearchActions {
         SearchActions(
             openURL: { url in NSWorkspace.shared.open(url) },

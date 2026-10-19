@@ -253,7 +253,8 @@ struct EnrichmentPipelineTests {
             sourceContext: SourceContext(appBundleID: "com.google.Chrome")
         )
         #expect(result.record.markdownBody == nil)
-        #expect(result.enrichment == nil)
+        #expect(result.record.aiSummary == nil)
+        #expect(result.record.aiFailureReason == AIEnrichmentQuality.noBodyReason)
         #expect(try await harness.repository.count() == 1)
     }
 
@@ -274,13 +275,97 @@ struct EnrichmentPipelineTests {
 
     @Test("Plain Text entries only call AI when there is a Body; if the Body is missing, it is skipped.")
     func plainTextSkipsAIWithoutBody() async throws {
-        let ai = FakeAI(enrichment: AIEnrichment(summary: "Should not appear"))
+        let ai = ScriptedAI(next: .success(AIEnrichment(summary: "Should not appear")))
         let harness = try await makeHarness(ai: ai)
         let result = try await harness.orchestrator.ingestAndEnrich(
             ResolvedDragContent(contentType: .genericFile, fileURLs: []),
             sourceContext: SourceContext(appBundleID: "com.apple.finder")
         )
-        #expect(result.enrichment == nil)
+        #expect(ai.calls == 0)
+        #expect(result.record.aiSummary == nil)
+        #expect(result.record.aiFailureReason == AIEnrichmentQuality.noBodyReason)
+        #expect(result.enrichment?.aiFailureReason == AIEnrichmentQuality.noBodyReason)
+    }
+
+    @Test("A file-info stub is not sent to the model, and re-summarize keeps that reason")
+    func fileInfoStubSkipsModel() async throws {
+        let ai = ScriptedAI(next: .success(AIEnrichment(summary: "Should not appear")))
+        let harness = try await makeHarness(ai: ai)
+        let file = harness.directory.appending(path: "blob.bin")
+        try Data(repeating: 0xAB, count: 32).write(to: file)
+        let ingested = try await harness.orchestrator.ingestAndEnrich(
+            ResolvedDragContent(contentType: .genericFile, fileURLs: [file]),
+            sourceContext: SourceContext(appBundleID: "com.apple.finder")
+        )
+        #expect(ai.calls == 0)
+        #expect(ingested.record.aiFailureReason == AIEnrichmentQuality.noBodyReason)
+        #expect(FileInfoStub.isOnlyStub(ingested.record.markdownBody ?? ""))
+
+        let again = await harness.orchestrator.resummarize(itemID: ingested.record.id)
+        #expect(ai.calls == 0)
+        if case .failed(_, _, let reason) = again {
+            #expect(reason == AIEnrichmentQuality.noBodyReason)
+        } else {
+            Issue.record("Expected a visible no-body failure")
+        }
+    }
+
+    @Test("Re-summarize replaces summary, topic, and tags, and the full-text index follows")
+    func resummarizeRefreshesSearchIndex() async throws {
+        let ai = ScriptedAI(next: .success(AIEnrichment(
+            summary: "alpha lighthouse",
+            category: "Technology",
+            tags: ["one"]
+        )))
+        let harness = try await makeHarness(ai: ai)
+        let ingested = try await harness.orchestrator.ingestAndEnrich(
+            ResolvedDragContent(contentType: .plainText, text: "Keeper notes about the coast."),
+            sourceContext: SourceContext(appBundleID: "com.apple.TextEdit")
+        )
+        #expect(ingested.record.aiSummary == "alpha lighthouse")
+        #expect(try await harness.repository.searchFullText("alpha lighthouse").first?.id == ingested.record.id)
+
+        ai.next = .success(AIEnrichment(summary: "beta harbor", category: "pdf", tags: ["!!!", "beta", "Beta"]))
+        let rerun = await harness.orchestrator.resummarize(itemID: ingested.record.id)
+        guard case .updated = rerun else {
+            Issue.record("Expected the re-summarize to write fields")
+            return
+        }
+        let updated = try #require(try await harness.repository.fetch(id: ingested.record.id))
+        #expect(updated.aiSummary == "beta harbor")
+        #expect(updated.aiCategory == AIEnrichmentQuality.uncategorized)
+        #expect(updated.aiTags == ["beta"])
+        #expect(updated.aiFailureReason == nil)
+        #expect(try await harness.repository.searchFullText("beta harbor").first?.id == ingested.record.id)
+        #expect(try await harness.repository.searchFullText("alpha lighthouse").isEmpty)
+    }
+
+    @Test("Fill-missing skips items that already have a summary")
+    func fillMissingSkipsExistingSummaries() async throws {
+        let ai = ScriptedAI(next: .success(AIEnrichment(summary: "fresh summary", category: "Reading", tags: ["essay"])))
+        let harness = try await makeHarness(ai: ai)
+        let done = try await harness.orchestrator.ingestAndEnrich(
+            ResolvedDragContent(contentType: .plainText, text: "A finished note about kelp forests and tides."),
+            sourceContext: SourceContext(appBundleID: "com.apple.TextEdit")
+        )
+        #expect(done.record.aiSummary == "fresh summary")
+        let callsAfterIngest = ai.calls
+
+        let report = await harness.orchestrator.resummarizeMissingSummaries(limit: 20)
+        #expect(report.attempted == 0)
+        #expect(ai.calls == callsAfterIngest)
+
+        try await harness.repository.updateEnrichment(
+            id: done.record.id,
+            aiSummary: "",
+            writeAIFailureReason: true
+        )
+        // Empty string still counts as missing. Give it a real body (already present) and clear the summary via SQL-level empty.
+        // updateEnrichment writes the empty string, so the row no longer has a summary.
+        let second = await harness.orchestrator.resummarizeMissingSummaries(limit: 20)
+        #expect(second.attempted == 1)
+        #expect(second.succeeded == 1)
+        #expect(ai.calls == callsAfterIngest + 1)
     }
 
     @Test("Complete the status bar for floating window notifications")
@@ -296,5 +381,48 @@ struct EnrichmentPipelineTests {
         #expect(TitleAdoption.shouldAdopt(current: "Untitled item 2026/3/9"))
         #expect(TitleAdoption.shouldAdopt(current: "example.com"))
         #expect(TitleAdoption.shouldAdopt(current: "Cloudy Knowledge Routing Practice") == false)
+    }
+}
+
+/// Swappable model stand-in so one pipeline can serve ingest and a later re-summarize.
+final class ScriptedAI: AIEnriching, @unchecked Sendable {
+    private let lock = NSLock()
+    private var queued: AIEnrichmentOutcome
+    private var recorded = 0
+
+    init(next: AIEnrichmentOutcome) {
+        queued = next
+    }
+
+    var next: AIEnrichmentOutcome {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return queued
+        }
+        set {
+            lock.lock()
+            queued = newValue
+            lock.unlock()
+        }
+    }
+
+    var calls: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded
+    }
+
+    func enrichDetailed(_ request: AIEnrichmentRequest) async -> AIEnrichmentOutcome {
+        takeNext()
+    }
+
+    /// `NSLock` cannot be used directly in an async function.
+    private func takeNext() -> AIEnrichmentOutcome {
+        lock.lock()
+        recorded += 1
+        let outcome = queued
+        lock.unlock()
+        return outcome
     }
 }

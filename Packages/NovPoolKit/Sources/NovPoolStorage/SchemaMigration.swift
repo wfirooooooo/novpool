@@ -12,7 +12,7 @@ public enum SchemaMigration {
         }
     }
 
-    public static let all: [Migration] = [SchemaMigration.v1, SchemaMigration.v2]
+    public static let all: [Migration] = [SchemaMigration.v1, SchemaMigration.v2, SchemaMigration.v3]
 
     public static let v1 = Migration(
         name: "v1_initial_schema",
@@ -116,6 +116,14 @@ public enum SchemaMigration {
             "ALTER TABLE knowledge_items ADD COLUMN isFavorite INTEGER NOT NULL DEFAULT 0",
             "CREATE INDEX idx_knowledge_items_pinned ON knowledge_items(isPinned DESC, createdAt DESC)",
             "CREATE INDEX idx_knowledge_items_favorite ON knowledge_items(isFavorite DESC, createdAt DESC)",
+        ]
+    )
+
+    /// L7: readable reason when summarize did not produce a summary. Cleared on the next successful AI write.
+    public static let v3 = Migration(
+        name: "v3_ai_failure_reason",
+        statements: [
+            "ALTER TABLE knowledge_items ADD COLUMN aiFailureReason TEXT",
         ]
     )
 }

@@ -183,7 +183,13 @@ final class AppEnvironment {
                     try await searchService.updateOrganization(id: id, organization: organization)
                 },
                 resummarizeItem: { id in
-                    await orchestrator.resummarize(itemID: id).statusMessage
+                    let result = await orchestrator.resummarize(itemID: id)
+                    switch result {
+                    case .updated:
+                        return ResummarizeFeedback(outcome: .updated, message: result.statusMessage)
+                    case .failed, .notFound:
+                        return ResummarizeFeedback(outcome: .failed, message: result.statusMessage)
+                    }
                 }
             )
         )

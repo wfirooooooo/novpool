@@ -15,6 +15,8 @@ struct SearchSnapshot: Equatable {
     var filter: SearchFilterState
     var availableCategories: [String]
     var statusMessage: String?
+    var summarizePhase: SearchViewModel.SummarizePhase
+    var isSummarizing: Bool
 
     var selectedResult: KnowledgeSearchResult? {
         results.indices.contains(selectedIndex) ? results[selectedIndex] : nil
@@ -38,5 +40,7 @@ struct SearchSnapshot: Equatable {
         filter = viewModel.filter
         availableCategories = viewModel.availableCategories
         statusMessage = viewModel.statusMessage
+        summarizePhase = viewModel.summarizePhase
+        isSummarizing = viewModel.isSummarizing
     }
 }

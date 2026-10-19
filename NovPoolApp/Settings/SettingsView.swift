@@ -462,6 +462,12 @@ struct SettingsView: View {
         }
 
         Section {
+            Text(SummarizeRouteExplanation.text(
+                kind: store.isAIEnabled ? store.aiProvider.summarizeRouteKind : .off,
+                prefersChinese: store.uiLanguage == .zh
+            ))
+            .font(.system(size: 10))
+            .foregroundStyle(.secondary)
             TextField(store.t(.aiCategories), text: $store.categoriesText)
             Text(store.t(.aiCategoriesHint))
                 .font(.system(size: 10))

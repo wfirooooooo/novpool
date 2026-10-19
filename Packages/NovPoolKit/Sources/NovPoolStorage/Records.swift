@@ -11,6 +11,8 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
     public var aiSummary: String?
     public var aiCategory: String?
     public var aiTags: [String]
+    /// Why the last summarize pass did not produce a summary. Nil after a successful AI write.
+    public var aiFailureReason: String?
     public var sourceApp: String?
     public var sourceURL: String?
     public var sourceTitle: String?
@@ -33,6 +35,7 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
         aiSummary: String? = nil,
         aiCategory: String? = nil,
         aiTags: [String] = [],
+        aiFailureReason: String? = nil,
         sourceApp: String? = nil,
         sourceURL: String? = nil,
         sourceTitle: String? = nil,
@@ -52,6 +55,7 @@ public struct KnowledgeItemRecord: Codable, Sendable, Equatable {
         self.aiSummary = aiSummary
         self.aiCategory = aiCategory
         self.aiTags = aiTags
+        self.aiFailureReason = aiFailureReason
         self.sourceApp = sourceApp
         self.sourceURL = sourceURL
         self.sourceTitle = sourceTitle

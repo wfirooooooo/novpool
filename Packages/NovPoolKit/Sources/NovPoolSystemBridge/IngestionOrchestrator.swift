@@ -225,7 +225,8 @@ public actor IngestionOrchestrator {
     public func enrichAfterIngest(itemID: UUID) async -> ContentEnrichment? {
         guard let enricher, let record = try? await repository.fetch(id: itemID) else { return nil }
         let enrichment = await enricher.enrich(record: record)
-        guard !enrichment.isEmpty else { return nil }
+        // A failure reason alone is worth storing so the detail pane can show why there is no summary.
+        guard !enrichment.isEmpty || enrichment.aiFailureReason != nil else { return nil }
         do {
             try await persist(enrichment: enrichment, itemID: itemID)
         } catch {
@@ -271,7 +272,9 @@ public actor IngestionOrchestrator {
             aiCategory: enrichment.aiCategory,
             aiTags: enrichment.aiTags,
             embedding: enrichment.embedding,
-            title: enrichment.title
+            title: enrichment.title,
+            aiFailureReason: enrichment.aiFailureReason,
+            writeAIFailureReason: enrichment.aiFailureReason != nil || enrichment.hasAIFields
         )
     }
 

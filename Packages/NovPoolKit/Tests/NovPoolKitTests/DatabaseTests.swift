@@ -2,6 +2,7 @@ import Foundation
 import NovPoolCore
 import Testing
 @testable import NovPoolStorage
+@testable import NovPoolSystemBridge
 
 @Suite("GRDB Equivalent Schema and Retrieval")
 struct DatabaseTests {
@@ -190,5 +191,83 @@ struct DatabaseTests {
 
         try await connectors.delete(id: "gdrive")
         #expect(try await connectors.list().isEmpty)
+    }
+
+    @Test("Failure reason round-trips and is cleared when a summary is written")
+    func aiFailureReasonRoundTrip() async throws {
+        let (_, repository, _) = try await makeDatabase()
+        let record = KnowledgeItemRecord(
+            id: UUID(),
+            contentType: .plainText,
+            title: "Missing",
+            markdownBody: "An unread essay about tide pools and kelp.",
+            createdAt: Date(timeIntervalSince1970: 10),
+            updatedAt: Date(timeIntervalSince1970: 10)
+        )
+        try await repository.insert(record)
+        try await repository.updateEnrichment(
+            id: record.id,
+            aiFailureReason: AIEnrichmentQuality.noBodyReason,
+            writeAIFailureReason: true
+        )
+        let failed = try #require(try await repository.fetch(id: record.id))
+        #expect(failed.aiFailureReason == AIEnrichmentQuality.noBodyReason)
+
+        try await repository.updateEnrichment(
+            id: record.id,
+            aiSummary: "Tide pools at low water",
+            aiCategory: "Science",
+            aiTags: ["kelp"],
+            writeAIFailureReason: true
+        )
+        let fixed = try #require(try await repository.fetch(id: record.id))
+        #expect(fixed.aiSummary == "Tide pools at low water")
+        #expect(fixed.aiCategory == "Science")
+        #expect(fixed.aiTags == ["kelp"])
+        #expect(fixed.aiFailureReason == nil)
+        #expect(try await repository.searchFullText("Tide pools at low water").first?.id == record.id)
+    }
+
+    @Test("Fill-missing ignores existing summaries and file-info stubs")
+    func recordsNeedingSummarySkipStubsAndExisting() async throws {
+        let (_, repository, _) = try await makeDatabase()
+        let stub = """
+        ## File info
+
+        - Name: a.bin
+        - Type: BIN file
+        - Size: 1 KB
+
+        \(FileInfoStub.marker) Use Open to view it.
+        """
+        try await repository.insert(KnowledgeItemRecord(
+            id: UUID(),
+            contentType: .plainText,
+            title: "Done",
+            markdownBody: "A finished article about kelp forests.",
+            aiSummary: "Already summarized",
+            createdAt: Date(timeIntervalSince1970: 30),
+            updatedAt: Date(timeIntervalSince1970: 30)
+        ))
+        try await repository.insert(KnowledgeItemRecord(
+            id: UUID(),
+            contentType: .genericFile,
+            title: "Stub",
+            markdownBody: stub,
+            createdAt: Date(timeIntervalSince1970: 20),
+            updatedAt: Date(timeIntervalSince1970: 20)
+        ))
+        let missingID = UUID()
+        try await repository.insert(KnowledgeItemRecord(
+            id: missingID,
+            contentType: .plainText,
+            title: "Missing",
+            markdownBody: "An unread essay about tide pools.",
+            createdAt: Date(timeIntervalSince1970: 10),
+            updatedAt: Date(timeIntervalSince1970: 10)
+        ))
+
+        let needing = try await repository.recordsNeedingAISummary()
+        #expect(needing.map(\.id) == [missingID])
     }
 }

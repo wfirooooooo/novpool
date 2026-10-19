@@ -17,7 +17,8 @@ struct AIEnrichmentTests {
         #expect(prompt.contains("at most 80 characters"))
         #expect(prompt.contains("1–4 refined labels"))
         #expect(prompt.contains("\"summary\""))
-        #expect(prompt.contains("never use the resource kind as category"))
+        #expect(prompt.contains("never use the resource kind"))
+        #expect(prompt.contains("Uncategorized"))
     }
 
     @Test("When the category tree is not configured, it is required to classify by subject and prohibit format names")
@@ -81,21 +82,30 @@ struct AIEnrichmentTests {
         #expect(AIEnrichmentParser.parse(raw, categories: [])?.category == "Astrology")
     }
 
-    @Test("Refuse to regard the resource Kind as a subject when classifying freely")
+    @Test("File-type categories fall back to Uncategorized when a summary remains")
     func rejectsFormatAsCategory() {
         let asImage = #"{"summary":"Summary","category":"Image"}"#
-        #expect(AIEnrichmentParser.parse(asImage, categories: [])?.category == nil)
+        #expect(AIEnrichmentParser.parse(asImage, categories: [])?.category == AIEnrichmentQuality.uncategorized)
         let asPDF = #"{"summary":"Summary","category":"PDF"}"#
-        #expect(AIEnrichmentParser.parse(asPDF, categories: [])?.category == nil)
+        #expect(AIEnrichmentParser.parse(asPDF, categories: [])?.category == AIEnrichmentQuality.uncategorized)
         let asWeb = #"{"summary":"Summary","category":"Web"}"#
-        #expect(AIEnrichmentParser.parse(asWeb, categories: [])?.category == nil)
+        #expect(AIEnrichmentParser.parse(asWeb, categories: [])?.category == AIEnrichmentQuality.uncategorized)
+        let asFilePhrase = #"{"summary":"Summary","category":"PDF file"}"#
+        #expect(AIEnrichmentParser.parse(asFilePhrase, categories: [])?.category == AIEnrichmentQuality.uncategorized)
+        let asPNG = #"{"summary":"Summary","category":"png"}"#
+        #expect(AIEnrichmentParser.parse(asPNG, categories: [])?.category == AIEnrichmentQuality.uncategorized)
+        // Even a topic tree that lists a format name must not store it.
+        let inTree = #"{"summary":"Summary","category":"PDF"}"#
+        #expect(AIEnrichmentParser.parse(inTree, categories: ["PDF", "Technology"])?.category == AIEnrichmentQuality.uncategorized)
         // Legacy Chinese format words remain rejected when still present in the denylist.
         let asImageZH = #"{"summary":"Summary","category":"图片"}"#
-        #expect(AIEnrichmentParser.parse(asImageZH, categories: [])?.category == nil)
+        #expect(AIEnrichmentParser.parse(asImageZH, categories: [])?.category == AIEnrichmentQuality.uncategorized)
         let asWebZH = #"{"summary":"Summary","category":"网页"}"#
-        #expect(AIEnrichmentParser.parse(asWebZH, categories: [])?.category == nil)
+        #expect(AIEnrichmentParser.parse(asWebZH, categories: [])?.category == AIEnrichmentQuality.uncategorized)
         let topic = #"{"summary":"Summary","category":"Design"}"#
         #expect(AIEnrichmentParser.parse(topic, categories: [])?.category == "Design")
+        #expect(AIEnrichmentParser.parse(#"{"category":"pdf"}"#, categories: []) == nil)
+        #expect(AIEnrichmentParser.rejectionReason(for: #"{"category":"pdf"}"#) == AIEnrichmentQuality.fileTypeCategoryReason)
     }
 
     @Test("Remove duplicate tags, remove # symbols, limit length and quantity, also accepts comma-separated strings")
@@ -107,6 +117,9 @@ struct AIEnrichmentTests {
 
         let asString = #"{"summary":"Summary","tags":"alpha, beta,gamma"}"#
         #expect(AIEnrichmentParser.parse(asString, categories: categories)?.tags == ["alpha", "beta", "gamma"])
+
+        let noisy = #"{"summary":"Summary","tags":["swift","!!!","---","***","C++","swift"]}"#
+        #expect(AIEnrichmentParser.parse(noisy, categories: categories)?.tags == ["swift", "C++"])
     }
 
     @Test("The abstract is truncated at the maximum length and an ellipsis is added")
@@ -176,6 +189,31 @@ struct AIEnrichmentTests {
         let enrichment = try #require(await service.enrich(Self.request(categories: categories)))
         #expect(enrichment.summary == "Hot-swap summary")
         #expect(await completer.calls == 1)
+    }
+
+    @Test("A file-type category with no summary fails with a readable reason and does not invent tags")
+    func fileTypeCategoryWithoutSummary() async {
+        let completer = FakeCompleter(output: #"{"category":"image"}"#)
+        let service = AIEnhancementService(completer: completer, embedder: nil)
+        if case .failure(let reason) = await service.enrichDetailed(Self.request(categories: [])) {
+            #expect(reason == AIEnrichmentQuality.fileTypeCategoryReason)
+        } else {
+            Issue.record("Expected a file-type category failure")
+        }
+        #expect(await completer.calls == 1)
+    }
+
+    @Test("Settings copy names the summarize route and does not include a secret")
+    func summarizeRouteCopy() {
+        let llama = SummarizeRouteExplanation.text(kind: .localLlama, prefersChinese: false)
+        let ollama = SummarizeRouteExplanation.text(kind: .ollama, prefersChinese: false)
+        let compatible = SummarizeRouteExplanation.text(kind: .openAICompatible, prefersChinese: false)
+        #expect(llama.contains("llama.cpp"))
+        #expect(ollama.contains("Ollama"))
+        #expect(compatible.contains("OpenAI-compatible"))
+        #expect(compatible.contains("Keychain"))
+        #expect(!compatible.contains("sk-"))
+        #expect(SummarizeRouteExplanation.text(kind: .off, prefersChinese: true).contains("摘要已关闭"))
     }
 
     @Test("Return nil when the model reports an error, and provide a readable reason for the failure")
